@@ -1,11 +1,13 @@
 """One-shot QQ adapter. Secrets arrive over stdin and are stripped by Rust before IPC."""
 import sys, json, asyncio, base64, os, re, unicodedata
 from pathlib import Path
+from dataclasses import fields
 sys.path.insert(0, str(Path(__file__).parent / 'vendor'))
 from qqmusic_api import Client, Platform
 from qqmusic_api.models.request import Credential
 from qqmusic_api.models.login import QR, QRLoginType
 from qqmusic_api.modules.song import SongFileInfo, SongFileType
+from qqmusic_api.utils.device import Device, OSVersion
 
 class QqError(ValueError):
     """Application-owned public errors, never arbitrary upstream exception strings."""
@@ -22,6 +24,37 @@ def public_error(error):
     if 'Timeout' in kind:
         return 'QQ 音乐网络请求超时，请稍后重试'
     return 'QQ 音乐暂时无法完成请求，请检查网络或重新登录'
+
+
+def compatible_device(path):
+    """Read extended legacy schemas without rewriting an older app's device cache.
+
+    The pinned upstream release rejects unknown dataclass constructor arguments.
+    Older Ting previews stored extra hardware fields; retain supported identity
+    fields in memory and leave the original file intact for either app version.
+    """
+    path = Path(path)
+    if not path.is_file():
+        return None
+    try:
+        with path.open('rb') as file:
+            encoded = file.read(65537)
+        if len(encoded) > 65536:
+            raise QqError('QQ 设备缓存过大，无法读取')
+        data = json.loads(encoded)
+        if not isinstance(data, dict) or not isinstance(data.get('version'), dict):
+            raise QqError('QQ 设备缓存格式无效，无法读取')
+        device_fields = {field.name for field in fields(Device)}
+        version_fields = {field.name for field in fields(OSVersion)}
+        if set(data) <= device_fields and set(data['version']) <= version_fields:
+            return None  # Current schemas continue to use upstream persistence.
+        supported = {key: value for key, value in data.items() if key in device_fields}
+        supported['version'] = OSVersion(**{key: value for key, value in data['version'].items() if key in version_fields})
+        return Device(**supported)
+    except QqError:
+        raise
+    except (OSError, ValueError, TypeError):
+        raise QqError('QQ 设备缓存无法读取，请检查应用数据目录') from None
 
 
 async def raw(req):
@@ -128,7 +161,10 @@ async def main(r):
     op=r['operation'];a=r.get('args') or {};saved=r.get('credential')
     if op=='account_status' and not saved: return {'result':None}
     os.umask(0o077)
-    async with Client(credential=Credential.model_validate(saved or {}),platform=Platform.WEB,device_path=r['devicePath']) as c:
+    legacy_device = compatible_device(r['devicePath'])
+    async with Client(credential=Credential.model_validate(saved or {}),platform=Platform.WEB,device_path=None if legacy_device is not None else r['devicePath']) as c:
+        if legacy_device is not None:
+            c._context._device_store.device = legacy_device
         if op=='login_qr_start':
             kind=a.get('kind','qq')
             if kind not in ('qq','wx'): raise QqError('登录类型无效')

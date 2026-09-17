@@ -43,7 +43,7 @@
 
 发布包内置固定版本 **CPython 3.12.14**、QQ / 下载依赖及 miniaudio 解码器。运行应用不需要额外安装 Homebrew、Python 或 FFmpeg；发布版不会回退到机器上的其他 Python。内置资源缺失时会提示重新安装完整应用。
 
-当前开发构建未做 Developer ID 签名和公证。请只运行可信来源的构建。仓库没有自动更新器；源码更新后需重新构建并替换应用。根目录的 `打开 Ting.command` 优先打开根目录应用副本，其次打开构建输出，**它不会自动重新编译**。
+当前开发构建未做 Developer ID 签名和公证。请只运行可信来源的构建。仓库没有自动更新器；源码更新后需重新构建并替换应用。根目录的 `打开 Ting.command` 优先打开当前版本 `Release/v<version>/macOS-AppleSilicon/` 中的应用，其次打开构建输出，**它不会自动重新编译**。
 
 ### 从源码开发
 
@@ -95,7 +95,7 @@ npm run tauri -- build -- --locked
 python3 -B scripts/release.py --gitleaks /path/to/gitleaks
 ```
 
-发布脚本验证应用与当前提交、源码指纹和资源 SHA256 一致，扫描源码、Git 历史与暂存应用中的凭据，检查内置 Python / native wheels 并逐层签名。输出到 `releases/Ting-v<version>/`，包含源码 ZIP、应用 ZIP、校验和及 Git commit；拒绝覆盖已有输出。脚本不会自动安装或上传。详细流程见 [构建和发布脚本](scripts/README.md)。
+发布脚本验证应用与当前提交、源码指纹和资源 SHA256 一致，扫描源码、Git 历史与暂存应用中的凭据，检查内置 Python / native wheels 并逐层签名。输出到 `Release/v<version>/`（应用位于 `macOS-AppleSilicon/`，源码包位于 `Source/`），包含源码 ZIP、应用 ZIP、校验和及 Git commit；拒绝覆盖已有输出。脚本不会自动安装或上传。详细流程见 [构建和发布脚本](scripts/README.md)。
 
 ### Linux / Windows
 
@@ -246,11 +246,11 @@ npm run check:release
 | Playwright | 35 项通过 |
 | Node 模型 / 队列测试 | 8 项通过 |
 | Rust | 6 项通过，3 项联网测试默认忽略 |
-| QQ Python | 14 项通过 |
+| QQ Python | 18 项通过 |
 | 下载 Python | 15 项通过 |
-| 构建基础设施 | 8 项通过 |
+| 构建基础设施 | 10 项通过 |
 
-共 86 项测试通过。下载测试使用生成的音频，包括 192 kHz / 24 bit FLAC，覆盖截断、损坏、错误时长、凭据隔离和来源标识。队列、账号恢复和大列表交互均有回归覆盖；通过这些测试不意味着所有平台接口和系统组合都已验证。
+共 92 项测试通过。下载测试使用生成的音频，包括 192 kHz / 24 bit FLAC，覆盖截断、损坏、错误时长、凭据隔离和来源标识。队列、账号恢复、旧 QQ 设备缓存升级兼容和大列表交互均有回归覆盖；通过这些测试不意味着所有平台接口和系统组合都已验证。
 
 仓库已配置 [Quality and security 工作流](.github/workflows/ci.yml)，执行格式检查、前端 / 浏览器 / Rust / Python 回归、macOS 原生构建、依赖漏洞检查及 Gitleaks 源码和历史扫描。工作流权限为只读，不会自动发布；**远程 CI 是否通过以 GitHub Actions 的实际运行记录为准**，上述本机结果不代表远程构建或最终安装已完成。
 

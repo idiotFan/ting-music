@@ -20,6 +20,7 @@ resources/downloader/vendor/
 resources/python/
 resources/qq/ting-build-info.json
 .gitnexus/
+Release/
 releases/
 *.log
 *.cookie

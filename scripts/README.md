@@ -44,9 +44,24 @@ npm run tauri -- build -- --locked
 python3 -B scripts/release.py --gitleaks /path/to/gitleaks
 ```
 
-输出到 `releases/Ting-v<version>/`，包含源码 ZIP、macOS 应用 ZIP、SHA256SUMS 与对应 Git commit。脚本要求干净工作区；源码来自该提交的 `git archive`。构建时记录当前提交、源码内容指纹与每个内置资源的 SHA256；同版本旧构建也会被拒绝。应用先复制到暂存目录，核对版本、bundle identifier、构建来源与资源完整性，扫描整个暂存应用的凭据，使用隔离环境验证内置 Python 与 native wheels，再对嵌套原生文件及应用逐层作 ad-hoc 签名并验证。
+输出到项目根目录 `Release/v<version>/`，按目标平台整理：
 
-脚本**不会安装、替换正在运行的应用、修改用户资料或上传 GitHub**。现有输出目录会拒绝覆盖。可用 `--output <dir>` 选择其他位置；`--source-only` 仅生成源码包。
+```text
+Release/v0.8.0/
+├── macOS-AppleSilicon/
+│   ├── 听 · Ting.app
+│   └── Ting-v0.8.0-macOS-AppleSilicon.zip
+├── Source/
+│   └── Ting-v0.8.0-source.zip
+├── SHA256SUMS.txt
+└── release.json
+```
+
+`macOS-AppleSilicon/` 中的应用面向 **macOS 15+、Apple Silicon（arm64）**，保留已签名并验证的 `.app`，可直接在本机打开。`SHA256SUMS.txt` 和 `release.json` 的归档路径均相对于版本目录；后者同时记录 Git commit、最低系统版本和架构。
+
+脚本要求干净工作区；源码来自该提交的 `git archive`。构建时记录当前提交、源码内容指纹与每个内置资源的 SHA256；同版本旧构建也会被拒绝。应用先复制到暂存目录，核对版本、bundle identifier、构建来源与资源完整性，扫描整个暂存应用的凭据，使用隔离环境验证内置 Python 与 native wheels，再对嵌套原生文件及应用逐层作 ad-hoc 签名并验证。
+
+脚本**不会安装、替换正在运行的应用、修改用户资料或上传 GitHub**。现有版本目录会拒绝覆盖。可用 `--output <dir>` 选择其他根目录，仍会建立 `v<version>/`；`--source-only` 保留相同布局，仅生成 `Source/` 和两份顶层校验元数据。`Release/` 和旧的 `releases/` 均被 Git 忽略。
 
 当前签名为 ad-hoc，尚无 Developer ID 公证。面向大众发布需在具备开发者证书的受控流水线中签名与 notarize，不能把私钥或证书放进仓库。
 

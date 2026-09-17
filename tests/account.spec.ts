@@ -493,6 +493,7 @@ test("single click selects without interrupting playback; double click and Enter
     ),
   ).toBe(0);
   await rows.nth(0).locator(".song-title").dblclick();
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
   await expect(page.locator("#now-name")).toHaveText("我的歌曲 1");
   await expect(page.locator("#toggle")).toHaveAttribute("aria-label", "暂停");
   await rows.nth(1).click();

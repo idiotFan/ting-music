@@ -11,7 +11,7 @@ Date: 2026-09-17. Scope: files eligible for Git in the `ting-music` repository, 
 5. README screenshots were visually inspected. They show mock music data and a logged-out interface, with no account identifier, login QR code or credential.
 6. Runtime review confirmed that macOS sessions are persisted in Keychain; Python receives credentials through stdin; QQ authentication response fields are consumed in Rust; the UI does not receive account session objects. The allowed Tauri window operations are restricted to the main window, and production content has an explicit CSP without remote scripts or shell execution permissions.
 
-The final staged tree and first release commit must be scanned again after all parallel implementation and documentation edits. The release gate is responsible for that final snapshot; the initial scan above does not automatically cover later changes.
+The completed initial publication snapshot contained 122 Git files and approximately 712 KB of scan-eligible content. Gitleaks scanned both that snapshot and the first committed history (commit `32b87fb`): **0 leaks**. Later release commits must pass the same source and full-history gate again; the initial result is not a claim about future changes.
 
 ## Application-resource scan
 

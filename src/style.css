@@ -460,6 +460,8 @@ main {
   margin: 10px 0;
 }
 .song-row {
+  -webkit-user-select: none;
+  user-select: none;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 38px 58px;
   gap: 8px;

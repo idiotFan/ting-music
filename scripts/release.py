@@ -72,7 +72,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-only', action='store_true')
     parser.add_argument('--app', type=Path, default=ROOT / 'src-tauri/target/release/bundle/macos/听 · Ting.app')
-    parser.add_argument('--output', type=Path, default=ROOT / 'releases')
+    parser.add_argument('--output', type=Path, default=ROOT / 'Release')
     parser.add_argument('--gitleaks', help='path to an installed Gitleaks binary')
     args = parser.parse_args()
     version = json.loads((ROOT / 'package.json').read_text())['version']
@@ -88,32 +88,39 @@ def main():
     run(scan)
     if not args.source_only and (platform.system() != 'Darwin' or platform.machine() != 'arm64'):
         raise SystemExit('App release packaging supports macOS Apple Silicon only.')
-    output = args.output.resolve() / f'Ting-v{version}'
+    output = args.output.resolve() / f'v{version}'
     if output.exists():
         raise SystemExit('Release destination already exists; choose another --output directory.')
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.ting-release-', dir=output.parent) as temp:
         stage = Path(temp)
-        source = stage / f'Ting-v{version}-source.zip'
+        source_dir = stage / 'Source'
+        source_dir.mkdir()
+        source = source_dir / f'Ting-v{version}-source.zip'
         run(['git', 'archive', '--format=zip', '--prefix=ting-music/', f'--output={source}', revision])
         artifacts = [source]
         if not args.source_only:
             run(['node', 'scripts/preflight.mjs'])
-            app = stage / '听 · Ting.app'
+            platform_dir = stage / 'macOS-AppleSilicon'
+            platform_dir.mkdir()
+            app = platform_dir / '听 · Ting.app'
             run(['ditto', args.app.resolve(), app])
             check_app(app, version, source_state)
             scanner = args.gitleaks or shutil.which('gitleaks') or str(ROOT / 'work/security-tools/gitleaks')
             run([os.sys.executable, '-B', 'scripts/scan-app.py', app, '--gitleaks', scanner])
             sign_ad_hoc(app)
             check_app(app, version, source_state, verify_native=False)
-            archive = stage / f'Ting-v{version}-macOS-AppleSilicon.zip'
+            archive = platform_dir / f'Ting-v{version}-macOS-AppleSilicon.zip'
             run(['ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', app, archive])
             artifacts.append(archive)
-            shutil.rmtree(app)
-        checksums = {item.name: hashlib.sha256(item.read_bytes()).hexdigest() for item in artifacts}
+        checksums = {item.relative_to(stage).as_posix(): hashlib.sha256(item.read_bytes()).hexdigest() for item in artifacts}
         (stage / 'SHA256SUMS.txt').write_text(''.join(f'{digest}  {name}\n' for name, digest in checksums.items()))
         (stage / 'release.json').write_text(json.dumps({'version': version, 'commit': revision,
-            'platform': 'macOS Apple Silicon', 'signing': 'ad-hoc; not notarized', 'sha256': checksums}, indent=2) + '\n')
+            'platform': 'macOS 15+ / Apple Silicon', 'architecture': 'arm64',
+            'minimumSystemVersion': '15.0',
+            'appPath': None if args.source_only else 'macOS-AppleSilicon/听 · Ting.app',
+            'signing': 'none (source only)' if args.source_only else 'ad-hoc; not notarized',
+            'sha256': checksums}, indent=2) + '\n')
         stage.rename(output)
     print(f'Local release archives verified: {output}')
 

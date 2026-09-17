@@ -1,5 +1,6 @@
 """Offline regression tests; dummy credentials only, no account/network writes."""
-import asyncio, sys, unittest
+import asyncio, sys, unittest, tempfile, json
+from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -157,5 +158,71 @@ class FallbackTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '完整版本'):
             self.request()
         self.assertFalse(MatchingClient.requested_audio)
+
+class LegacyDeviceTests(unittest.TestCase):
+    def fixture(self):
+        data = asdict(bridge.Device())
+        data.update(manufacturer='synthetic', host='synthetic-host', first_api_level=35, open_udid2='synthetic-second-id')
+        data['open_udid'] = 'synthetic-stable-id'
+        data['version']['future_field'] = 'synthetic-future-value'
+        return data
+
+    def test_extended_legacy_schema_preserves_identity_without_rewriting_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'device.json'
+            original = json.dumps(self.fixture()).encode()
+            path.write_bytes(original)
+            device = bridge.compatible_device(path)
+            self.assertEqual(device.open_udid, 'synthetic-stable-id')
+            self.assertIsInstance(device.version, bridge.OSVersion)
+            self.assertEqual(path.read_bytes(), original)
+            self.assertFalse(hasattr(device, 'manufacturer'))
+            self.assertFalse(hasattr(device.version, 'future_field'))
+
+    def test_current_schema_keeps_upstream_persistence_and_missing_cache_stays_missing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'device.json'
+            self.assertIsNone(bridge.compatible_device(path))
+            self.assertFalse(path.exists())
+            original = json.dumps(asdict(bridge.Device())).encode()
+            path.write_bytes(original)
+            self.assertIsNone(bridge.compatible_device(path))
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_oversized_or_invalid_cache_never_exposes_file_content(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'device.json'
+            for data in (b'private-invalid-value', b'x' * 65537, b'{"version":"private"}'):
+                path.write_bytes(data)
+                with self.assertRaises(bridge.QqError) as raised:
+                    bridge.compatible_device(path)
+                self.assertNotIn('private', bridge.public_error(raised.exception))
+                self.assertEqual(path.read_bytes(), data)
+
+    def test_qr_and_account_restore_use_legacy_device_without_network_or_file_changes(self):
+        class LocalLogin:
+            def __init__(self, client): self.client = client
+            async def get_qrcode(self, kind):
+                await self.client._context.get_user_agent(bridge.Platform.WEB)
+                return bridge.QR(b'synthetic-image', kind, 'image/png', 'synthetic-identifier')
+            async def check_expired(self):
+                await self.client._context.get_user_agent(bridge.Platform.WEB)
+                return False
+        class LocalClient(bridge.Client):
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+                self.login = LocalLogin(self)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'device.json'
+            original = json.dumps(self.fixture()).encode()
+            path.write_bytes(original)
+            with patch.object(bridge, 'Client', LocalClient):
+                for kind in ('qq', 'wx'):
+                    result = asyncio.run(bridge.main({'operation': 'login_qr_start', 'args': {'kind': kind}, 'devicePath': str(path)}))
+                    self.assertTrue(result['result']['image'].startswith('data:image/png;base64,'))
+                result = asyncio.run(bridge.main({'operation': 'account_status', 'devicePath': str(path),
+                    'credential': {'musicid': 123, 'musickey': 'W_X_dummy', 'login_type': 1}}))
+                self.assertEqual(result['result']['userId'], '123')
+            self.assertEqual(path.read_bytes(), original)
 
 if __name__=='__main__':unittest.main()
