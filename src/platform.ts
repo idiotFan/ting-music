@@ -17,7 +17,9 @@ export const credentialNotice = !isTauri()
     ? "登录凭据保存在此设备的 iOS 钥匙串中，不保存密码。"
     : platform.mac
       ? "登录凭据保存在此 Mac 的 macOS 钥匙串中，不保存密码。"
-      : "登录凭据仅在本次运行中保留，退出应用后需重新登录，不保存密码。";
+      : /Win/.test(navigator.platform) || /Windows/.test(navigator.userAgent)
+        ? "登录凭据保存在此电脑的 Windows 凭据管理器中，不保存密码。"
+        : "登录凭据由系统凭据存储保管，不保存密码。";
 export function loginInstructions(source: string, kind: string) {
   const app =
     source === "qq" ? (kind === "wx" ? "微信" : "手机 QQ") : "网易云音乐 App";
@@ -27,4 +29,6 @@ export function loginInstructions(source: string, kind: string) {
 }
 export const downloadLocation = platform.ios
   ? "文件 App → 浏览 → 我的 iPhone / iPad → 听 · Ting → Ting"
-  : "系统下载目录中的 Ting 文件夹";
+  : /Win/.test(navigator.platform) || /Windows/.test(navigator.userAgent)
+    ? "应用数据目录下的 downloads 文件夹（受系统保护的「下载」目录不可写时自动使用）"
+    : "系统下载目录中的 Ting 文件夹";

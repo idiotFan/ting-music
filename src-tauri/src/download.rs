@@ -49,17 +49,32 @@ fn directory(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     }
     #[cfg(not(target_os = "ios"))]
     {
-        // Prefer the user Downloads folder. On Windows, Controlled Folder Access often
-        // blocks unsigned apps there — fall back to app-local data so downloads still work.
+        // Windows Controlled Folder Access blocks unsigned apps from Documents/Downloads.
+        // Prefer the app's own local data dir first on Windows; elsewhere prefer Downloads.
         let mut candidates: Vec<PathBuf> = Vec::new();
-        if let Ok(dir) = app.path().download_dir() {
-            candidates.push(dir.join("Ting"));
+        #[cfg(target_os = "windows")]
+        {
+            if let Ok(dir) = app.path().app_local_data_dir() {
+                candidates.push(dir.join("downloads"));
+            }
+            if let Ok(dir) = app.path().app_data_dir() {
+                candidates.push(dir.join("downloads"));
+            }
+            if let Ok(dir) = app.path().download_dir() {
+                candidates.push(dir.join("Ting"));
+            }
         }
-        if let Ok(dir) = app.path().app_local_data_dir() {
-            candidates.push(dir.join("downloads"));
-        }
-        if let Ok(dir) = app.path().app_data_dir() {
-            candidates.push(dir.join("downloads"));
+        #[cfg(not(target_os = "windows"))]
+        {
+            if let Ok(dir) = app.path().download_dir() {
+                candidates.push(dir.join("Ting"));
+            }
+            if let Ok(dir) = app.path().app_local_data_dir() {
+                candidates.push(dir.join("downloads"));
+            }
+            if let Ok(dir) = app.path().app_data_dir() {
+                candidates.push(dir.join("downloads"));
+            }
         }
         for folder in candidates {
             if ensure_writable(&folder).is_ok() {
