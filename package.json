@@ -17,7 +17,7 @@
   "dependencies": {
     "@tauri-apps/api": "^2",
     "jsqr": "^1.4.0",
-    "lucide": "^0.468.0",
+    "lucide": "^1.46.0",
     "qrcode": "^1.5.4"
   },
   "devDependencies": {
