@@ -1320,13 +1320,24 @@ button.brand:active {
 }
 
 /* Touch devices put browsing first and keep playback within thumb reach. */
+.mobile-device {
+  --mobile-bottom-safe: env(safe-area-inset-bottom);
+}
+.mobile-device.keyboard-open {
+  --mobile-bottom-safe: 0px;
+}
 .mobile-device body {
   padding: env(safe-area-inset-top) env(safe-area-inset-right)
-    env(safe-area-inset-bottom) env(safe-area-inset-left);
+    var(--mobile-bottom-safe) env(safe-area-inset-left);
   overflow: hidden;
 }
 .mobile-device #app {
-  height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  position: relative;
+  top: var(--mobile-viewport-top, 0px);
+  height: calc(
+    var(--mobile-viewport-height, 100dvh) - env(safe-area-inset-top) -
+      var(--mobile-bottom-safe)
+  );
   max-width: 900px;
 }
 .mobile-device .app-header {
@@ -1538,10 +1549,10 @@ button.brand:active {
   max-width: none;
   position: fixed;
   z-index: 20;
-  inset: 0;
+  inset: var(--mobile-viewport-top, 0px) 0 auto;
   width: 100%;
-  height: 100dvh;
-  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  height: var(--mobile-viewport-height, 100dvh);
+  padding: env(safe-area-inset-top) 0 var(--mobile-bottom-safe);
   border: 0;
 }
 .mobile-device .lyrics-header {
@@ -1552,12 +1563,14 @@ button.brand:active {
 .mobile-device #library-dialog,
 .mobile-device #theme-dialog {
   position: fixed;
-  inset: auto 0 0;
+  inset: auto 0 var(--mobile-keyboard-inset, 0px);
   margin: 0 auto;
   width: min(100%, 520px);
   max-width: none;
-  max-height: calc(100dvh - env(safe-area-inset-top) - 12px);
-  padding: 24px 20px calc(20px + env(safe-area-inset-bottom));
+  max-height: calc(
+    var(--mobile-viewport-height, 100dvh) - env(safe-area-inset-top) - 12px
+  );
+  padding: 24px 20px calc(20px + var(--mobile-bottom-safe));
   border-radius: 22px 22px 0 0;
   border-bottom: 0;
   overflow-y: auto;
@@ -1796,4 +1809,9 @@ button.brand:active {
 }
 .account-actions {
   flex-wrap: wrap;
+}
+
+/* The system keyboard owns the home-indicator area while it is showing. */
+.mobile-device.keyboard-open #toast {
+  bottom: calc(var(--mobile-keyboard-inset, 0px) + 12px);
 }

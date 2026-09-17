@@ -100,7 +100,10 @@ async function resolveRequest(page: Page, operation: string, success = true) {
 }
 
 async function fillLogin(page: Page) {
-  await page.locator("#login-phone").fill(phoneNumber);
+  await page.locator("#login-country").fill("+86");
+  await page.locator("#login-phone").fill("+86 138 0000 0000");
+  await expect(page.locator("#login-country")).toHaveValue("86");
+  await expect(page.locator("#login-phone")).toHaveValue(phoneNumber);
   await page.locator("#login-code").fill(smsCode);
 }
 

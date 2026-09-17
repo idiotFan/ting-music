@@ -43,6 +43,7 @@ import { setupThemes } from "./themes";
 import { setupLyrics } from "./lyrics";
 import { makeLoginQr, verifyOriginalQr, qrPngForSharing } from "./qr";
 import { mountPhoneLogin, type PhoneLoginResult } from "./phone-login";
+import { setupMobileViewport } from "./mobile-viewport";
 import {
   platform,
   mobileDevice,
@@ -284,6 +285,7 @@ function toast(message: string) {
 }
 let toastTimer = 0;
 if (mobileDevice) document.documentElement.classList.add("mobile-device");
+setupMobileViewport(mobileDevice);
 if (isTauri() && platform.mac)
   document.documentElement.classList.add("mac-window");
 $("#app").innerHTML = `

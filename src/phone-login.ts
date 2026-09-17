@@ -16,7 +16,7 @@ export function mountPhoneLogin(
 ) {
   container.innerHTML = `<form id="phone-login-form" autocomplete="on">
     <label for="login-phone">手机号</label>
-    <div class="phone-number-row"><label class="sr-only" for="login-country">国家或地区代码</label><span>+</span><input id="login-country" aria-label="国家或地区代码" value="86" type="tel" inputmode="numeric" autocomplete="tel-country-code" maxlength="3" required/><input id="login-phone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="输入手机号" maxlength="15" required/></div>
+    <div class="phone-number-row"><label class="sr-only" for="login-country">国家或地区代码</label><span>+</span><input id="login-country" aria-label="国家或地区代码" value="86" type="tel" inputmode="numeric" autocomplete="tel-country-code" maxlength="4" required/><input id="login-phone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="输入手机号" maxlength="20" required/></div>
     <label for="login-code">短信验证码</label>
     <div class="phone-code-row"><input id="login-code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="输入验证码" maxlength="6" required/><button id="send-login-code" class="outline" type="button">获取验证码</button></div>
     <button id="phone-login-submit" class="primary" type="submit">登录网易云</button>
@@ -47,7 +47,15 @@ export function mountPhoneLogin(
     phone.disabled = country.disabled = code.disabled = busy;
   }
   [phone, country, code].forEach((input) =>
-    input.addEventListener("input", update),
+    input.addEventListener("input", () => {
+      country.value = country.value.trim().replace(/^\+/, "");
+      phone.value = phone.value.replace(/[\s()-]/g, "");
+      if (country.value && phone.value.startsWith(`+${country.value}`)) {
+        phone.value = phone.value.slice(country.value.length + 1);
+      }
+      code.value = code.value.replace(/\s/g, "");
+      update();
+    }),
   );
   send.onclick = async () => {
     if (send.disabled) return;
