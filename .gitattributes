@@ -1,0 +1,11 @@
+* text=auto
+*.rs text eol=lf
+*.ts text eol=lf
+*.mjs text eol=lf
+*.py text eol=lf
+*.sh text eol=lf
+*.command text eol=lf
+*.png binary
+*.jpg binary
+*.icns binary
+*.ico binary

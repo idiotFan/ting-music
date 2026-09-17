@@ -1,0 +1,52 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "听 · Ting",
+  "version": "0.8.0",
+  "identifier": "com.ting.music.demo",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "听 · Ting",
+        "width": 480,
+        "height": 720,
+        "minWidth": 400,
+        "minHeight": 560,
+        "backgroundColor": "#F7F8F2",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 16,
+          "y": 20
+        }
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.music.126.net https://*.music.163.com https://*.126.net https://*.gtimg.cn https://*.qq.com; media-src 'self' blob: https://*.music.126.net https://*.music.163.com https://*.qq.com; connect-src ipc: http://ipc.localhost https://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app"
+    ],
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../resources/downloader/": "downloader/",
+      "../resources/qq/": "qq/",
+      "../resources/python/": "python/"
+    },
+    "macOS": {
+      "minimumSystemVersion": "15.0"
+    }
+  }
+}

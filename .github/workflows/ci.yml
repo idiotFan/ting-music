@@ -1,0 +1,90 @@
+name: Quality and security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macOS Apple Silicon build and regression
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Prepare reproducible runtime and dependencies
+        run: |
+          test "$(uname -m)" = arm64
+          npm ci
+          node scripts/prepare-desktop.mjs
+          node scripts/check-release.mjs
+          rustup toolchain install stable --profile minimal --component rustfmt
+          rustup default stable
+          brew list ffmpeg >/dev/null 2>&1 || brew install ffmpeg
+      - name: Frontend build and model tests
+        run: |
+          npm run format:check
+          npm run build
+          npm test
+      - name: Browser regression
+        run: |
+          npx playwright install chromium
+          npx playwright test
+      - name: Rust and Python regression
+        run: |
+          node scripts/cargo.mjs fmt --manifest-path src-tauri/Cargo.toml -- --check
+          node scripts/cargo.mjs test --locked --manifest-path src-tauri/Cargo.toml
+          resources/python/bin/python3.12 -I -B tests/qq_bridge_test.py
+          resources/python/bin/python3.12 -I -B tests/download_helper_test.py
+          resources/python/bin/python3.12 -I -B scripts/infrastructure-test.py
+      - name: Build native app
+        run: npm run tauri -- build -- --locked
+      - name: Frontend dependency audit
+        run: npm audit --audit-level=high
+      - name: Python dependency audit
+        run: |
+          resources/python/bin/python3.12 -I -m venv work/audit-env
+          work/audit-env/bin/python -m pip install --disable-pip-version-check pip-audit==2.10.1
+          work/audit-env/bin/python -m pip_audit --no-deps --disable-pip -r resources/qq/requirements.txt
+          work/audit-env/bin/python -m pip_audit --no-deps --disable-pip -r resources/downloader/requirements.txt
+      - name: Upload browser diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: browser-diagnostics
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  secrets:
+    name: Source and history credential scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Install fixed Gitleaks release from source
+        run: go install github.com/zricethezav/gitleaks/v8@v8.30.1
+      - name: Scan release candidates and Git history
+        run: python3 -B scripts/scan-secrets.py --history --gitleaks "$(go env GOPATH)/bin/gitleaks"

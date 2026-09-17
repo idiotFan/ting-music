@@ -1,0 +1,28 @@
+[package]
+name = "ting-music"
+version = "0.8.0"
+description = "A compact player for NetEase Cloud Music and QQ Music"
+authors = ["Ting contributors"]
+edition = "2021"
+
+[lib]
+name = "ting_music_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "cookies"] }
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc"] }
+base64 = "0.22"
+num-bigint = "0.4"
+uuid = { version = "1", features = ["v4"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "io-util", "process", "time"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3.7"
