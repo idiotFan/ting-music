@@ -1329,6 +1329,7 @@ body.lyrics-open #app {
 .mobile-device button,
 .mobile-device .song-row {
   touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 .mobile-device .song-row {
   -webkit-touch-callout: none;
@@ -1351,4 +1352,65 @@ body.lyrics-open #app {
     100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px
   );
   overflow-y: auto;
+}
+
+/* Touch controls retain the compact layout with at least 44px hit areas. */
+.mobile-device .icon-button,
+.mobile-device .row-actions .icon-button {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  flex-shrink: 0;
+}
+.mobile-device button:not(.song-title),
+.mobile-device select,
+.mobile-device input:not([type="range"]) {
+  min-height: 44px;
+}
+.mobile-device .song-row {
+  grid-template-columns: minmax(0, 1fr) 132px;
+  min-height: 72px;
+  gap: 4px;
+  padding: 8px 0;
+}
+.mobile-device .song-duration {
+  display: none;
+}
+.mobile-device .song-row:not(.selected):hover {
+  background: transparent;
+}
+.mobile-device .transport-buttons {
+  gap: 16px;
+}
+.mobile-device #seek {
+  height: 28px;
+}
+.mobile-device .account-note {
+  font-size: 12px;
+  line-height: 1.7;
+}
+.mobile-device .account-subtitle {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.mobile-device dialog h2 {
+  padding: 0 28px;
+}
+.mobile-device #search-source {
+  max-width: 90px;
+}
+.mobile-device .search-submit {
+  padding: 0 8px;
+}
+.mobile-device .row-actions {
+  gap: 0;
+}
+@media (max-width: 360px) {
+  .mobile-device .song-info > img,
+  .mobile-device .song-info > .fallback-cover {
+    display: none;
+  }
+  .mobile-device .transport-buttons {
+    gap: 10px;
+  }
 }

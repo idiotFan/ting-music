@@ -42,6 +42,13 @@ import { PlaybackQueue } from "./playback-queue.mjs";
 import { setupThemes } from "./themes";
 import { setupLyrics } from "./lyrics";
 import { makeLoginQr, verifyOriginalQr } from "./qr";
+import {
+  platform,
+  mobileDevice,
+  credentialNotice,
+  loginInstructions,
+  downloadLocation,
+} from "./platform";
 
 import {
   setupLibrary,
@@ -275,11 +282,8 @@ function toast(message: string) {
   );
 }
 let toastTimer = 0;
-const mobileDevice =
-  /iPhone|iPad|iPod|Android/.test(navigator.userAgent) ||
-  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 if (mobileDevice) document.documentElement.classList.add("mobile-device");
-if (isTauri() && !mobileDevice && /Mac/.test(navigator.platform))
+if (isTauri() && platform.mac)
   document.documentElement.classList.add("mac-window");
 $("#app").innerHTML = `
 <header class="app-header" data-tauri-drag-region><a class="brand" href="#" aria-label="听 首页"><span class="brand-mark">听</span><strong>Ting</strong></a><span class="app-caption" data-tauri-drag-region>音乐，简单一点。</span><button id="theme-button" class="icon-button" aria-label="切换主题" title="主题配色">${icon("Palette")}</button><button id="account-button" class="account-button" aria-label="登录网易云"><span class="avatar">听</span><span id="account-name">登录</span></button></header>
@@ -306,11 +310,17 @@ $("#app").innerHTML = `
     "",
   )}</div><div id="playlist-grid" hidden></div><div class="table-head" hidden></div><div id="songs"></div><button id="more" class="load-more" hidden>加载更多 ${icon("ChevronRight")}</button></section></div></main>
 <input id="file-input" type="file" accept="audio/*,.mp3,.flac,.m4a,.wav,.ogg,.aac" multiple hidden/><div id="toast" role="status"></div>
-<dialog id="account-dialog" aria-labelledby="account-title"><button id="account-close" class="dialog-close icon-button" aria-label="关闭登录">${icon("X")}</button><h2 id="account-title">登录网易云音乐</h2><p class="account-subtitle">用网易云音乐 App 扫码，在手机上确认登录。</p><div class="account-platforms"><button id="account-netease" class="outline">网易云</button><button id="account-qq" class="outline">QQ音乐</button></div><div id="qq-login-method" hidden><button data-qq-kind="qq" class="quiet">QQ扫码</button><button data-qq-kind="wx" class="quiet">微信扫码</button></div><div id="account-content"></div><p id="account-status" role="status"></p><div class="account-actions"><button id="refresh-qr" class="outline">刷新二维码</button><button id="logout" class="outline" hidden>退出登录</button></div><small class="account-note">登录后读取你的歌单，音质按账号权限提供。<br>登录凭据保存在 macOS 钥匙串，不保存密码。</small></dialog>`;
+<dialog id="account-dialog" aria-labelledby="account-title"><button id="account-close" class="dialog-close icon-button" aria-label="关闭登录">${icon("X")}</button><h2 id="account-title">登录网易云音乐</h2><p class="account-subtitle">用网易云音乐 App 扫码，在手机上确认登录。</p><div class="account-platforms"><button id="account-netease" class="outline">网易云</button><button id="account-qq" class="outline">QQ音乐</button></div><div id="qq-login-method" hidden><button data-qq-kind="qq" class="quiet">QQ扫码</button><button data-qq-kind="wx" class="quiet">微信扫码</button></div><div id="account-content"></div><p id="account-status" role="status"></p><div class="account-actions"><button id="refresh-qr" class="outline">刷新二维码</button><button id="logout" class="outline" hidden>退出登录</button></div><small class="account-note">登录后读取你的歌单，音质按账号权限提供。<br>${credentialNotice}</small></dialog>`;
 document.body.insertAdjacentHTML(
   "beforeend",
   `<aside id="lyrics-panel" aria-label="歌词面板" hidden><header class="lyrics-header" data-tauri-drag-region><span data-tauri-drag-region>歌词</span><button id="lyrics-close" class="icon-button" aria-label="收起歌词面板">${icon("X")}</button></header><div class="lyrics-heading"><h2 id="lyrics-title">正在播放</h2><p id="lyrics-artist">音乐响起时，让文字陪你一起听。</p></div><div id="lyrics" class="lyrics" tabindex="0" aria-label="同步歌词" hidden><p class="lyric-placeholder">音乐响起时，让文字陪你一起听。</p></div><button id="lyrics-follow" class="outline" hidden>回到当前歌词</button></aside>`,
 );
+if (mobileDevice) {
+  document
+    .querySelectorAll("[data-tauri-drag-region]")
+    .forEach((el) => el.removeAttribute("data-tauri-drag-region"));
+  $("#download-folder").textContent = "查看保存位置";
+}
 const lyricFollower = setupLyrics(
   audio,
   (index) => {
@@ -472,7 +482,10 @@ function renderSongs() {
       "这里的收藏保存在本机，网易云歌单在「我的歌单」中。",
     ],
     local: ["你的本地唱片架", "导入本地音频，离线也能播放。"],
-    queue: ["播放队列还是空的", "双击一首歌开始播放，或点击歌曲旁的加号。"],
+    queue: [
+      "播放队列还是空的",
+      `${mobileDevice ? "轻点" : "双击"}一首歌开始播放，或点击歌曲旁的加号。`,
+    ],
     playlists: ["我的歌单", "登录后读取你的歌单"],
     playlist: ["歌单暂时没有歌曲", "可以返回我的歌单选择其他歌单。"],
   };
@@ -504,8 +517,8 @@ function renderSongs() {
       next.tabIndex = 0;
       next.setAttribute("role", "group");
       next.setAttribute("aria-label", song.name);
-      next.title = "单击选中，双击播放；回车播放";
-      next.innerHTML = `<span class="row-number"></span><div class="song-info">${coverMarkup(song)}<div><button class="song-title" aria-label="选中 ${esc(song.name)}" aria-pressed="false">${esc(song.name)}</button>${song.localUrl ? "<em>本地</em>" : song.fee === 1 ? "<em>VIP</em>" : ""}<small><span class="source-badge" data-source="${song.source || "netease"}">${sourceName(song)}</span> ${esc(song.artist)}</small></div></div><span class="album">${esc(song.album)}</span><span class="song-duration">${song.duration ? formatTime(song.duration / 1000) : "—"}</span><div class="row-actions"><button class="icon-button favorite" data-favorite="${songKey(song)}" ${song.localUrl ? "disabled" : ""}>${icon("Heart")}</button><button class="icon-button" data-${view === "queue" ? "remove" : "enqueue"}="${songKey(song)}" aria-label="${view === "queue" ? "移出队列" : "加入队列"} ${esc(song.name)}">${icon(view === "queue" ? "X" : "Plus")}</button><button class="icon-button" data-song-menu="${songKey(song)}" aria-label="歌曲操作 ${esc(song.name)}" ${song.localUrl ? "disabled" : ""}>${icon("Ellipsis")}</button></div>`;
+      next.title = mobileDevice ? "轻点播放" : "单击选中，双击播放；回车播放";
+      next.innerHTML = `<span class="row-number"></span><div class="song-info">${coverMarkup(song)}<div><button class="song-title" aria-label="${mobileDevice ? "播放" : "选中"} ${esc(song.name)}" aria-pressed="false">${esc(song.name)}</button>${song.localUrl ? "<em>本地</em>" : song.fee === 1 ? "<em>VIP</em>" : ""}<small><span class="source-badge" data-source="${song.source || "netease"}">${sourceName(song)}</span> ${esc(song.artist)}</small></div></div><span class="album">${esc(song.album)}</span><span class="song-duration">${song.duration ? formatTime(song.duration / 1000) : "—"}</span><div class="row-actions"><button class="icon-button favorite" data-favorite="${songKey(song)}" ${song.localUrl ? "disabled" : ""}>${icon("Heart")}</button><button class="icon-button" data-${view === "queue" ? "remove" : "enqueue"}="${songKey(song)}" aria-label="${view === "queue" ? "移出队列" : "加入队列"} ${esc(song.name)}">${icon(view === "queue" ? "X" : "Plus")}</button><button class="icon-button" data-song-menu="${songKey(song)}" aria-label="歌曲操作 ${esc(song.name)}" ${song.localUrl ? "disabled" : ""}>${icon("Ellipsis")}</button></div>`;
       if (row) row.replaceWith(next);
       row = next;
     }
@@ -562,7 +575,7 @@ async function search(term: string, append = false) {
   try {
     if (!isTauri())
       throw new Error(
-        "云端搜索需要在 Ting 桌面应用中使用；浏览器预览可导入本地音乐。",
+        "云端搜索需要在 Ting 应用中使用；浏览器预览可导入本地音乐。",
       );
     const data = await cloud<{ songs: Song[]; total: number }>(
       "search_songs",
@@ -635,6 +648,7 @@ function updateNow(song: Song) {
   $("#now-artist").textContent = `${sourceName(song)} · ${song.artist}`;
   updateFavorite();
 }
+let preparingPlayback = false;
 async function play(
   song: Song,
   replaceQueue?: Song[],
@@ -645,6 +659,7 @@ async function play(
   preserveNavigation = false,
 ) {
   const serial = ++playSerial;
+  preparingPlayback = true;
   playlistToRemember = playlistContext
     ? {
         item: playlistContext,
@@ -671,8 +686,10 @@ async function play(
     queueExpected = 0;
     playbackQueue.replace(replaceQueue);
   }
-  if (!preserveNavigation && !playbackQueue.start(song, { fromHistory }))
+  if (!preserveNavigation && !playbackQueue.start(song, { fromHistory })) {
+    preparingPlayback = false;
     return;
+  }
   syncAudioLoop();
   save();
   if (view === "queue") renderSongs();
@@ -756,6 +773,8 @@ async function play(
       $("#lyrics").innerHTML =
         '<p class="lyric-placeholder">可以换一首歌，<br>或导入本地音频。</p>';
     toast(e instanceof Error ? e.message : String(e));
+  } finally {
+    if (serial === playSerial) preparingPlayback = false;
   }
 }
 function skip(delta: number, automatic = false) {
@@ -812,7 +831,7 @@ function importFiles(files: FileList | null) {
       id: -(Date.now() + locals.length + imported.length),
       name: file.name.replace(/\.[^.]+$/, ""),
       artist: "本地音乐",
-      album: "从这台电脑导入",
+      album: "从此设备导入",
       cover: "",
       duration: 0,
       fee: 0,
@@ -829,6 +848,7 @@ function importFiles(files: FileList | null) {
 }
 $("#search-form").addEventListener("submit", (e) => {
   e.preventDefault();
+  if (mobileDevice) $("#search").blur();
   void search(($("#search") as HTMLInputElement).value);
 });
 document.addEventListener("click", (e) => {
@@ -911,12 +931,19 @@ document.addEventListener("click", (e) => {
     const song = list().find((s) => songKey(s) === row.dataset.song!);
     if (song) {
       selectSong(songKey(song));
+      if (mobileDevice && e.detail < 2) {
+        if (current && songKey(current) === songKey(song)) {
+          // A second tap must not restart a track or duplicate an in-flight request.
+          if (!preparingPlayback && audio.paused) toggle();
+        } else playSelection(song);
+      }
     }
   }
   if (el.closest("#empty-import"))
     ($("#file-input") as HTMLInputElement).click();
 });
 document.addEventListener("dblclick", (e) => {
+  if (mobileDevice) return;
   const el = e.target as HTMLElement;
   if (el.closest(".row-actions")) return;
   const row = el.closest<HTMLElement>("[data-song]");
@@ -1319,7 +1346,7 @@ async function openAccount() {
   renderAccount();
   $("#account-dialog").dataset.provider = accountSource;
   if (!isTauri()) {
-    $("#account-content").innerHTML = "<p>请在 Ting 桌面应用内登录。</p>";
+    $("#account-content").innerHTML = "<p>请在 Ting 应用内登录。</p>";
     return;
   }
   const source = accountSource,
@@ -1349,7 +1376,7 @@ async function openAccount() {
     "两个平台独立登录，退出当前账号不影响另一个。";
   $("#account-content").innerHTML =
     `<div class="account-profile"><span class="profile-initial">${esc(connected.nickname.slice(0, 1))}</span><h3>${esc(connected.nickname)}</h3><p>UID ${esc(String(connected.userId))}</p></div>`;
-  $("#account-status").textContent = "登录状态保存在此 Mac 的钥匙串中";
+  $("#account-status").textContent = credentialNotice;
   $("#refresh-qr").hidden = true;
   $("#logout").hidden = false;
 }
@@ -1360,10 +1387,7 @@ async function startLogin() {
   qrSource = source;
   const name = sourceName({ source });
   $("#account-title").textContent = `登录${name}`;
-  $(".account-subtitle").textContent =
-    source === "qq"
-      ? `用${qqLoginKind === "wx" ? "微信" : "手机 QQ"}扫码，在手机上确认登录 QQ 音乐。`
-      : "用网易云音乐 App 扫码，在手机上确认登录。";
+  $(".account-subtitle").textContent = loginInstructions(source, qqLoginKind);
   $("#qq-login-method").hidden = source !== "qq";
   document
     .querySelectorAll<HTMLElement>("[data-qq-kind]")
@@ -1448,7 +1472,7 @@ async function pollLogin(key: string, serial: number, source: Source) {
     }
     $("#account-status").textContent =
       data.code === 802
-        ? "已扫码，请在手机上确认登录"
+        ? `已扫码，请在${source === "qq" ? (qqLoginKind === "wx" ? "微信" : "手机 QQ") : "网易云音乐 App"}中确认登录`
         : `等待扫码 · ${source === "qq" ? (qqLoginKind === "wx" ? "请使用微信" : "请使用手机 QQ") : "请使用网易云音乐 App"}`;
   } catch (e) {
     if (serial !== loginSerial) return;
@@ -1657,7 +1681,7 @@ $("#download-current").onclick = async () => {
       `已保存 · ${source} · ${quality} · ${result.format.toUpperCase()} · ${detail}`;
     $("#download-status").title = result.path;
     toast(
-      `${result.filename} 已保存到 Downloads/Ting${result.warnings.length ? " · " + result.warnings.join("；") : ""}`,
+      `${result.filename} 已保存到${downloadLocation}${result.warnings.length ? " · " + result.warnings.join("；") : ""}`,
     );
   } catch (e) {
     $("#download-status").textContent = "下载未完成，可点击下载按钮重试";
@@ -1667,5 +1691,7 @@ $("#download-current").onclick = async () => {
     updateDownloadButton();
   }
 };
-$("#download-folder").onclick = () =>
-  void invoke("open_download_folder").catch((e) => toast(String(e)));
+$("#download-folder").onclick = () => {
+  if (mobileDevice) toast(`请前往${downloadLocation}查看下载文件`);
+  else void invoke("open_download_folder").catch((e) => toast(String(e)));
+};

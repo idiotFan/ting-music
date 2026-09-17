@@ -82,7 +82,7 @@ test("local audio plays offline, seeks, pauses, skips and ends without errors", 
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
-  await expect(page.locator("#error")).toContainText("桌面应用");
+  await expect(page.locator("#error")).toContainText("Ting 应用");
   await context.setOffline(true);
   const rate = 22050,
     seconds = 8;

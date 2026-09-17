@@ -144,9 +144,12 @@ test("QR exact pixel decode, login states, personal playlists, full queue, quali
   await page.evaluate(() => {
     (window as any).__status = 802;
   });
-  await expect(page.locator("#account-status")).toContainText("手机上确认", {
-    timeout: 5000,
-  });
+  await expect(page.locator("#account-status")).toContainText(
+    "网易云音乐 App中确认",
+    {
+      timeout: 5000,
+    },
+  );
   await page.evaluate(() => {
     (window as any).__status = 803;
   });

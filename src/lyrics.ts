@@ -1,4 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { mobileDevice } from "./platform";
 export function setupLyrics(
   audio: HTMLAudioElement,
   seek: (index: number) => void,
@@ -53,7 +54,8 @@ export function setupLyrics(
     resizing = true;
     toggle.disabled = close.disabled = true;
     try {
-      if (isTauri()) await invoke("set_lyrics_panel", { open });
+      if (isTauri() && !mobileDevice)
+        await invoke("set_lyrics_panel", { open });
       panel.hidden = box.hidden = !open;
       document.body.classList.toggle("lyrics-open", open);
       toggle.setAttribute("aria-expanded", String(open));
