@@ -132,4 +132,4 @@ QQ 协议请求、扫码轮询、会员音源解析与下载校验已迁至 Rust
 - iOS 16+ arm64 开发包成功构建、导出并安装到连接的 iPhone。签名校验通过、描述文件包含目标设备。Xcode 27 的 SwiftRs C 导出问题通过可追踪的本地源码补丁处理，详情见 `src-tauri/compat/swift-rs/TING-PATCH.md`。
 - npm audit：0 已知漏洞。Git 候选文件与完整历史凭据扫描通过。Rust 锁文件共 492 个第三方包经 OSV 核查：glib 0.18.5 的已知问题仅在未发布的 Linux 依赖树；其余为 paste/proc-macro-error/unic 系列的上游停止维护告警。不能将此称为整个 Rust 依赖树“零告警”。
 
-首次 iOS 启动需要用户在系统设置中信任开发者身份。用户完成信任后发现闪退；真机崩溃日志定位到 iOS 27 Scene 生命周期检查，已增加 Scene manifest 并启用 Tao 内置 Scene delegate。修复后的真机冷启动正在验证。手机上的完整扫码确认、连续前台播放及锁屏/后台行为尚未完成验收；首版不承诺后台播放。在线回归没有增删用户云端歌单。开发签名仅适用于授权设备且会过期，不能用于普通用户分发。
+首次 iOS 启动需要用户在系统设置中信任开发者身份。用户完成信任后发现闪退；真机崩溃日志定位到 iOS 27 Scene 生命周期检查，已增加 Scene manifest 并启用 Tao 内置 Scene delegate。启用后还复现了 Tao 0.35.3 返回 Scene configuration 时的 use-after-free，已固定官方修复提交并声明静态 Scene configuration；完整修复后的真机冷启动正在验证。手机上的完整扫码确认、连续前台播放及锁屏/后台行为尚未完成验收；首版不承诺后台播放。在线回归没有增删用户云端歌单。开发签名仅适用于授权设备且会过期，不能用于普通用户分发。

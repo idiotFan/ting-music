@@ -38,3 +38,5 @@ security-framework = "3.7"
 # Local source is upstream 1.0.8 plus the documented build-helper fix.
 [patch.crates-io]
 swift-rs = { path = "compat/swift-rs" }
+# Official upstream fix for iOS UISceneConfiguration use-after-free (tao#1245).
+tao = { git = "https://github.com/tauri-apps/tao", rev = "f2163508104413ef0609178dcebdd5803b496211" }
