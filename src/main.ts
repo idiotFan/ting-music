@@ -229,7 +229,7 @@ const playbackQueue = new PlaybackQueue(restore("ting.queue"));
 let view: View = "discover",
   current: Song | undefined,
   selectedSongId: string | undefined,
-  query = "陈绮贞",
+  query = "ChiliChill",
   offset = 0,
   total = 0,
   busy = false,
