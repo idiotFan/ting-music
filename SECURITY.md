@@ -4,9 +4,9 @@ Ting connects directly to NetEase Cloud Music and QQ Music. It does not operate 
 
 ## Account credentials
 
-- On macOS, the Rust backend stores platform sessions in the system Keychain. The existing service identifier is `com.ting.music.demo`; changing it would change the storage namespace for existing users.
+- On macOS and iOS, the Rust backend stores platform sessions in the system Keychain. The existing service identifier is `com.ting.music.demo`; changing it would change the storage namespace for existing users.
 - Account passwords are not requested or stored. Scan a login QR code and confirm authorization in the platform's mobile application.
-- QQ credentials and download inputs pass to the bundled Python helpers through standard input, not command-line arguments. Helper authentication results are consumed by Rust, not returned to the web interface. Downloads use only Ting's current account sessions; they do not read another player's account files or ambient `.netrc` credentials.
+- QQ and download networking run directly in Rust. Authentication results stay in the backend and are not returned to the web interface. No Python helper or runtime is bundled. Downloads use only Ting's current account sessions; they do not read another player's account files or ambient `.netrc` credentials.
 - Playback requires a short-lived audio URL in the web view. Do not publish audio URLs, network captures, live QR codes, or account cookies when reporting a problem.
 - Logout removes the corresponding saved session. Credentials already held by a request that started before logout may remain in that request until it finishes or times out.
 

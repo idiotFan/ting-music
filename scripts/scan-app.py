@@ -11,15 +11,6 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-# Each file was independently checked byte-for-byte against its hash-locked PyPI wheel.
-PUBLIC_MATCHES = {
-    'qq/vendor/cryptography/hazmat/bindings/_rust/openssl/hpke.pyi': (
-        'a7f8462e7e981fe11aac91755796d4b14b638a9be2100a5c4793b4b141c92ed7', 'generic-api-key', {(77, 77), (101, 101)}),
-    'qq/vendor/qh3/quic/configuration.py': (
-        '24543569eb120e7696c27ef174ab3434b65245304616c339653365c75dc9edab', 'private-key', {(220, 222)}),
-    'qq/vendor/qqmusic_api/utils/qimei.py': (
-        '09331eddb65ea5b5d862260727cefc40d2779d5d337ee6bc26f4b424f8c9e407', 'generic-api-key', {(30, 30)}),
-}
 
 
 def known_public_match(finding, resources):
@@ -29,11 +20,7 @@ def known_public_match(finding, resources):
     except ValueError:
         return False
     bounds = (finding['StartLine'], finding['EndLine'])
-    if name in PUBLIC_MATCHES:
-        digest, rule, lines = PUBLIC_MATCHES[name]
-        return (finding['RuleID'] == rule and bounds in lines
-                and hashlib.sha256(path.read_bytes()).hexdigest() == digest)
-    if name == 'qq/ting-build-info.json' and finding['RuleID'] == 'generic-api-key' and bounds[0] == bounds[1]:
+    if name == 'build/ting-build-info.json' and finding['RuleID'] == 'generic-api-key' and bounds[0] == bounds[1]:
         line = path.read_text().splitlines()[bounds[0] - 1]
         return re.fullmatch(r'\s*"[^"\\]+": "[a-f0-9]{64}",?\s*', line) is not None
     return False

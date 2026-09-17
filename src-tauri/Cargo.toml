@@ -1,6 +1,6 @@
 [package]
 name = "ting-music"
-version = "0.8.0"
+version = "0.9.0"
 description = "A compact player for NetEase Cloud Music and QQ Music"
 authors = ["Ting contributors"]
 edition = "2021"
@@ -22,7 +22,19 @@ cbc = { version = "0.1", features = ["alloc"] }
 base64 = "0.22"
 num-bigint = "0.4"
 uuid = { version = "1", features = ["v4"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "io-util", "process", "time"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "io-util", "time"] }
+unicode-normalization = "0.1"
+unicode-casefold = "0.2"
+regex = "1"
+md-5 = "0.10"
+symphonia = { version = "0.5.5", default-features = false, features = ["flac", "mp3"] }
+lofty = "0.22.4"
+time = "0.3"
 
-[target.'cfg(target_os = "macos")'.dependencies]
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 security-framework = "3.7"
+
+# Xcode 27 internalizes SwiftRs C exports inside Tauri's static archive.
+# Local source is upstream 1.0.8 plus the documented build-helper fix.
+[patch.crates-io]
+swift-rs = { path = "compat/swift-rs" }

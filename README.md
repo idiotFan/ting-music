@@ -2,7 +2,7 @@
 
 一个小窗口里的网易云音乐 / QQ 音乐第三方桌面播放器。使用 Tauri v2、TypeScript 和 Rust，支持双账号、混合来源的本机歌单、同步歌词与本地音频播放。
 
-**当前源码版本：0.8.0；桌面交付目标为 macOS 15 及以上、Apple Silicon。** 应用内置运行环境，Linux、Windows、iOS 和 Android 尚未完成移植。本版本修复了审查发现的队列、账号恢复、下载会话、来源标签和大列表热点问题；审查背景见 [实现质量审查](docs/REVIEW.md)。
+**当前源码版本：0.9.0；桌面交付目标为 macOS 15 及以上、Apple Silicon。** QQ 接口与下载已迁移到 Rust，应用不再携带 Python。iOS 16+ 开发签名真机版已完成构建与安装，功能验收中；Linux、Windows 和 Android 尚未完成发行适配。迁移范围与真机构建方法见 [Rust 迁移与 iOS](docs/RUST-MIGRATION.md)。
 
 ![小窗口播放器与右侧歌词](docs/assets/lyrics-panel.png)
 
@@ -41,13 +41,13 @@
 
 应用包面向 **macOS 15 及以上的 Apple Silicon Mac**。解压后，将 `听 · Ting.app` 放到「应用程序」并打开。
 
-发布包内置固定版本 **CPython 3.12.14**、QQ / 下载依赖及 miniaudio 解码器。运行应用不需要额外安装 Homebrew、Python 或 FFmpeg；发布版不会回退到机器上的其他 Python。内置资源缺失时会提示重新安装完整应用。
+发布包使用原生 Rust 网络、音频校验和标签模块，不需要 Homebrew、Python 或 FFmpeg，也不会启动 Python 子进程。
 
 当前开发构建未做 Developer ID 签名和公证。请只运行可信来源的构建。仓库没有自动更新器；源码更新后需重新构建并替换应用。根目录的 `打开 Ting.command` 优先打开当前版本 `Release/v<version>/macOS-AppleSilicon/` 中的应用，其次打开构建输出，**它不会自动重新编译**。
 
 ### 从源码开发
 
-在上述 macOS / 芯片环境准备 Node.js 22、npm、Rust stable 和 Xcode Command Line Tools。资源准备的引导步骤需要开发机的 `python3`，之后使用下载并校验的内置 Python。在项目目录执行：
+在上述 macOS / 芯片环境准备 Node.js 22、npm、Rust stable 和 Xcode Command Line Tools。应用构建无需 Python；可选发布和凭据扫描脚本使用开发机的 `python3`。在项目目录执行：
 
 ```sh
 npm ci
@@ -55,13 +55,7 @@ npm run prepare:desktop
 npm run tauri dev
 ```
 
-首次构建需要联网下载前端、Rust、CPython 和 Python 依赖。`prepare:desktop` 从 Astral 官方 `python-build-standalone` 发布下载固定运行时，按锁文件校验 SHA256 和字节数；然后从官方 PyPI 按固定版本及文件哈希安装 wheel，并为 QQMusicApi 应用 WEB / DESKTOP 会员认证兼容补丁。依赖先在临时目录验证，成功后才替换。**首次开发或构建前必须完成此步骤。**
-
-已准备资源时可离线检查：
-
-```sh
-node scripts/preflight.mjs
-```
+首次构建需要联网下载 npm 与 Cargo 锁定的依赖。`prepare:desktop` 预取 Rust 依赖；构建前自动记录源码和许可文件指纹。
 
 只预览网页界面：
 
@@ -85,7 +79,7 @@ npm run tauri -- build -- --locked
 src-tauri/target/release/bundle/macos/听 · Ting.app
 ```
 
-构建前自动检查运行时、依赖、认证补丁及各处版本号，并记录源码与内置资源指纹。构建不会自动覆盖 `/Applications` 或根目录的旧 `.app`。运行产物前请核对路径，避免打开旧版本。
+构建前自动检查版本号与源码候选文件，并记录源码和内置资源指纹。构建不会自动覆盖 `/Applications` 或根目录的旧 `.app`。运行产物前请核对路径，避免打开旧版本。
 
 生成可核对来源的交付包时，先完成回归、审查并提交代码，再从干净提交构建：
 
@@ -95,11 +89,11 @@ npm run tauri -- build -- --locked
 python3 -B scripts/release.py --gitleaks /path/to/gitleaks
 ```
 
-发布脚本验证应用与当前提交、源码指纹和资源 SHA256 一致，扫描源码、Git 历史与暂存应用中的凭据，检查内置 Python / native wheels 并逐层签名。输出到 `Release/v<version>/`（应用位于 `macOS-AppleSilicon/`，源码包位于 `Source/`），包含源码 ZIP、应用 ZIP、校验和及 Git commit；拒绝覆盖已有输出。脚本不会自动安装或上传。详细流程见 [构建和发布脚本](scripts/README.md)。
+发布脚本验证应用与当前提交、源码指纹和资源 SHA256 一致，扫描源码、Git 历史与暂存应用中的凭据，拒绝残留 Python 资源并逐层签名。输出到 `Release/v<version>/`（应用位于 `macOS-AppleSilicon/`，源码包位于 `Source/`），包含源码 ZIP、应用 ZIP、校验和及 Git commit；拒绝覆盖已有输出。脚本不会自动安装或上传。详细流程见 [构建和发布脚本](scripts/README.md)。
 
 ### Linux / Windows
 
-Tauri 支持这些平台，本项目当前只配置并检查 macOS `app` 产物。其他平台仍需准备对应运行时和 Python native wheels、实现凭据持久化、适配打包与系统 WebView 音频能力。移动端还需要重新设计后台播放、系统媒体控制、文件权限和当前 Python 助手的集成方式；不能直接把桌面安装包转换成手机应用。
+Tauri 支持这些平台，本项目当前只配置并检查 macOS `app` 产物。Rust 迁移已消除 Python 运行时和 native wheels 的移植障碍。其他平台仍需实现凭据持久化、适配打包与系统 WebView 音频能力。iOS 首版提供手机布局、钥匙串和沙盒下载；原生后台播放、锁屏控制与同机扫码替代流程仍需后续实现。
 
 ## 使用说明
 
@@ -147,7 +141,7 @@ Tauri 支持这些平台，本项目当前只配置并检查 macOS `app` 产物�
 
 实际音源为 MP3 时保留 `.mp3`，不转码成伪无损。文件写入歌曲、歌手、专辑、年份、封面和歌词；缺失封面或歌词会提示。当前只嵌入平台返回的有效 JPEG 封面，其他图片格式会提示封面不可用，不影响合格音频的保存。同名文件自动加序号，保留已有音频和侧边文件。
 
-下载检查返回字节数、可用的 MD5、音频格式和时长，再用内置 miniaudio 分块解码整个音频并核对解码帧数；试听、截断或无法完整解码的文件不会作为成功结果保存。单曲上限 512 MiB，网络与解码均有超时；临时文件由后端管理和清理。音源、封面使用独立无账号 Cookie 的 HTTPS 客户端，仅访问已知平台 CDN。
+下载检查返回字节数、可用的 MD5、音频格式和时长，再用 Rust Symphonia 分块解码整个音频并核对解码帧数；试听、截断或无法完整解码的文件不会作为成功结果保存。单曲上限 512 MiB，网络与解码均有超时；临时文件由后端管理和清理。音源、封面使用独立无账号 Cookie 的 HTTPS 客户端，仅访问已知平台 CDN。
 
 音频标签和来源 JSON 分别记录原歌曲平台 / ID 与实际音源平台 / ID；网易云歌曲使用 QQ 补源时，两套标识都保留。来源 JSON 不包含登录凭据或签名音源 URL。
 
@@ -180,11 +174,11 @@ WebView 页面（TypeScript / CSS）
   ├─ HTMLAudioElement：在线音源 / 本地文件播放
   └─ Tauri IPC → Rust
        ├─ 网易云 WEAPI、钥匙串、原生窗口操作
-       ├─ QQ 一次性 Python 助手 → QQMusicApi
-       └─ 下载一次性 Python 助手 → 校验与写入文件
+       ├─ QQ Rust 协议接口 → 登录、搜索、歌单与会员音源
+       └─ Rust 下载 → Symphonia 全流校验、Lofty 标签与原子保存
 ```
 
-生产应用加载打包的前端静态资源，不启动本地 HTTP API 服务。Vite 仅用于开发。QQ 请求会启动独立 Python 子进程，请求完成后退出；没有常驻 Python 服务，但连续请求有进程启动开销。凭据通过子进程标准输入传递。
+生产应用加载打包的前端静态资源，不启动本地 HTTP API 服务。Vite 仅用于开发。QQ 与下载请求直接在 Rust 中执行，复用 HTTP 连接；凭据只在后端内存和系统钥匙串中保存。
 
 ```text
 ting-music/
@@ -198,20 +192,19 @@ ting-music/
 │   ├── qr.ts                 # 二维码生成、适配和解码校验
 │   ├── model.mjs             # 歌曲标识、歌词解析、随机队列
 │   └── style.css
-├── src-tauri/src/            # Rust IPC、平台接口、运行时、下载与窗口
-├── resources/
-│   ├── qq/                   # QQ Python 助手与固定依赖清单
-│   ├── downloader/           # 下载、全流校验与来源标签
-│   └── python/               # 构建时生成的固定 CPython 运行时
-├── scripts/                 # 依赖锁、资源准备、凭据扫描及发布验证
+├── src-tauri/src/            # Rust IPC、双平台协议、下载与音频校验
+├── src-tauri/tauri.ios.conf.json # iOS 配置
+├── resources/licenses/      # 随应用交付的第三方许可
+├── resources/build/         # 构建时生成的来源指纹
+├── scripts/                 # 构建、iOS 工程准备、凭据扫描及发布验证
 ├── .github/workflows/ci.yml  # 回归、原生构建、漏洞与历史凭据扫描
-├── tests/                   # 前端、Rust 外的 Python 回归
+├── tests/                   # 前端与手机布局回归
 ├── docs/                    # 截图、验证历史与审查结果
 ├── THIRD_PARTY_NOTICES.md
 └── 打开 Ting.command
 ```
 
-`vendor/` 由准备脚本生成，不提交 Git；`node_modules/`、`dist/`、`work/`、Rust `target/`、`.app`、测试输出及本地凭据同样排除在 Git 之外。
+`node_modules/`、`dist/`、`work/`、Rust `target/`、`.app`、测试输出及本地凭据同样排除在 Git 之外。
 
 现有应用标识仍是 `com.ting.music.demo`，用于兼容既有钥匙串和应用数据。修改它会影响已有用户数据的读取，不能只为去掉 demo 字样直接更换。
 
@@ -231,36 +224,21 @@ npm test
 npx playwright test
 node scripts/cargo.mjs fmt --manifest-path src-tauri/Cargo.toml -- --check
 node scripts/cargo.mjs test --locked --manifest-path src-tauri/Cargo.toml
-resources/python/bin/python3.12 -I -B tests/qq_bridge_test.py
-resources/python/bin/python3.12 -I -B tests/download_helper_test.py
-resources/python/bin/python3.12 -I -B scripts/infrastructure-test.py
+python3 -B scripts/infrastructure-test.py
 npm run check:release
 ```
 
 修改前端后可执行 `npm run format` 统一格式。Playwright 自动启动 Vite；macOS 安装了 Google Chrome 时优先使用该浏览器，也可设置 `PLAYWRIGHT_CHROMIUM_EXECUTABLE`。公开二维码 fixture 为合成测试数据。
 
-2026-09-17，0.8.0 本轮本地回归记录：
+0.9.0 的重写回归覆盖网络鉴权、会员音质、歌单权限、下载校验、来源标签和无覆盖保存；原有浏览器回归继续保留，并增加 iPhone 布局与 Mac 顶栏检查。具体执行结果和实测边界见 [迁移记录](docs/RUST-MIGRATION.md)。
 
-| 检查 | 结果 |
-| --- | --- |
-| Playwright | 35 项通过 |
-| Node 模型 / 队列测试 | 8 项通过 |
-| Rust | 6 项通过，3 项联网测试默认忽略 |
-| QQ Python | 18 项通过 |
-| 下载 Python | 15 项通过 |
-| 构建基础设施 | 10 项通过 |
-
-共 92 项测试通过。下载测试使用生成的音频，包括 192 kHz / 24 bit FLAC，覆盖截断、损坏、错误时长、凭据隔离和来源标识。队列、账号恢复、旧 QQ 设备缓存升级兼容和大列表交互均有回归覆盖；通过这些测试不意味着所有平台接口和系统组合都已验证。
-
-仓库已配置 [Quality and security 工作流](.github/workflows/ci.yml)，执行格式检查、前端 / 浏览器 / Rust / Python 回归、macOS 原生构建、依赖漏洞检查及 Gitleaks 源码和历史扫描。工作流权限为只读，不会自动发布；**远程 CI 是否通过以 GitHub Actions 的实际运行记录为准**，上述本机结果不代表远程构建或最终安装已完成。
-
-本轮没有实际云端歌单写入或重新扫码登录，相关行为使用脱敏模拟响应和权限 / 参数检查验证。此前曾在本机验证 QQ 会员播放与完整音源下载，不能据此宣称本轮全部线上流程已重测。原生窗口、缩放、全屏、多显示器及全新 Mac 安装仍需相应环境验证。
+CI 执行格式、前端 / 浏览器 / Rust / 发布脚本回归、macOS 构建及源码和历史凭据扫描。联网测试默认忽略，须显式运行；真实云端歌单写入和新账号扫码完成不能用离线测试结果代替。
 
 ## 常见问题
 
 **为什么 QQ 已登录却没有高音质？**
 
-先确认登录的是持有会员的账号，再查看播放区的实际返回档位。准备资源脚本中的认证补丁是必要条件；旧构建或直接使用未补丁的 QQMusicApi 可能缺少会员认证参数。具体歌曲仍受账号权限、版权和平台接口影响。
+先确认登录的是持有会员的账号，再查看播放区的实际返回档位。Rust 适配器在 WEB / DESKTOP 请求中携带会员认证参数，并保留音源 MID、歌曲类型和规范 GUID。具体歌曲仍受账号权限、版权和平台接口影响。
 
 **为什么换了源码，界面还是旧的？**
 
@@ -284,8 +262,8 @@ npm run check:release
 
 ## 已知限制与贡献
 
-0.8.0 已处理审查中的六项问题，并补充账号 / 队列回归、下载校验、内置运行时、CI 与发布校验。完整范围和验证边界见 [审查记录](docs/REVIEW.md) 与 [验证历史](docs/VALIDATION.md)。当前仍未完成跨平台发行、自动更新、Developer ID 公证、跨平台凭据持久化和本机数据迁移工具。
+0.8.0 的审查修复继续保留，0.9.0 将 QQ 与下载迁到 Rust 并增加 iOS 真机构建。完整范围和验证边界见 [审查记录](docs/REVIEW.md) 与 [验证历史](docs/VALIDATION.md)。当前仍未完成跨平台发行、自动更新、Developer ID 公证、跨平台凭据持久化和本机数据迁移工具。
 
 提交问题时请提供系统、应用版本、启动路径、歌曲所属平台、期望行为和复现步骤；请勿附带 cookie、登录二维码、会员凭据或带签名的音源地址。修改平台接口时，请增加脱敏测试，并注明哪些路径经过真实验证、哪些仅使用模拟响应。
 
-项目自身尚未指定统一开源许可证。第三方组件及 QQMusicApi 兼容补丁说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。历史验证记录见 [docs/VALIDATION.md](docs/VALIDATION.md)。
+项目自身尚未指定统一开源许可证。第三方组件及协议参考说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。历史验证记录见 [docs/VALIDATION.md](docs/VALIDATION.md)。

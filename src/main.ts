@@ -275,7 +275,11 @@ function toast(message: string) {
   );
 }
 let toastTimer = 0;
-if (isTauri() && /Mac/.test(navigator.platform))
+const mobileDevice =
+  /iPhone|iPad|iPod|Android/.test(navigator.userAgent) ||
+  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+if (mobileDevice) document.documentElement.classList.add("mobile-device");
+if (isTauri() && !mobileDevice && /Mac/.test(navigator.platform))
   document.documentElement.classList.add("mac-window");
 $("#app").innerHTML = `
 <header class="app-header" data-tauri-drag-region><a class="brand" href="#" aria-label="听 首页"><span class="brand-mark">听</span><strong>Ting</strong></a><span class="app-caption" data-tauri-drag-region>音乐，简单一点。</span><button id="theme-button" class="icon-button" aria-label="切换主题" title="主题配色">${icon("Palette")}</button><button id="account-button" class="account-button" aria-label="登录网易云"><span class="avatar">听</span><span id="account-name">登录</span></button></header>

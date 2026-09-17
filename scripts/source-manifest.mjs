@@ -27,7 +27,7 @@ export function resourceManifest() {
     for (const item of readdirSync(folder, { withFileTypes: true })) {
       const path = resolve(folder, item.name);
       const name = relative(resources, path).split('\\').join('/');
-      if (name === 'qq/ting-build-info.json') continue;
+      if (name === 'build/ting-build-info.json') continue;
       if (item.isDirectory()) walk(path);
       else {
         if (/(^|\/)(?:\.env(?:\..*)?|credentials(?:\..*)?\.json|(?:.*_)?cookies?\.txt|[^/]+\.(?:key|p12|pfx))$/i.test(name)) {
@@ -37,7 +37,7 @@ export function resourceManifest() {
       }
     }
   }
-  for (const group of ['python', 'qq', 'downloader']) walk(resolve(resources, group));
+  for (const group of ['licenses']) walk(resolve(resources, group));
   return hashes;
 }
 if (process.argv.includes('--json')) console.log(JSON.stringify(sourceManifest()));

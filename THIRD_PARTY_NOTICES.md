@@ -34,52 +34,24 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ## Project licensing and dependency records
 
-Ting has not yet selected a single license for its own source code. Publishing this repository does not assign a new license to Ting or replace the licenses of its dependencies. The notices below identify the components used by version 0.8.0; the license texts shipped by those components remain authoritative.
+Ting has not selected a single license for its own source. Dependency licenses remain authoritative. JavaScript packages are locked in `package-lock.json`; Rust packages in `src-tauri/Cargo.lock`.
 
-JavaScript versions are locked in `package-lock.json`; Rust versions are locked in `src-tauri/Cargo.lock`. Python versions are pinned in `resources/qq/requirements.txt` and `resources/downloader/requirements.txt`, with official PyPI distribution hashes recorded in `scripts/dependencies-lock.json`. Generated `vendor/` and `resources/python/` directories are excluded from Git and included in prepared application bundles.
+Version 0.9.0 no longer bundles CPython, QQMusicApi, requests, mutagen, miniaudio or Python wheels. The earlier integration remains available in the v0.8.0 source history.
 
-## Frontend and Rust dependencies
+## Protocol reference
 
-- Tauri: MIT / Apache-2.0.
-- Lucide: ISC.
-- QRCode (`node-qrcode`): MIT.
-- jsQR: Apache-2.0.
-- `security-framework`: MIT / Apache-2.0.
+The new Rust QQ adapter uses [L-1124/QQMusicApi 0.7.3](https://github.com/L-1124/QQMusicApi) as a protocol reference for endpoint names, request fields and QR authorization states. QQMusicApi is GPL-3.0-or-later. Its Python implementation and compatibility patch are no longer shipped. The Rust adapter preserves WEB/DESKTOP membership fields and uses the service's plain Base64 LRC response rather than translating the QRC cipher.
 
-Other direct and transitive dependency notices are provided by their packages. Preserve the upstream license and notice files when preparing or redistributing a bundle.
+## Native audio and other dependencies
 
-## QQMusicApi 0.7.3
+- Symphonia 0.5.5: MPL-2.0. Used unmodified for full-stream FLAC/MP3 verification. Source: https://github.com/pdeljanov/Symphonia/tree/6d533f26150953a882a6a111ebd13f0abf7129d5 . License is included in `resources/licenses/Symphonia-MPL-2.0.txt`.
+- Lofty 0.22.4: MIT OR Apache-2.0. Used for audio properties and metadata. Source: https://github.com/Serial-ATA/lofty-rs/tree/d9eb83ba614001973f9ba3663c9f3e10dd27a702 . Both license texts are included in `resources/licenses/`.
+- Unicode normalization / case folding: MIT OR Apache-2.0, per locked crate metadata.
+- Tauri and security-framework: MIT / Apache-2.0.
+- Lucide: ISC. QRCode (node-qrcode): MIT. jsQR: Apache-2.0.
 
-Source: [L-1124/QQMusicApi](https://github.com/L-1124/QQMusicApi). The installed `qqmusic_api_python-0.7.3.dist-info/METADATA` identifies GPL-3.0-or-later; its full license is retained in `licenses/LICENSE` under that metadata directory.
+Transitive dependency notices are supplied with their upstream packages. FFmpeg is only used to generate synthetic regression fixtures on development machines; it is neither bundled nor invoked by Ting. Python 3 remains optional development tooling for release packaging and credential scans, not an application dependency.
 
-The library is installed into `resources/qq/vendor/qqmusic_api` by `scripts/prepare-resources.py`. Ting's integration is in `resources/qq/bridge.py` and `src-tauri/src/qq.rs`.
+## swift-rs compatibility copy
 
-The reproducible local compatibility patch in `core/versioning.py` carries the current credential's `authst` and `tmeLoginType` in WEB / DESKTOP CGI requests, alongside the existing UIN and CSRF fields. This prevents authenticated song URL requests from losing their membership session. The adapter also preserves song type, selects quality independently of response ordering, and uses the current Ting account for download matching. Tests use dummy credentials; no account cookies or credentials are distributed.
-
-The exact patch is maintained in the preparation script and verified before builds. This repository does not describe the generated QQMusicApi dependency as unmodified upstream code.
-
-## Download and audio verification dependencies
-
-`resources/downloader/library_tools.py` now contains explicit-session NetEase requests, restricted artwork fetching and metadata writing. The old standalone music-library CLI and implicit reads of musicfox credential files have been removed. `download_one.py` uses download plans supplied by the Rust backend and validates files before publishing them.
-
-The following licenses were checked against the installed pinned packages' metadata and license files:
-
-| Component | Version | License | Retained license file under `resources/downloader/vendor/` |
-| --- | --- | --- | --- |
-| requests | 2.33.0 | Apache-2.0 | `requests-2.33.0.dist-info/licenses/LICENSE`, `NOTICE` |
-| mutagen | 1.47.0 | GPL-2.0-or-later | `mutagen-1.47.0.dist-info/COPYING` |
-| miniaudio Python bindings | 1.71 | MIT | `miniaudio-1.71.dist-info/licenses/LICENSE` |
-| cffi | 2.1.1 | MIT-0, subject to component-specific notices | `cffi-2.1.1.dist-info/licenses/LICENSE` |
-| pycparser | 3.0 | BSD-3-Clause | `pycparser-3.0.dist-info/licenses/LICENSE` |
-
-miniaudio provides the bundled native FLAC / MP3 decoder used for bounded-memory, full-stream validation. Its retained MIT license names the Python bindings copyright holder Irmen de Jong, miniaudio copyright holder David Reid, and stb_vorbis copyright holder Sean Barrett. It is used without requiring a system FFmpeg installation. FFmpeg is only a developer-test tool for generating synthetic audio fixtures; Ting does not bundle it or invoke it during normal application use.
-
-Other HTTP, cryptography and runtime dependencies retain their package metadata, license files and notices in the generated vendor directories. Requirements files and the hash lock identify their exact versions.
-
-## Bundled CPython 3.12.14
-
-The macOS Apple Silicon runtime comes from the official [Astral python-build-standalone](https://github.com/astral-sh/python-build-standalone) release `20260901`, target `aarch64-apple-darwin`. `scripts/runtime-lock.json` records the precise asset URL, byte count and SHA256. The preparation script verifies the archive before extraction and execution.
-
-CPython's retained license is `resources/python/lib/python3.12/LICENSE.txt`. That file specifies the Python Software Foundation License Version 2, preserves the historical Python license agreements and explains that incorporated software can have different licenses. The PSF license is not a blanket replacement for every component shipped in the standalone runtime.
-
-The prepared runtime also retains pip's license at `resources/python/lib/python3.12/site-packages/pip-26.2.1.dist-info/licenses/LICENSE.txt` and the vendored dependency licenses supplied with pip. Runtime source and build information are available from the linked official standalone project and the exact release recorded in the lock file. Keep the supplied runtime and package notices when redistributing the prepared application.
+`src-tauri/compat/swift-rs` retains upstream swift-rs 1.0.8 under MIT OR Apache-2.0, with one documented Xcode 27 build-helper change. Original license texts and attribution are included beside the source; see `TING-PATCH.md`. Upstream: https://github.com/Brendonovich/swift-rs.

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "听 · Ting",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "identifier": "com.ting.music.demo",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -22,7 +22,7 @@
         "hiddenTitle": true,
         "trafficLightPosition": {
           "x": 16,
-          "y": 20
+          "y": 28
         }
       }
     ],
@@ -41,9 +41,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../resources/downloader/": "downloader/",
-      "../resources/qq/": "qq/",
-      "../resources/python/": "python/"
+      "../resources/build/": "build/",
+      "../resources/licenses/": "licenses/"
     },
     "macOS": {
       "minimumSystemVersion": "15.0"

@@ -24,15 +24,15 @@ def check_app(app, version, source, verify_native=True):
     if info.get('CFBundleShortVersionString') != version or info.get('CFBundleIdentifier') != 'com.ting.music.demo':
         raise RuntimeError('Built app version or identity does not match the source release')
     resources = app / 'Contents/Resources'
-    build = json.loads((resources / 'qq/ting-build-info.json').read_text())
+    build = json.loads((resources / 'build/ting-build-info.json').read_text())
     if set(build) != {'commit', 'clean', 'sourceSha256', 'sourceFileCount', 'resources'}:
         raise RuntimeError('Unexpected build manifest fields')
     for field in ('commit', 'clean', 'sourceSha256', 'sourceFileCount'):
         if build.get(field) != source[field]:
             raise RuntimeError('App was not built from the current clean commit; rebuild before releasing')
-    actual_names = {str(file.relative_to(resources)) for group in ('python', 'qq', 'downloader')
+    actual_names = {str(file.relative_to(resources)) for group in ('build', 'licenses')
                     for file in (resources / group).rglob('*') if file.is_file()}
-    if actual_names != set(build['resources']) | {'qq/ting-build-info.json'}:
+    if actual_names != set(build['resources']) | {'build/ting-build-info.json'}:
         raise RuntimeError('Bundled resource files differ from the build manifest')
     for name, digest in build['resources'].items():
         path = resources / name
@@ -43,16 +43,8 @@ def check_app(app, version, source, verify_native=True):
         if verify_native or not native:
             if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
                 raise RuntimeError('Bundled resource hash mismatch: ' + name)
-    python = resources / 'python/bin/python3.12'
-    lock = json.loads((ROOT / 'scripts/runtime-lock.json').read_text())
-    code = ('import platform,sys;assert platform.python_version() == ' + repr(lock['python']) + ';'
-            'assert platform.machine() == "arm64";'
-            'sys.path.insert(0,' + repr(str(resources / 'qq/vendor')) + ');'
-            'sys.path.insert(0,' + repr(str(resources / 'downloader/vendor')) + ');'
-            'from qqmusic_api import Client;import requests,mutagen,miniaudio;miniaudio.lib_version()')
-    env = {key: value for key, value in os.environ.items() if not key.startswith(('PYTHON', 'DYLD_'))}
-    env['PATH'] = '/usr/bin:/bin:/usr/sbin:/sbin'
-    run([python, '-I', '-B', '-c', code], env=env)
+    if any((resources / name).exists() for name in ('python', 'qq', 'downloader')):
+        raise RuntimeError('Obsolete Python runtime found in native Rust release')
 
 
 def sign_ad_hoc(app):

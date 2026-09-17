@@ -1,8 +1,11 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { resolve, delimiter } from "node:path";
+import { resolve, delimiter, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+process.chdir(resolve(dirname(fileURLToPath(import.meta.url)), ".."));
 const env = { ...process.env };
-if (["dev", "build", "bundle"].includes(process.argv[2])) {
+if (["dev", "build", "bundle"].includes(process.argv[2]) ||
+    (["ios", "android"].includes(process.argv[2]) && ["dev", "build"].includes(process.argv[3]))) {
   const check = spawnSync(process.execPath, ["scripts/preflight.mjs"], { stdio: "inherit" });
   if (check.error) throw check.error;
   if (check.status !== 0) process.exit(check.status ?? 1);

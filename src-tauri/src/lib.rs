@@ -1,7 +1,8 @@
 mod download;
+mod download_engine;
+mod http;
 pub mod netease;
 mod qq;
-mod runtime;
 use netease::{
     Api, Playback, PlaylistPage, PlaylistTracks, Profile, QrLogin, QrStatus, SearchResult,
 };
@@ -68,14 +69,18 @@ async fn playlist_edit(
     api.playlist_edit(id, track_id, &action).await
 }
 #[derive(Default)]
-struct LyricsWindow(std::sync::Mutex<Option<f64>>);
+struct LyricsWindow {
+    #[cfg(desktop)]
+    added: std::sync::Mutex<Option<f64>>,
+}
+#[cfg(desktop)]
 #[tauri::command]
 fn set_lyrics_panel(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, LyricsWindow>,
     open: bool,
 ) -> Result<(), String> {
-    let mut added = state.0.lock().map_err(|_| "窗口状态不可用")?;
+    let mut added = state.added.lock().map_err(|_| "窗口状态不可用")?;
     if open == added.is_some() {
         return Ok(());
     }
@@ -113,6 +118,12 @@ fn set_lyrics_panel(
             .map_err(|_| "无法收起歌词窗口")?;
         *added = None;
     }
+    Ok(())
+}
+#[cfg(mobile)]
+#[tauri::command]
+fn set_lyrics_panel(open: bool) -> Result<(), String> {
+    let _ = open;
     Ok(())
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

@@ -1,7 +1,8 @@
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
-use tauri::{path::BaseDirectory, Manager};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tauri::Manager;
+mod client;
+mod login;
 
 pub struct Qq(pub tokio::sync::Mutex<Session>);
 pub struct Session {
@@ -18,7 +19,7 @@ impl Qq {
         }))
     }
 }
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn load() -> Option<Value> {
     use security_framework::passwords::{generic_password, PasswordOptions};
     generic_password(PasswordOptions::new_generic_password(
@@ -28,11 +29,11 @@ fn load() -> Option<Value> {
     .ok()
     .and_then(|b| serde_json::from_slice(&b).ok())
 }
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
 fn load() -> Option<Value> {
     None
 }
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn persist(value: Option<&Value>) -> Result<(), String> {
     use security_framework::passwords::*;
     if let Some(v) = value {
@@ -50,7 +51,7 @@ fn persist(value: Option<&Value>) -> Result<(), String> {
         }
     }
 }
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
 fn persist(value: Option<&Value>) -> Result<(), String> {
     if value.is_none() {
         Ok(())
@@ -115,72 +116,38 @@ pub async fn qq_request(
         session.revision += 1;
         session.pending = None;
     }
-    let script = app
-        .path()
-        .resolve("qq/bridge.py", BaseDirectory::Resource)
-        .map_err(|_| "QQ 工具路径不可用")?;
-    let dir = app
+    let credential = session.credential.clone().unwrap_or(Value::Null);
+    let pending = session
+        .pending
+        .as_ref()
+        .map(|(_, v, _)| v.clone())
+        .unwrap_or(Value::Null);
+    let revision = session.revision;
+    drop(session);
+    // Read only the existing desktop GUID; never rewrite legacy device caches.
+    let guid = app
         .path()
         .app_data_dir()
-        .map_err(|_| "QQ 数据目录不可用")?
-        .join("qq");
-    tokio::fs::create_dir_all(&dir)
-        .await
-        .map_err(|_| "QQ 数据目录创建失败")?;
-    let input = json!({"operation":operation,"args":args,"credential":session.credential,"pending":session.pending.as_ref().map(|(_,v,_)|v),"devicePath":dir.join("device.json")});
-    let revision = session.revision;
-    drop(session); // Network requests must not block other QQ operations.
-                   // Bundled extension modules target CPython 3.12 on Apple Silicon.
-    let python = crate::runtime::python(&app)?;
-    let mut child = tokio::process::Command::new(python)
-        .args(["-I", "-B"])
-        .arg(script)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|_| "QQ 音乐助手未能启动")?;
-    let input = input.to_string();
-    let work = async {
-        let mut stdin = child.stdin.take().ok_or("QQ 音乐助手未就绪")?;
-        stdin
-            .write_all(input.as_bytes())
-            .await
-            .map_err(|_| "QQ 音乐助手输入失败")?;
-        drop(stdin);
-        let stdout = child.stdout.take().ok_or("QQ 音乐助手未就绪")?;
-        let mut bytes = Vec::new();
-        stdout
-            .take(4 * 1024 * 1024 + 1)
-            .read_to_end(&mut bytes)
-            .await
-            .map_err(|_| "QQ 音乐助手输出失败")?;
-        if bytes.len() > 4 * 1024 * 1024 {
-            return Err("QQ 音乐响应过大");
-        }
-        let status = child.wait().await.map_err(|_| "QQ 音乐助手执行失败")?;
-        Ok((status, bytes))
-    };
-    let (status, output) = match tokio::time::timeout(Duration::from_secs(55), work).await {
-        Ok(Ok(output)) => output,
-        error => {
-            let _ = child.kill().await;
-            return Err(match error {
-                Ok(Err(message)) => message,
-                _ => "QQ 请求超时",
+        .ok()
+        .and_then(|p| {
+            let p = p.join("qq/device.json");
+            if std::fs::metadata(&p).ok()?.len() > 65536 {
+                return None;
             }
-            .into());
-        }
-    };
-    let mut response: Value =
-        serde_json::from_slice(&output).map_err(|_| "QQ 音乐助手无法加载，请重新安装 Ting")?;
-    if !status.success() && !response["error"].is_string() {
-        return Err("QQ 音乐助手执行失败".into());
-    }
-    if let Some(e) = response["error"].as_str() {
-        return Err(e.into());
-    }
+            let v: Value = serde_json::from_slice(&std::fs::read(p).ok()?).ok()?;
+            v["open_udid"]
+                .as_str()
+                .filter(|s| s.len() <= 128)
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
+    let mut client = client::Client::new(credential, guid)?;
+    let mut response = tokio::time::timeout(
+        Duration::from_secs(55),
+        client.execute(&operation, &args, &pending),
+    )
+    .await
+    .map_err(|_| "QQ 请求超时")??;
     let mut session = state.0.lock().await;
     if session.revision != revision
         && [

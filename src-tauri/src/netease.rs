@@ -210,7 +210,7 @@ fn check(body: Value) -> Result<Value, String> {
 }
 const KEYCHAIN_SERVICE: &str = "com.ting.music.demo";
 const KEYCHAIN_ACCOUNT: &str = "netease-session";
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn stored_session() -> Option<String> {
     use security_framework::passwords::{generic_password, PasswordOptions};
     generic_password(PasswordOptions::new_generic_password(
@@ -220,11 +220,11 @@ fn stored_session() -> Option<String> {
     .ok()
     .and_then(|v| String::from_utf8(v).ok())
 }
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
 fn stored_session() -> Option<String> {
     None
 }
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn store_session(cookie: &str) -> Result<(), String> {
     security_framework::passwords::set_generic_password(
         KEYCHAIN_SERVICE,
@@ -233,11 +233,11 @@ fn store_session(cookie: &str) -> Result<(), String> {
     )
     .map_err(|_| "已登录，但钥匙串保存失败；本次会话仍可使用".into())
 }
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
 fn store_session(_: &str) -> Result<(), String> {
     Err("此平台暂仅保留本次登录会话".into())
 }
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn delete_session() -> Result<(), String> {
     match security_framework::passwords::delete_generic_password(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
     {
@@ -246,7 +246,7 @@ fn delete_session() -> Result<(), String> {
         Err(_) => Err("无法清除钥匙串登录记录，请重试退出".into()),
     }
 }
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
 fn delete_session() -> Result<(), String> {
     Ok(())
 }

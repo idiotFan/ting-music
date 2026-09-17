@@ -26,14 +26,14 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - name: Prepare reproducible runtime and dependencies
+      - name: Prepare build dependencies
         run: |
           test "$(uname -m)" = arm64
           npm ci
-          node scripts/prepare-desktop.mjs
-          node scripts/check-release.mjs
           rustup toolchain install stable --profile minimal --component rustfmt
           rustup default stable
+          node scripts/prepare-desktop.mjs
+          node scripts/check-release.mjs
           brew list ffmpeg >/dev/null 2>&1 || brew install ffmpeg
       - name: Frontend build and model tests
         run: |
@@ -44,23 +44,15 @@ jobs:
         run: |
           npx playwright install chromium
           npx playwright test
-      - name: Rust and Python regression
+      - name: Rust and release regression
         run: |
           node scripts/cargo.mjs fmt --manifest-path src-tauri/Cargo.toml -- --check
           node scripts/cargo.mjs test --locked --manifest-path src-tauri/Cargo.toml
-          resources/python/bin/python3.12 -I -B tests/qq_bridge_test.py
-          resources/python/bin/python3.12 -I -B tests/download_helper_test.py
-          resources/python/bin/python3.12 -I -B scripts/infrastructure-test.py
+          python3 -B scripts/infrastructure-test.py
       - name: Build native app
         run: npm run tauri -- build -- --locked
       - name: Frontend dependency audit
         run: npm audit --audit-level=high
-      - name: Python dependency audit
-        run: |
-          resources/python/bin/python3.12 -I -m venv work/audit-env
-          work/audit-env/bin/python -m pip install --disable-pip-version-check pip-audit==2.10.1
-          work/audit-env/bin/python -m pip_audit --no-deps --disable-pip -r resources/qq/requirements.txt
-          work/audit-env/bin/python -m pip_audit --no-deps --disable-pip -r resources/downloader/requirements.txt
       - name: Upload browser diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

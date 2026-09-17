@@ -1144,10 +1144,6 @@ main {
   user-select: none;
   -webkit-user-select: none;
 }
-.mac-window .app-header {
-  height: 56px;
-  padding-left: 88px;
-}
 .mac-window .app-caption {
   display: none;
 }
@@ -1278,4 +1274,81 @@ body.lyrics-open #app {
     max-width: 85vw;
     box-shadow: -8px 0 24px #00000018;
   }
+}
+
+/* Keep native traffic lights, a centered title, and account tools in separate areas. */
+.mac-window .app-header {
+  position: relative;
+  height: 56px;
+  padding: 0 16px 0 92px;
+  gap: 10px;
+}
+.mac-window .brand {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+.mac-window .brand-mark {
+  display: none;
+}
+.mac-window .brand strong {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+.mac-window .brand strong::before {
+  content: "听 · ";
+}
+.mac-window #theme-button {
+  margin-left: auto;
+}
+.mac-window .account-button {
+  margin-left: 0;
+}
+
+/* A phone uses its own safe areas and a full-window lyrics sheet. */
+.mobile-device body {
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.mobile-device #app {
+  height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+}
+.mobile-device .app-header {
+  padding-left: 16px;
+  padding-right: 16px;
+}
+.mobile-device .app-caption {
+  display: none;
+}
+.mobile-device input:not([type="range"]),
+.mobile-device select {
+  font-size: 16px;
+}
+.mobile-device button,
+.mobile-device .song-row {
+  touch-action: manipulation;
+}
+.mobile-device .song-row {
+  -webkit-touch-callout: none;
+}
+.mobile-device .volume {
+  display: none;
+}
+.mobile-device body.lyrics-open #lyrics-panel {
+  max-width: none;
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  width: 100%;
+  height: 100dvh;
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  border: 0;
+}
+.mobile-device dialog {
+  max-height: calc(
+    100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px
+  );
+  overflow-y: auto;
 }

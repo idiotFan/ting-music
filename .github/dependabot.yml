@@ -14,5 +14,3 @@ updates:
     directory: /
     schedule:
       interval: monthly
-# Python wheels and the standalone runtime use reviewed SHA256 locks in scripts/.
-# Update version and hashes together, then rerun all Python and native build checks.

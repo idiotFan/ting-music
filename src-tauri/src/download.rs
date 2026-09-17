@@ -2,98 +2,46 @@ use crate::netease::Api;
 use serde_json::{json, Value};
 use std::{
     path::PathBuf,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::Duration,
 };
-use tauri::{path::BaseDirectory, Manager};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tauri::Manager;
 
 #[derive(Default)]
-pub struct Downloads(AtomicBool);
-struct Guard<'a>(&'a AtomicBool);
-impl Drop for Guard<'_> {
+pub struct Downloads(Arc<AtomicBool>);
+pub(crate) struct Guard(Arc<AtomicBool>);
+#[cfg(test)]
+impl Guard {
+    pub(crate) fn for_test() -> Self {
+        Self(Arc::new(AtomicBool::new(true)))
+    }
+}
+impl Drop for Guard {
     fn drop(&mut self) {
         self.0.store(false, Ordering::Release);
     }
 }
-struct Scratch(PathBuf);
+pub(crate) struct Scratch(pub(crate) PathBuf);
 impl Drop for Scratch {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
     }
 }
 fn directory(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    Ok(app
-        .path()
-        .download_dir()
-        .map_err(|_| "找不到下载目录")?
-        .join("Ting"))
+    #[cfg(target_os = "ios")]
+    let folder = app.path().document_dir();
+    #[cfg(not(target_os = "ios"))]
+    let folder = app.path().download_dir();
+    Ok(folder.map_err(|_| "找不到下载目录")?.join("Ting"))
 }
 fn account_cookie(cookie: &str) -> Option<&str> {
     cookie
         .split(';')
         .filter_map(|value| value.trim().split_once('='))
         .find_map(|(key, value)| (key == "MUSIC_U").then_some(value))
-}
-
-async fn helper(app: &tauri::AppHandle, input: Value, timeout: Duration) -> Result<Value, String> {
-    let script = app
-        .path()
-        .resolve("downloader/download_one.py", BaseDirectory::Resource)
-        .map_err(|_| "下载工具路径不可用")?;
-    let python = crate::runtime::python(app)?;
-    let input = serde_json::to_vec(&input).map_err(|_| "无法初始化下载")?;
-    let mut child = tokio::process::Command::new(python)
-        .args(["-I", "-B"])
-        .arg(script)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|_| "下载助手未能启动，请重新安装 Ting")?;
-    // Include stdin IO in the deadline and cap child output before decoding JSON.
-    let work = async {
-        let mut stdin = child.stdin.take().ok_or("下载助手未就绪")?;
-        stdin
-            .write_all(&input)
-            .await
-            .map_err(|_| "下载助手输入失败")?;
-        drop(stdin);
-        let stdout = child.stdout.take().ok_or("下载助手未就绪")?;
-        let mut bytes = Vec::new();
-        stdout
-            .take(1024 * 1024 + 1)
-            .read_to_end(&mut bytes)
-            .await
-            .map_err(|_| "下载助手输出失败")?;
-        if bytes.len() > 1024 * 1024 {
-            return Err("下载助手响应过大");
-        }
-        let status = child.wait().await.map_err(|_| "下载助手执行失败")?;
-        Ok((status, bytes))
-    };
-    let (status, output) = match tokio::time::timeout(timeout, work).await {
-        Ok(Ok(output)) => output,
-        error => {
-            let _ = child.kill().await;
-            return Err(match error {
-                Ok(Err(message)) => message,
-                _ => "下载超时，请重试",
-            }
-            .into());
-        }
-    };
-    let result: Value =
-        serde_json::from_slice(&output).map_err(|_| "下载助手无法加载，请重新安装 Ting")?;
-    if status.success() && result["ok"] == true {
-        Ok(result["result"].clone())
-    } else {
-        Err(result["error"]
-            .as_str()
-            .unwrap_or("下载失败，请检查 Ting 当前登录状态")
-            .into())
-    }
 }
 
 #[tauri::command]
@@ -119,7 +67,7 @@ pub async fn download_song(
     {
         return Err("已有歌曲正在下载".into());
     }
-    let _guard = Guard(&state.0);
+    let guard = Guard(state.0.clone());
     let (info, fallback) = if source == "qq" {
         (
             crate::qq::qq_request(
@@ -133,12 +81,12 @@ pub async fn download_song(
         )
     } else {
         let cookie = api.download_cookie();
-        let info = helper(
-            &app,
-            json!({"operation":"prepare","id":id,"cookie":cookie}),
+        let info = tokio::time::timeout(
             Duration::from_secs(240),
+            crate::download_engine::prepare(id, &cookie),
         )
-        .await?;
+        .await
+        .map_err(|_| "音源解析超时")??;
         if account_cookie(&cookie) != account_cookie(&api.download_cookie()) {
             return Err("网易云账号已切换，请重新下载".into());
         }
@@ -174,7 +122,7 @@ pub async fn download_song(
     builder
         .create(&scratch.0)
         .map_err(|_| "无法创建下载临时目录")?;
-    helper(&app, json!({"id":id,"source":source,"info":info,"fallback":fallback,"out":folder,"scratch":scratch.0}), Duration::from_secs(660)).await
+    crate::download_engine::run(id, source.into(), info, fallback, folder, scratch, guard).await
 }
 
 #[cfg(test)]
@@ -192,6 +140,48 @@ mod tests {
             account_cookie("MUSIC_U=test"),
             account_cookie("MUSIC_U=other")
         );
+    }
+
+    #[tokio::test]
+    #[ignore = "live current-account NetEase download into disposable test directory; never prints credentials or URLs"]
+    async fn live_netease_native_download() {
+        let api = Api::persistent().unwrap();
+        let songs = api.search("ChiliChill", 0).await.unwrap();
+        let song = songs.songs.first().expect("search result required");
+        let info = crate::download_engine::prepare(song.id, &api.download_cookie())
+            .await
+            .unwrap();
+        assert!(
+            !info["playback"].is_null(),
+            "full-length account source required"
+        );
+        let folder =
+            Scratch(std::env::temp_dir().join(format!("ting-live-{}", uuid::Uuid::new_v4())));
+        std::fs::create_dir(&folder.0).unwrap();
+        let scratch = Scratch(folder.0.join("scratch"));
+        std::fs::create_dir(&scratch.0).unwrap();
+        let busy = Arc::new(AtomicBool::new(true));
+        let result = crate::download_engine::run(
+            song.id,
+            "netease".into(),
+            info,
+            Value::Null,
+            folder.0.clone(),
+            scratch,
+            Guard(busy.clone()),
+        )
+        .await
+        .unwrap();
+        assert!(!busy.load(Ordering::Acquire));
+        let path = PathBuf::from(result["path"].as_str().unwrap());
+        assert!(path.is_file());
+        assert!(result["bytes"].as_u64().unwrap() > 100_000);
+        let metadata = std::fs::read_to_string(path.with_extension("json")).unwrap();
+        let metadata: Value = serde_json::from_str(&metadata).unwrap();
+        assert_eq!(metadata["origin"]["id"], song.id);
+        assert_eq!(metadata["audio"]["platform"], "netease");
+        assert!(metadata.get("url").is_none());
+        assert!(!folder.0.join("scratch").exists());
     }
 
     #[test]

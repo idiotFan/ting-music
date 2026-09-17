@@ -1,5 +1,7 @@
 # 实现质量审查 · 2026-09-17
 
+> 0.9.0 已将下文提及的 Python 实现迁至 Rust；0.8.0 的审查与修复记录保留为历史。最新验证见 [VALIDATION.md](VALIDATION.md)，迁移边界见 [RUST-MIGRATION.md](RUST-MIGRATION.md)。
+
 > **0.8.0 修复状态（2026-09-17）：** 下列 R1–R6 均已修复，并加入针对性回归。本文保留原始复现记录，行号对应审查时的 0.7.0。当前验证和限制见 [VALIDATION.md](VALIDATION.md)，发布安全检查见 [SECURITY-AUDIT.md](SECURITY-AUDIT.md)。
 
 ## 修复结果

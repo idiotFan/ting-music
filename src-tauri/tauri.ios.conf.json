@@ -1,0 +1,17 @@
+{
+  "bundle": {
+    "iOS": {
+      "minimumSystemVersion": "16.0",
+      "infoPlist": "Info.ios.plist"
+    }
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "听 · Ting",
+        "backgroundColor": "#F7F8F2"
+      }
+    ]
+  }
+}
