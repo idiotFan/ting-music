@@ -1,5 +1,9 @@
 # Third-party notices
 
+## NeteaseCloudMusicApiEnhanced
+
+The independently implemented Rust SMS login follows the request definitions in [captcha_sent.js](https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced/blob/main/module/captcha_sent.js) and [login_cellphone.js](https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced/blob/main/module/login_cellphone.js). The JavaScript implementation is not bundled. The upstream MIT notice is retained in `resources/licenses/NeteaseCloudMusicApiEnhanced-MIT.txt` and included with the application.
+
 ## go-musicfox/netease-music
 
 Repository: https://github.com/go-musicfox/netease-music

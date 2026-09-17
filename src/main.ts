@@ -41,7 +41,8 @@ import { readSetting, writeSetting } from "./settings";
 import { PlaybackQueue } from "./playback-queue.mjs";
 import { setupThemes } from "./themes";
 import { setupLyrics } from "./lyrics";
-import { makeLoginQr, verifyOriginalQr } from "./qr";
+import { makeLoginQr, verifyOriginalQr, qrPngForSharing } from "./qr";
+import { mountPhoneLogin, type PhoneLoginResult } from "./phone-login";
 import {
   platform,
   mobileDevice,
@@ -286,7 +287,7 @@ if (mobileDevice) document.documentElement.classList.add("mobile-device");
 if (isTauri() && platform.mac)
   document.documentElement.classList.add("mac-window");
 $("#app").innerHTML = `
-<header class="app-header" data-tauri-drag-region><a class="brand" href="#" aria-label="听 首页"><span class="brand-mark">听</span><strong>Ting</strong></a><span class="app-caption" data-tauri-drag-region>音乐，简单一点。</span><button id="theme-button" class="icon-button" aria-label="切换主题" title="主题配色">${icon("Palette")}</button><button id="account-button" class="account-button" aria-label="登录网易云"><span class="avatar">听</span><span id="account-name">登录</span></button></header>
+<header class="app-header" data-tauri-drag-region><button type="button" class="brand" aria-label="听 首页"><span class="brand-mark">听</span><strong>Ting</strong></button><span class="app-caption" data-tauri-drag-region>音乐，简单一点。</span><button id="theme-button" class="icon-button" aria-label="切换主题" title="主题配色">${icon("Palette")}</button><button id="account-button" class="account-button" aria-label="登录网易云"><span class="avatar">听</span><span id="account-name">登录</span></button></header>
 <section class="now-panel" aria-label="正在播放"><div class="now-card"><div id="now-cover" class="now-cover"><span class="fallback-cover">${icon("Music2")}</span></div><div class="now-heading"><h3 id="now-name">选一首喜欢的歌</h3><p id="now-artist">搜索音乐，或打开你的歌单</p><div class="track-tag" id="track-tag">等待播放</div></div><button id="download-current" class="icon-button" aria-label="下载当前歌曲最高可用音质" title="下载当前歌曲最高可用音质" disabled>${icon("Download")}</button><button id="now-fav" class="icon-button" aria-label="收藏当前歌曲" disabled>${icon("Heart")}</button></div></section>
 <section class="player" aria-label="播放控制"><div class="transport"><div class="timeline"><span id="elapsed">0:00</span><input id="seek" aria-label="播放进度" type="range" min="0" max="100" value="0" step="0.1" disabled/><span id="duration">0:00</span></div><div class="transport-buttons"><button id="repeat" class="icon-button mode-button" aria-label="播放模式：顺序播放" title="切换播放模式">${icon("ListOrdered")}</button><button id="previous" class="icon-button" aria-label="上一首">${icon("SkipBack")}</button><button id="toggle" class="play-toggle" aria-label="播放">${icon("Play")}</button><button id="next" class="icon-button" aria-label="下一首">${icon("SkipForward")}</button><button id="lyrics-toggle" class="icon-button lyrics-toggle" aria-label="显示歌词" aria-expanded="false" aria-controls="lyrics-panel">词</button></div></div><div class="player-options"><div class="volume"><button id="mute" class="icon-button" aria-label="静音">${icon("Volume2")}</button><input id="volume" aria-label="音量" type="range" min="0" max="1" value="0.7" step="0.01"/></div><span id="mode-label">顺序播放</span><select id="quality" aria-label="播放音质">${Object.entries(
   qualityNames,
@@ -296,7 +297,7 @@ $("#app").innerHTML = `
     "",
   )}</select></div><div id="download-info" hidden><span id="download-status" role="status"></span><button id="download-folder" class="quiet">打开文件夹</button></div></section>
 <nav aria-label="音乐导航"><button data-view="discover" class="active">搜索</button><button data-view="playlists">歌单</button><button data-view="favorites">收藏<span id="fav-count">0</span></button><button data-view="local">本地</button><button data-view="queue">队列<span id="queue-count">0</span></button></nav>
-<main><div class="topbar"><form id="search-form" role="search"><label class="sr-only" for="search">搜索歌曲或歌手</label>${icon("Search")}<input id="search" placeholder="搜索歌曲、歌手…" maxlength="100" autocomplete="off"/><select id="search-source" aria-label="搜索平台"><option value="netease">网易云</option><option value="qq">QQ音乐</option></select><button class="search-submit" aria-label="搜索" type="submit">搜索</button></form><button id="import-top" class="quiet" hidden>${icon("Plus")}导入</button></div><div class="main-scroll"><section class="library"><div class="section-top"><h2 id="section-title">搜索结果<span id="result-count"></span></h2><button id="new-playlist" class="outline" hidden>＋ 新建</button><button id="manage-playlist" class="quiet" hidden>管理</button><button id="play-all" class="outline">${icon("Play")}播放全部</button></div><div id="discover-tools"><p id="search-summary" class="summary"></p></div><div id="error" role="alert" hidden></div><div id="playlist-filters" role="group" aria-label="歌单分类" hidden>${[
+<main><div class="topbar"><form id="search-form" role="search"><label class="sr-only" for="search">搜索歌曲或歌手</label>${icon("Search")}<input id="search" placeholder="搜索歌曲、歌手…" maxlength="100" autocomplete="off"/><select id="search-source" aria-label="搜索平台"><option value="netease">网易云</option><option value="qq">QQ音乐</option></select><button class="search-submit" aria-label="搜索" type="submit">搜索</button></form><button id="import-top" class="quiet" hidden>${icon("Plus")}导入</button></div><div class="main-scroll"><section class="library"><div class="section-top"><h2 id="section-title">搜索结果<span id="result-count"></span></h2><button id="refresh-playlists" class="quiet" hidden>刷新</button><button id="new-playlist" class="outline" hidden>＋ 新建</button><button id="manage-playlist" class="quiet" hidden>管理</button><button id="play-all" class="outline">${icon("Play")}播放全部</button></div><div id="discover-tools"><p id="search-summary" class="summary"></p></div><div id="error" role="alert" hidden></div><div id="playlist-filters" role="group" aria-label="歌单分类" hidden>${[
   ["recent", "最近"],
   ["netease", "网易云"],
   ["qq", "QQ音乐"],
@@ -310,7 +311,7 @@ $("#app").innerHTML = `
     "",
   )}</div><div id="playlist-grid" hidden></div><div class="table-head" hidden></div><div id="songs"></div><button id="more" class="load-more" hidden>加载更多 ${icon("ChevronRight")}</button></section></div></main>
 <input id="file-input" type="file" accept="audio/*,.mp3,.flac,.m4a,.wav,.ogg,.aac" multiple hidden/><div id="toast" role="status"></div>
-<dialog id="account-dialog" aria-labelledby="account-title"><button id="account-close" class="dialog-close icon-button" aria-label="关闭登录">${icon("X")}</button><h2 id="account-title">登录网易云音乐</h2><p class="account-subtitle">用网易云音乐 App 扫码，在手机上确认登录。</p><div class="account-platforms"><button id="account-netease" class="outline">网易云</button><button id="account-qq" class="outline">QQ音乐</button></div><div id="qq-login-method" hidden><button data-qq-kind="qq" class="quiet">QQ扫码</button><button data-qq-kind="wx" class="quiet">微信扫码</button></div><div id="account-content"></div><p id="account-status" role="status"></p><div class="account-actions"><button id="refresh-qr" class="outline">刷新二维码</button><button id="logout" class="outline" hidden>退出登录</button></div><small class="account-note">登录后读取你的歌单，音质按账号权限提供。<br>${credentialNotice}</small></dialog>`;
+<dialog id="account-dialog" aria-labelledby="account-title"><button id="account-close" class="dialog-close icon-button" aria-label="关闭登录">${icon("X")}</button><h2 id="account-title">登录网易云音乐</h2><p class="account-subtitle">用网易云音乐 App 扫码，在手机上确认登录。</p><div class="account-platforms"><button id="account-netease" class="outline">网易云</button><button id="account-qq" class="outline">QQ音乐</button></div><div class="account-methods" id="netease-login-method" hidden><button data-netease-method="phone" type="button" class="quiet">手机号登录</button><button data-netease-method="qr" type="button" class="quiet">扫码登录</button></div><div id="qq-login-method" hidden><button data-qq-kind="qq" class="quiet">QQ扫码</button><button data-qq-kind="wx" class="quiet">微信扫码</button></div><div id="account-content"></div><p id="account-status" role="status"></p><div class="account-actions"><button id="share-login-qr" class="outline" hidden>保存或分享二维码</button><button id="refresh-qr" class="outline">刷新二维码</button><button id="logout" class="outline" hidden>退出登录</button></div><small class="account-note">登录后读取你的歌单，音质按账号权限提供。<br>${credentialNotice}</small></dialog>`;
 document.body.insertAdjacentHTML(
   "beforeend",
   `<aside id="lyrics-panel" aria-label="歌词面板" hidden><header class="lyrics-header" data-tauri-drag-region><span data-tauri-drag-region>歌词</span><button id="lyrics-close" class="icon-button" aria-label="收起歌词面板">${icon("X")}</button></header><div class="lyrics-heading"><h2 id="lyrics-title">正在播放</h2><p id="lyrics-artist">音乐响起时，让文字陪你一起听。</p></div><div id="lyrics" class="lyrics" tabindex="0" aria-label="同步歌词" hidden><p class="lyric-placeholder">音乐响起时，让文字陪你一起听。</p></div><button id="lyrics-follow" class="outline" hidden>回到当前歌词</button></aside>`,
@@ -320,6 +321,13 @@ if (mobileDevice) {
     .querySelectorAll("[data-tauri-drag-region]")
     .forEach((el) => el.removeAttribute("data-tauri-drag-region"));
   $("#download-folder").textContent = "查看保存位置";
+  document
+    .querySelectorAll<HTMLOptionElement>("#quality option")
+    .forEach((option) => {
+      option.title = option.textContent || "";
+      if (option.value === "best") option.textContent = "最高";
+      if (option.value === "exhigh") option.textContent = "高品";
+    });
 }
 const lyricFollower = setupLyrics(
   audio,
@@ -441,6 +449,8 @@ function renderSongs() {
   $(".table-head").hidden = true;
   $("#play-all").hidden = grid;
   $("#new-playlist").hidden = !grid;
+  $("#refresh-playlists").hidden = !grid;
+  $("#refresh-playlists").toggleAttribute("disabled", libraryBusy);
   $("#manage-playlist").hidden =
     view !== "playlist" || !selectedPlaylist?.owned;
   $("#result-count").textContent = (
@@ -527,8 +537,13 @@ function renderSongs() {
   });
   syncRows();
 }
+let playlistsLoaded = false;
+const viewScroll = new Map<View, number>();
 function setView(next: View) {
-  if (view !== next) {
+  const changed = view !== next;
+  if (changed) {
+    if (view === "playlists" && libraryBusy) playlistsLoaded = false;
+    viewScroll.set(view, $(".main-scroll").scrollTop);
     librarySerial++;
     libraryBusy = false;
   }
@@ -557,6 +572,7 @@ function setView(next: View) {
   $("#section-title").innerHTML =
     `${esc(titles[view])}<span id="result-count"></span>`;
   renderSongs();
+  if (changed) $(".main-scroll").scrollTop = viewScroll.get(next) || 0;
 }
 async function search(term: string, append = false) {
   term = term.trim();
@@ -855,7 +871,9 @@ document.addEventListener("click", (e) => {
   const el = e.target as HTMLElement;
   const nav = el.closest<HTMLElement>("[data-view]");
   if (nav) {
-    if (nav.dataset.view === "playlists") void loadPlaylists();
+    if (nav.dataset.view === view) return;
+    if (nav.dataset.view === "playlists" && !playlistsLoaded)
+      void loadPlaylists();
     else setView(nav.dataset.view as View);
     return;
   }
@@ -990,7 +1008,7 @@ document.addEventListener("keydown", (e) => {
 });
 $(".brand").addEventListener("click", (e) => {
   e.preventDefault();
-  setView("discover");
+  if (view !== "discover") setView("discover");
 });
 $("#import-top").onclick = () => ($("#file-input") as HTMLInputElement).click();
 $("#file-input").onchange = () => {
@@ -998,6 +1016,7 @@ $("#file-input").onchange = () => {
   ($("#file-input") as HTMLInputElement).value = "";
 };
 $("#play-all").onclick = () => void playAll();
+$("#refresh-playlists").onclick = () => void loadPlaylists();
 $("#more").onclick = () => {
   if (view === "playlists") void loadPlaylists(true);
   else if (view === "playlist" && selectedPlaylist)
@@ -1190,7 +1209,7 @@ function renderPlaylists() {
     (playlistFilter === "netease" && !profile) ||
     (playlistFilter === "qq" && !qqProfile)
   ) {
-    box.innerHTML = `<div class="empty-state">${icon("Library")}<h3>登录${sourceName({ source: playlistFilter as Source })}</h3><p>读取你创建和收藏的歌单。</p><button id="playlist-login" class="primary">扫码登录</button></div>`;
+    box.innerHTML = `<div class="empty-state">${icon("Library")}<h3>登录${sourceName({ source: playlistFilter as Source })}</h3><p>读取你创建和收藏的歌单。</p><button id="playlist-login" class="primary">登录账号</button></div>`;
     return;
   }
   if (
@@ -1216,6 +1235,7 @@ async function loadPlaylists(append = false) {
     playlists = internalPlaylists();
     playlistsMore = false;
     neteasePlaylistsMore = qqPlaylistsMore = false;
+    playlistsLoaded = true;
     renderSongs();
     return;
   }
@@ -1267,6 +1287,7 @@ async function loadPlaylists(append = false) {
   if (serial !== librarySerial) return;
   playlistsMore = neteasePlaylistsMore || qqPlaylistsMore;
   libraryBusy = false;
+  playlistsLoaded = !errors.length;
   $("#error").textContent = errors.join("；");
   $("#error").hidden = !errors.length;
   renderSongs();
@@ -1279,6 +1300,7 @@ async function loadPlaylist(item: Playlist, append = false) {
     playlistSongs = internalSongs(item);
     playlistTotal = playlistOffset = playlistSongs.length;
     setView("playlist");
+    if (!append) $(".main-scroll").scrollTop = 0;
     return;
   }
   if (!append) {
@@ -1287,6 +1309,7 @@ async function loadPlaylist(item: Playlist, append = false) {
     playlistTotal = item.trackCount;
   }
   setView("playlist");
+  if (!append) $(".main-scroll").scrollTop = 0;
   const serial = ++librarySerial;
   libraryBusy = true;
   renderSongs();
@@ -1340,10 +1363,29 @@ async function loadPlaylist(item: Playlist, append = false) {
     }
   }
 }
+let neteaseLoginMethod: "phone" | "qr" = mobileDevice ? "phone" : "qr";
+let disposePhoneLogin: (() => void) | undefined;
+function clearPhoneLogin() {
+  disposePhoneLogin?.();
+  disposePhoneLogin = undefined;
+}
+function completeLogin(source: Source, data: PhoneLoginResult) {
+  if (!data.profile) return;
+  playlistsLoaded = false;
+  authVersions[source]++;
+  if (source === "qq") qqProfile = data.profile;
+  else profile = data.profile;
+  renderAccount();
+  closeAccount(false);
+  toast(data.warning || `欢迎回来，${data.profile.nickname}`);
+  void loadPlaylists();
+}
 async function openAccount() {
   const dialog = $("#account-dialog") as HTMLDialogElement;
   if (!dialog.open) dialog.showModal();
   renderAccount();
+  $("#share-login-qr").hidden = true;
+  $("#netease-login-method").hidden = true;
   $("#account-dialog").dataset.provider = accountSource;
   if (!isTauri()) {
     $("#account-content").innerHTML = "<p>请在 Ting 应用内登录。</p>";
@@ -1382,13 +1424,41 @@ async function openAccount() {
 }
 async function startLogin() {
   clearTimeout(loginTimer);
+  clearPhoneLogin();
+  $("#share-login-qr").hidden = true;
   const serial = ++loginSerial;
   const source = accountSource;
   qrSource = source;
   const name = sourceName({ source });
+  $("#account-dialog").dataset.loginMethod =
+    source === "netease" ? neteaseLoginMethod : "qr";
   $("#account-title").textContent = `登录${name}`;
   $(".account-subtitle").textContent = loginInstructions(source, qqLoginKind);
   $("#qq-login-method").hidden = source !== "qq";
+  $("#netease-login-method").hidden = source !== "netease";
+  document
+    .querySelectorAll<HTMLElement>("[data-netease-method]")
+    .forEach((el) =>
+      el.classList.toggle(
+        "active",
+        el.dataset.neteaseMethod === neteaseLoginMethod,
+      ),
+    );
+  if (source === "netease" && neteaseLoginMethod === "phone") {
+    $(".account-subtitle").textContent =
+      "输入网易云账号绑定的手机号，用短信验证码登录。";
+    $("#refresh-qr").hidden = $("#logout").hidden = true;
+    $("#account-status").textContent = "";
+    disposePhoneLogin = mountPhoneLogin(
+      $("#account-content"),
+      $("#account-status"),
+      () =>
+        serial === loginSerial &&
+        ($("#account-dialog") as HTMLDialogElement).open,
+      (data) => completeLogin(source, data),
+    );
+    return;
+  }
   document
     .querySelectorAll<HTMLElement>("[data-qq-kind]")
     .forEach((el) =>
@@ -1416,6 +1486,7 @@ async function startLogin() {
     $("#account-content").innerHTML =
       `<img id="login-qr" src="${qr.src}" alt="${name}登录二维码"/>`;
     $("#login-qr").dataset.payload = qr.payload;
+    $("#share-login-qr").hidden = !mobileDevice;
     if ("width" in qr) $("#login-qr").style.width = `${qr.width}px`;
     $("#account-status").textContent = "等待扫码 · 二维码约 3 分钟内有效";
     requestAnimationFrame(() => {
@@ -1454,13 +1525,7 @@ async function pollLogin(key: string, serial: number, source: Source) {
     }>("login_qr_check", { key }, source);
     if (serial !== loginSerial) return;
     if (data.code === 803 && data.profile) {
-      authVersions[source]++;
-      if (source === "qq") qqProfile = data.profile;
-      else profile = data.profile;
-      renderAccount();
-      closeAccount(false);
-      toast(data.warning || `欢迎回来，${data.profile.nickname}`);
-      void loadPlaylists();
+      completeLogin(source, data);
       return;
     }
     if (data.code === 800 || data.code === 804) {
@@ -1486,6 +1551,7 @@ async function pollLogin(key: string, serial: number, source: Source) {
 }
 function closeAccount(cancel = true) {
   loginSerial++;
+  clearPhoneLogin();
   clearTimeout(loginTimer);
   ($("#account-dialog") as HTMLDialogElement).close();
   const pending = qrSource;
@@ -1494,6 +1560,8 @@ function closeAccount(cancel = true) {
     void cloud("login_qr_cancel", {}, pending).catch(() => {});
 }
 async function switchAccount(source: Source) {
+  if (source === accountSource) return;
+  clearPhoneLogin();
   const previous = accountSource;
   ++loginSerial;
   clearTimeout(loginTimer);
@@ -1523,11 +1591,57 @@ $("#account-dialog").addEventListener("cancel", (e) => {
   closeAccount();
 });
 $("#refresh-qr").onclick = () => void startLogin();
+document.querySelectorAll<HTMLElement>("[data-netease-method]").forEach(
+  (el) =>
+    (el.onclick = async () => {
+      const method = el.dataset.neteaseMethod as "phone" | "qr";
+      if (method === neteaseLoginMethod) return;
+      const serial = ++loginSerial;
+      clearPhoneLogin();
+      clearTimeout(loginTimer);
+      neteaseLoginMethod = method;
+      try {
+        await cloud("login_qr_cancel", {}, "netease");
+      } catch {
+        /* Starting a new attempt also replaces the pending session. */
+      }
+      if (serial === loginSerial) void startLogin();
+    }),
+);
+$("#share-login-qr").onclick = async () => {
+  const button = $("#share-login-qr") as HTMLButtonElement;
+  const qr = $("#login-qr") as HTMLImageElement;
+  if (!qr || button.disabled) return;
+  const serial = loginSerial;
+  button.disabled = true;
+  try {
+    const dataUrl = await qrPngForSharing(qr.src, qr.dataset.payload!);
+    if (serial !== loginSerial) return;
+    if (platform.ios && isTauri()) await invoke("share_login_qr", { dataUrl });
+    else {
+      const blob = await (await fetch(dataUrl)).blob();
+      const files = [new File([blob], "Ting-login.png", { type: "image/png" })];
+      if (!navigator.canShare?.({ files }))
+        throw new Error(
+          "此设备尚不支持系统分享，请截取完整二维码后使用另一设备扫码",
+        );
+      await navigator.share({ files });
+    }
+  } catch (error) {
+    if (
+      serial === loginSerial &&
+      !(error instanceof DOMException && error.name === "AbortError")
+    )
+      toast(String(error));
+  } finally {
+    button.disabled = false;
+  }
+};
 $("#logout").onclick = async () => {
   const source = accountSource;
+  const serial = ++loginSerial;
   $("#logout").setAttribute("disabled", "");
   try {
-    ++loginSerial;
     clearTimeout(loginTimer);
     authVersions[source]++;
     await cloud("logout", {}, source);
@@ -1544,20 +1658,40 @@ $("#logout").onclick = async () => {
     }
     if (source === "qq") qqProfile = null;
     else profile = null;
+    playlistsLoaded = false;
     const keep = (s: Song) =>
       !!s.localUrl || (s.source || "netease") !== source;
     playbackQueue.replace(playbackQueue.songs.filter(keep));
     queueFillSerial++;
     queueExpected = 0;
-    playlistSongs = [];
-    selectedPlaylist = undefined;
+    if (
+      selectedPlaylist &&
+      (selectedPlaylist.source || "netease") === source &&
+      !selectedPlaylist.internal
+    ) {
+      playlistSongs = [];
+      selectedPlaylist = undefined;
+    }
+    playlists = playlists.filter(
+      (item) => item.internal || (item.source || "netease") !== source,
+    );
     save();
     renderAccount();
-    closeAccount(false);
-    void loadPlaylists();
+    if (serial === loginSerial && source === accountSource) {
+      closeAccount(false);
+      void loadPlaylists();
+    } else {
+      renderSongs();
+      if (
+        source === accountSource &&
+        ($("#account-dialog") as HTMLDialogElement).open
+      )
+        void openAccount();
+    }
     toast(`已退出${sourceName({ source })}，另一个平台不受影响`);
   } catch (e) {
-    $("#account-status").textContent = String(e);
+    if (serial === loginSerial) $("#account-status").textContent = String(e);
+    else toast(`退出${sourceName({ source })}失败，请重试`);
   } finally {
     $("#logout").removeAttribute("disabled");
   }

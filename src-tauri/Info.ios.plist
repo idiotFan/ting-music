@@ -22,6 +22,8 @@
 	</dict>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>保存登录二维码到相册，供你在音乐平台的扫一扫中选择。</string>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>UIStatusBarStyle</key>

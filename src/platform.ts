@@ -22,7 +22,7 @@ export function loginInstructions(source: string, kind: string) {
   const app =
     source === "qq" ? (kind === "wx" ? "微信" : "手机 QQ") : "网易云音乐 App";
   return mobileDevice
-    ? `请用${app}扫码确认登录。同一台手机无法扫描自身屏幕，请将二维码显示到另一台设备后再扫描。`
+    ? `保存二维码后，可尝试在${app}的扫一扫中从相册选取。若平台不支持，请在另一台设备显示二维码后扫描。`
     : `用${app}扫码，在${app}中确认登录。`;
 }
 export const downloadLocation = platform.ios

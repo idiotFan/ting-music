@@ -212,7 +212,7 @@ test("one playlist source failing leaves other source available", async ({
   await page.evaluate(() => {
     (window as any).__qqListError = true;
   });
-  await page.locator('[data-view="playlists"]').click();
+  await page.locator("#refresh-playlists").click();
   await expect(page.locator(".playlist-card")).toHaveCount(1);
   await expect(page.locator("#error")).toContainText("QQ");
   await expect(page.locator(".playlist-card")).toContainText("网易云");
@@ -342,7 +342,7 @@ test("platform tabs separate 100 NetEase playlists; successful playback updates 
       return original(cmd, args);
     };
   });
-  await page.locator('[data-view="playlists"]').click();
+  await page.locator("#refresh-playlists").click();
   await expect(page.locator(".playlist-card")).toHaveCount(100);
   await page.locator('[data-playlist-filter="qq"]').click();
   await expect(page.locator(".playlist-card")).toHaveCount(1);

@@ -1,6 +1,7 @@
 mod download;
 mod download_engine;
 mod http;
+mod mobile;
 pub mod netease;
 mod qq;
 use netease::{
@@ -42,6 +43,23 @@ async fn login_qr_check(api: tauri::State<'_, Api>, key: String) -> Result<QrSta
 #[tauri::command]
 async fn login_qr_cancel(api: tauri::State<'_, Api>) -> Result<(), String> {
     api.cancel_login().await
+}
+#[tauri::command]
+async fn send_login_code(
+    api: tauri::State<'_, Api>,
+    phone: String,
+    country: String,
+) -> Result<(), String> {
+    api.send_login_code(&phone, &country).await
+}
+#[tauri::command]
+async fn login_phone(
+    api: tauri::State<'_, Api>,
+    phone: String,
+    country: String,
+    code: String,
+) -> Result<QrStatus, String> {
+    api.login_phone(&phone, &country, &code).await
 }
 #[tauri::command]
 async fn logout(api: tauri::State<'_, Api>) -> Result<(), String> {
@@ -143,6 +161,9 @@ pub fn run() {
             login_qr_start,
             login_qr_check,
             login_qr_cancel,
+            send_login_code,
+            login_phone,
+            mobile::share_login_qr,
             logout,
             my_playlists,
             playlist_tracks,

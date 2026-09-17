@@ -84,10 +84,68 @@ struct Pending {
     session: Session,
     created: Instant,
 }
+struct PendingPhone {
+    phone: String,
+    country: String,
+    session: Session,
+    created: Instant,
+}
+#[derive(Default)]
+struct LoginState {
+    revision: u64,
+    phone: Option<PendingPhone>,
+    last_sms_send: Option<Instant>,
+}
+const SMS_COOLDOWN: Duration = Duration::from_secs(60);
+const PHONE_LOGIN_TTL: Duration = Duration::from_secs(600);
+
+fn phone_identity(phone: &str, country: &str) -> Result<(String, String), String> {
+    let phone = phone.trim();
+    let country = country.trim();
+    let country = if country.is_empty() { "86" } else { country };
+    let country = country.strip_prefix('+').unwrap_or(country);
+    if !(1..=3).contains(&country.len())
+        || country.starts_with('0')
+        || !country.bytes().all(|b| b.is_ascii_digit())
+    {
+        return Err("请输入有效的国家或地区区号".into());
+    }
+    if !(6..=14).contains(&phone.len())
+        || phone.len() + country.len() > 15
+        || !phone.bytes().all(|b| b.is_ascii_digit())
+        || (country == "86" && (phone.len() != 11 || !phone.starts_with('1')))
+    {
+        return Err("请输入有效的手机号码，号码中不要包含区号、空格或符号".into());
+    }
+    Ok((phone.to_owned(), country.to_owned()))
+}
+fn validate_login_code(code: &str) -> Result<&str, String> {
+    let code = code.trim();
+    if !(4..=6).contains(&code.len()) || !code.bytes().all(|b| b.is_ascii_digit()) {
+        return Err("请输入短信中的 4–6 位数字验证码".into());
+    }
+    Ok(code)
+}
+fn phone_login_response(body: Value) -> Result<Value, String> {
+    let code = body["code"].as_u64().unwrap_or(0);
+    if code == 200 {
+        return Ok(body);
+    }
+    let message = match code {
+        400 | 501 => "手机号码无效或账号不存在，请检查后重试",
+        502 | 503 => "验证码无效或已过期，请检查后重试",
+        405 | 429 | 8810 => "请求过于频繁，请稍后重试",
+        415 | 460 | 509 => "需要在网易云音乐官方 App 完成安全验证；也可以使用扫码登录",
+        _ => "验证码登录暂不可用，请稍后重试或使用扫码登录",
+    };
+    // Do not expose upstream diagnostic fields: they may contain the phone or code.
+    Err(format!("网易云登录未成功（{code}）：{message}"))
+}
 pub struct Api {
     active: Mutex<Session>,
     pending: Mutex<Option<Pending>>,
     auth_gate: tokio::sync::Mutex<()>,
+    login_state: Mutex<LoginState>,
     persist: bool,
 }
 #[derive(Debug, Serialize)]
@@ -201,7 +259,7 @@ fn check(body: Value) -> Result<Value, String> {
         // Upstream message/debug fields can echo request credentials. Only expose a
         // numeric code and our own text across IPC.
         let message = match code {
-            301 | 401 => "登录已失效，请重新扫码",
+            301 | 401 => "登录已失效，请重新登录",
             405 | 429 | 8810 => "请求过于频繁，请稍后重试",
             _ => "请稍后重试",
         };
@@ -266,6 +324,7 @@ impl Api {
             active: Mutex::new(Session::new(saved.as_deref())?),
             pending: Mutex::new(None),
             auth_gate: tokio::sync::Mutex::new(()),
+            login_state: Mutex::new(LoginState::default()),
             persist,
         })
     }
@@ -317,9 +376,131 @@ impl Api {
     pub async fn account(&self) -> Result<Option<Profile>, String> {
         Self::profile_for(&self.session()).await
     }
-    pub async fn start_login(&self) -> Result<QrLogin, String> {
-        let _gate = self.auth_gate.lock().await;
+    fn cancel_pending(&self) -> u64 {
+        let mut state = self.login_state.lock().unwrap();
+        state.revision = state.revision.wrapping_add(1);
+        state.phone = None;
         *self.pending.lock().unwrap() = None;
+        state.revision
+    }
+    fn ensure_login_revision(&self, revision: u64) -> Result<(), String> {
+        if self.login_state.lock().unwrap().revision != revision {
+            return Err("登录已取消，请重新开始".into());
+        }
+        Ok(())
+    }
+    fn finish_login(
+        &self,
+        revision: u64,
+        session: Session,
+        profile: Profile,
+    ) -> Result<QrStatus, String> {
+        let mut state = self.login_state.lock().unwrap();
+        if state.revision != revision {
+            return Err("登录已取消，请重新开始".into());
+        }
+        // The short keychain write and in-memory commit share the cancellation
+        // lock. A canceled network request must never resurrect a saved session.
+        let warning = if self.persist {
+            store_session(&session.cookies()).err()
+        } else {
+            None
+        };
+        *self.active.lock().unwrap() = session;
+        state.phone = None;
+        *self.pending.lock().unwrap() = None;
+        Ok(QrStatus {
+            code: 803,
+            profile: Some(profile),
+            warning,
+        })
+    }
+    pub async fn send_login_code(&self, phone: &str, country: &str) -> Result<(), String> {
+        let (phone, country) = phone_identity(phone, country)?;
+        let revision = self.login_state.lock().unwrap().revision;
+        let _gate = self.auth_gate.lock().await;
+        self.ensure_login_revision(revision)?;
+        let session = Session::new(None)?;
+        let revision = {
+            let mut state = self.login_state.lock().unwrap();
+            if state.revision != revision {
+                return Err("登录已取消，请重新开始".into());
+            }
+            if let Some(last) = state.last_sms_send {
+                let elapsed = last.elapsed();
+                if elapsed < SMS_COOLDOWN {
+                    let remaining = (SMS_COOLDOWN - elapsed).as_secs() + 1;
+                    return Err(format!("请等待 {remaining} 秒后再获取验证码"));
+                }
+            }
+            let now = Instant::now();
+            state.last_sms_send = Some(now);
+            state.revision = state.revision.wrapping_add(1);
+            state.phone = Some(PendingPhone {
+                phone: phone.clone(),
+                country: country.clone(),
+                session: session.clone(),
+                created: now,
+            });
+            *self.pending.lock().unwrap() = None;
+            state.revision
+        };
+        // Upstream request definitions (WEAPI rewrites /api/ to /weapi/):
+        // https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced/blob/main/module/captcha_sent.js
+        // https://github.com/go-musicfox/netease-music/blob/master/service/captcha_sent_service.go
+        let body = Self::raw(
+            &session,
+            "sms/captcha/sent",
+            json!({"cellphone":phone,"ctcode":country,"secrete":"music_middleuser_pclogin"}),
+        )
+        .await?;
+        self.ensure_login_revision(revision)?;
+        phone_login_response(body)?;
+        Ok(())
+    }
+    pub async fn login_phone(
+        &self,
+        phone: &str,
+        country: &str,
+        code: &str,
+    ) -> Result<QrStatus, String> {
+        let (phone, country) = phone_identity(phone, country)?;
+        let code = validate_login_code(code)?;
+        let revision = self.login_state.lock().unwrap().revision;
+        let _gate = self.auth_gate.lock().await;
+        let session = {
+            let state = self.login_state.lock().unwrap();
+            if state.revision != revision {
+                return Err("登录已取消，请重新开始".into());
+            }
+            let pending = state.phone.as_ref().ok_or("请先获取短信验证码")?;
+            if pending.phone != phone || pending.country != country {
+                return Err("手机号码已变更，请为当前号码重新获取验证码".into());
+            }
+            if pending.created.elapsed() >= PHONE_LOGIN_TTL {
+                return Err("验证码登录已过期，请重新获取验证码".into());
+            }
+            pending.session.clone()
+        };
+        // https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced/blob/main/module/login_cellphone.js
+        let body = Self::raw(
+            &session,
+            "w/login/cellphone",
+            json!({"type":"1","https":"true","phone":phone,"countrycode":country,
+                "captcha":code,"remember":"true","secureCaptcha":""}),
+        )
+        .await?;
+        self.ensure_login_revision(revision)?;
+        phone_login_response(body)?;
+        let profile = Self::profile_for(&session)
+            .await?
+            .ok_or("验证码已确认，但未能取得账号信息，请重试")?;
+        self.finish_login(revision, session, profile)
+    }
+    pub async fn start_login(&self) -> Result<QrLogin, String> {
+        let revision = self.cancel_pending();
+        let _gate = self.auth_gate.lock().await;
+        self.ensure_login_revision(revision)?;
         let session = Session::new(None)?;
         let body = check(
             Self::raw(
@@ -344,23 +525,31 @@ impl Api {
         url.query_pairs_mut()
             .append_pair("codekey", &key)
             .append_pair("chainId", &chain);
-        *self.pending.lock().unwrap() = Some(Pending {
-            key: key.clone(),
-            session,
-            created: Instant::now(),
-        });
+        {
+            let state = self.login_state.lock().unwrap();
+            if state.revision != revision {
+                return Err("登录已取消，请重新开始".into());
+            }
+            *self.pending.lock().unwrap() = Some(Pending {
+                key: key.clone(),
+                session,
+                created: Instant::now(),
+            });
+        }
         Ok(QrLogin {
             key,
             url: url.to_string(),
         })
     }
     pub async fn cancel_login(&self) -> Result<(), String> {
-        let _gate = self.auth_gate.lock().await;
-        *self.pending.lock().unwrap() = None;
+        // Invalidate in-flight requests immediately instead of waiting behind them.
+        self.cancel_pending();
         Ok(())
     }
     pub async fn check_login(&self, key: &str) -> Result<QrStatus, String> {
+        let revision = self.login_state.lock().unwrap().revision;
         let _gate = self.auth_gate.lock().await;
+        self.ensure_login_revision(revision)?;
         let session = {
             let pending = self.pending.lock().unwrap();
             let p = pending
@@ -382,36 +571,30 @@ impl Api {
             json!({"type":1,"key":key,"noCheckToken":true}),
         )
         .await?;
+        self.ensure_login_revision(revision)?;
         let code = body["code"].as_u64().unwrap_or(0);
         if ![800, 801, 802, 803].contains(&code) {
             return Err(format!("登录状态异常（{code}），请刷新二维码"));
         }
-        let mut profile = None;
-        let mut warning = None;
         if code == 803 {
-            profile = Self::profile_for(&session).await?;
-            if profile.is_none() {
-                return Err("扫码已确认，但暂未取得账号信息，请重试".into());
-            }
-            if self.persist {
-                let cookie = session.cookies();
-                warning = tokio::task::spawn_blocking(move || store_session(&cookie))
-                    .await
-                    .map_err(|_| "登录状态保存失败")?
-                    .err();
-            }
-            *self.active.lock().unwrap() = session;
-            *self.pending.lock().unwrap() = None;
+            let profile = Self::profile_for(&session)
+                .await?
+                .ok_or("扫码已确认，但暂未取得账号信息，请重试")?;
+            return self.finish_login(revision, session, profile);
         } else if code == 800 {
-            *self.pending.lock().unwrap() = None;
+            let state = self.login_state.lock().unwrap();
+            if state.revision == revision {
+                *self.pending.lock().unwrap() = None;
+            }
         }
         Ok(QrStatus {
             code,
-            profile,
-            warning,
+            profile: None,
+            warning: None,
         })
     }
     pub async fn logout(&self) -> Result<(), String> {
+        self.cancel_pending();
         let _gate = self.auth_gate.lock().await;
         if self.persist {
             tokio::task::spawn_blocking(delete_session)
@@ -631,6 +814,137 @@ fn move_track(ids: &mut Vec<u64>, track_id: u64, action: &str) -> Result<(), Str
 mod tests {
     use super::*;
     use aes::cipher::BlockDecryptMut;
+    fn pending_phone(created: Instant) -> PendingPhone {
+        PendingPhone {
+            phone: "13800000000".into(),
+            country: "86".into(),
+            session: Session::new(None).unwrap(),
+            created,
+        }
+    }
+    #[test]
+    fn phone_login_validates_numbers_and_codes_without_echoing_them() {
+        assert_eq!(
+            phone_identity(" 13800000000 ", "+86").unwrap(),
+            ("13800000000".into(), "86".into())
+        );
+        assert!(phone_identity("2025550123", "1").is_ok());
+        for (phone, country) in [
+            ("13800000000;MUSIC_U=secret", "86"),
+            ("1380000000", "86"),
+            ("１２３４５６７８９０１", "86"),
+            ("+8613800000000", "86"),
+            ("13800000000", "++86"),
+            ("13800000000", "+"),
+            ("13800000000", "086"),
+            ("12345678901234", "123"),
+        ] {
+            let error = phone_identity(phone, country).unwrap_err();
+            assert!(!error.contains(phone));
+        }
+        assert_eq!(validate_login_code(" 1234 ").unwrap(), "1234");
+        assert_eq!(validate_login_code("123456").unwrap(), "123456");
+        for code in ["123", "1234567", "12 34", "１２３４", "<script>"] {
+            assert!(validate_login_code(code).is_err());
+        }
+        for code in [400, 502, 503, 415, 460, 509, 999] {
+            let error = phone_login_response(json!({
+                "code":code,"message":"13800000000 otp=123456 MUSIC_U=secret"
+            }))
+            .unwrap_err();
+            assert!(!error.contains("13800000000"));
+            assert!(!error.contains("123456"));
+            assert!(!error.contains("MUSIC_U"));
+        }
+    }
+    #[tokio::test]
+    async fn phone_login_requires_matching_unexpired_pending_session() {
+        let api = Api::new().unwrap();
+        assert!(api
+            .login_phone("13800000000", "86", "1234")
+            .await
+            .unwrap_err()
+            .contains("先获取"));
+        api.login_state.lock().unwrap().phone = Some(pending_phone(Instant::now()));
+        assert!(api
+            .login_phone("13900000000", "86", "1234")
+            .await
+            .unwrap_err()
+            .contains("变更"));
+        assert!(api
+            .login_phone("13800000000", "1", "1234")
+            .await
+            .unwrap_err()
+            .contains("变更"));
+        api.login_state.lock().unwrap().phone =
+            Some(pending_phone(Instant::now() - PHONE_LOGIN_TTL));
+        assert!(api
+            .login_phone("13800000000", "86", "1234")
+            .await
+            .unwrap_err()
+            .contains("过期"));
+        assert!(api.session().cookie("MUSIC_U").is_empty());
+    }
+    #[tokio::test]
+    async fn sms_cooldown_survives_cancel_and_number_changes() {
+        let api = Api::new().unwrap();
+        api.login_state.lock().unwrap().last_sms_send = Some(Instant::now());
+        for phone in ["13800000000", "13900000000"] {
+            api.cancel_login().await.unwrap();
+            let error = api.send_login_code(phone, "86").await.unwrap_err();
+            assert!(error.contains("秒后"));
+            assert!(!error.contains(phone));
+        }
+    }
+    #[tokio::test]
+    async fn canceled_phone_requests_cannot_wait_then_restore_login() {
+        let api = Api::new().unwrap();
+        api.login_state.lock().unwrap().phone = Some(pending_phone(Instant::now()));
+        let gate = api.auth_gate.lock().await;
+        let mut request = Box::pin(api.login_phone("13800000000", "86", "1234"));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), &mut request)
+                .await
+                .is_err()
+        );
+        tokio::time::timeout(Duration::from_millis(100), api.cancel_login())
+            .await
+            .expect("cancel must not wait for the in-flight auth request")
+            .unwrap();
+        drop(gate);
+        assert!(request.await.unwrap_err().contains("取消"));
+        assert!(api.login_state.lock().unwrap().phone.is_none());
+
+        let revision = api.login_state.lock().unwrap().revision;
+        let authenticated = Session::new(Some("MUSIC_U=synthetic-session")).unwrap();
+        api.cancel_login().await.unwrap();
+        let result = api.finish_login(
+            revision,
+            authenticated,
+            Profile {
+                user_id: 1,
+                nickname: "fixture".into(),
+                avatar: String::new(),
+            },
+        );
+        assert!(result.unwrap_err().contains("取消"));
+        assert!(api.session().cookie("MUSIC_U").is_empty());
+    }
+    #[tokio::test]
+    async fn queued_sms_send_is_discarded_after_cancel() {
+        let api = Api::new().unwrap();
+        let gate = api.auth_gate.lock().await;
+        let mut request = Box::pin(api.send_login_code("13800000000", "86"));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), &mut request)
+                .await
+                .is_err()
+        );
+        api.cancel_login().await.unwrap();
+        drop(gate);
+        assert!(request.await.unwrap_err().contains("取消"));
+        assert!(api.login_state.lock().unwrap().last_sms_send.is_none());
+    }
     #[test]
     fn upstream_errors_never_forward_request_credentials() {
         let error =

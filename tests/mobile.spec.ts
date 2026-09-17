@@ -259,6 +259,8 @@ for (const device of [
     }
     await page.locator("#account-button").tap();
     await expect(page.locator(".account-note")).toContainText(device.notice);
+    await expect(page.locator("#phone-login-form")).toBeVisible();
+    await page.locator('[data-netease-method="qr"]').tap();
     await expect(page.locator(".account-subtitle")).toContainText("另一台设备");
     await expect(page.locator("#login-qr")).toBeVisible();
     await expect(page.locator("#account-dialog")).not.toContainText("macOS");
@@ -300,5 +302,94 @@ test("restored iOS account describes iOS storage", async ({ browser }) => {
   await page.locator("#account-button").tap();
   await expect(page.locator("#account-status")).toContainText("iOS 钥匙串");
   await expect(page.locator("#account-status")).not.toContainText("Mac");
+  await context.close();
+});
+
+for (const size of [
+  { width: 320, height: 568 },
+  { width: 393, height: 852 },
+  { width: 568, height: 320 },
+  { width: 852, height: 393 },
+  { width: 820, height: 1180 },
+]) {
+  test(`mobile browsing and playback remain separate at ${size.width}×${size.height}`, async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      viewport: size,
+      isMobile: true,
+      hasTouch: true,
+      userAgent: phoneUA,
+    });
+    const page = await context.newPage();
+    await mobileFixture(page);
+    const main = (await page.locator("main").boundingBox())!;
+    const now = (await page.locator(".now-panel").boundingBox())!;
+    const player = (await page.locator(".player").boundingBox())!;
+    const nav = (await page.locator("nav").boundingBox())!;
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(size.width);
+    expect(nav.y + nav.height).toBe(size.height);
+    expect(main.height).toBeGreaterThan(200);
+    if (size.width > size.height && size.height <= 500) {
+      expect(main.x + main.width).toBeLessThanOrEqual(now.x);
+      expect(main.x + main.width).toBeLessThanOrEqual(player.x);
+    } else {
+      expect(main.y + main.height).toBeLessThanOrEqual(now.y);
+    }
+    expect(now.y + now.height).toBeLessThanOrEqual(player.y);
+    expect(player.y + player.height).toBeLessThanOrEqual(nav.y);
+    for (const selector of [
+      "#repeat",
+      "#previous",
+      "#toggle",
+      "#next",
+      "#lyrics-toggle",
+      "#quality",
+    ]) {
+      const target = (await page.locator(selector).boundingBox())!;
+      expect(target.width).toBeGreaterThanOrEqual(44);
+      expect(target.height).toBeGreaterThanOrEqual(44);
+      expect(target.x).toBeGreaterThanOrEqual(0);
+      expect(target.x + target.width).toBeLessThanOrEqual(size.width);
+      expect(target.y + target.height).toBeLessThanOrEqual(nav.y);
+    }
+    await context.close();
+  });
+}
+
+test("phone search releases space for the keyboard and restores playback after submit", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    viewport: { width: 393, height: 852 },
+    isMobile: true,
+    hasTouch: true,
+    userAgent: phoneUA,
+  });
+  const page = await context.newPage();
+  await mobileFixture(page);
+  await page.locator("#search").fill("键盘搜索");
+  await page.setViewportSize({ width: 393, height: 480 });
+  await expect(page.locator(".now-panel")).toBeHidden();
+  await expect(page.locator(".player")).toBeHidden();
+  const search = (await page.locator("#search").boundingBox())!;
+  expect(search.y).toBeGreaterThanOrEqual(0);
+  expect(search.y + search.height).toBeLessThan(480);
+  expect(
+    (await page.locator(".main-scroll").boundingBox())!.height,
+  ).toBeGreaterThan(250);
+  await page.locator("#search").press("Enter");
+  await expect(page.locator("#search")).not.toBeFocused();
+  await page.setViewportSize({ width: 393, height: 852 });
+  await expect(page.locator(".now-panel")).toBeVisible();
+  await expect(page.locator(".player")).toBeVisible();
+  const main = (await page.locator("main").boundingBox())!;
+  const now = (await page.locator(".now-panel").boundingBox())!;
+  expect(main.y + main.height).toBeLessThanOrEqual(now.y);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    393,
+  );
   await context.close();
 });

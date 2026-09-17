@@ -1,6 +1,6 @@
 [package]
 name = "ting-music"
-version = "0.9.0"
+version = "0.9.1"
 description = "A compact player for NetEase Cloud Music and QQ Music"
 authors = ["Ting contributors"]
 edition = "2021"
@@ -33,6 +33,12 @@ time = "0.3"
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 security-framework = "3.7"
+
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2 = "0.6.3"
+block2 = "0.6.2"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray", "NSData", "NSURL", "NSString", "NSError"] }
+objc2-ui-kit = { version = "0.3.2", default-features = false, features = ["std", "UIActivity", "UIActivityViewController", "UIImage", "UIResponder", "UIView", "UIViewController", "UIPresentationController", "UIPopoverPresentationController", "block2"] }
 
 # Xcode 27 internalizes SwiftRs C exports inside Tauri's static archive.
 # Local source is upstream 1.0.8 plus the documented build-helper fix.
