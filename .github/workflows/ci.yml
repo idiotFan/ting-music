@@ -49,6 +49,8 @@ jobs:
           node scripts/cargo.mjs fmt --manifest-path src-tauri/Cargo.toml -- --check
           node scripts/cargo.mjs test --locked --manifest-path src-tauri/Cargo.toml
           python3 -B scripts/infrastructure-test.py
+          xcrun clang -fobjc-arc -fblocks -framework Foundation -framework AppKit tests/folder_sync_native.m -o /tmp/ting-folder-sync-test
+          /tmp/ting-folder-sync-test
       - name: Build native app
         run: npm run tauri -- build -- --locked
       - name: Frontend dependency audit

@@ -1319,6 +1319,42 @@ button.brand:active {
   user-select: none;
 }
 
+#sync-dialog {
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--surface);
+  color: var(--ink);
+}
+#sync-dialog h2 {
+  padding-right: 24px;
+}
+#sync-status {
+  font-weight: 600;
+}
+#sync-warning {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.sync-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 20px 0;
+}
+.sync-actions button {
+  min-height: 44px;
+}
+#sync-button[data-sync-state="connected"] {
+  color: var(--accent);
+}
+#sync-button[data-sync-state="error"] {
+  outline: 1px solid var(--accent);
+}
+
 /* Touch devices put browsing first and keep playback within thumb reach. */
 .mobile-device {
   --mobile-bottom-safe: env(safe-area-inset-bottom);
@@ -1561,7 +1597,8 @@ button.brand:active {
 }
 .mobile-device #account-dialog,
 .mobile-device #library-dialog,
-.mobile-device #theme-dialog {
+.mobile-device #theme-dialog,
+.mobile-device #sync-dialog {
   position: fixed;
   inset: auto 0 var(--mobile-keyboard-inset, 0px);
   margin: 0 auto;
@@ -1696,7 +1733,8 @@ button.brand:active {
   }
   .mobile-device #account-dialog,
   .mobile-device #library-dialog,
-  .mobile-device #theme-dialog {
+  .mobile-device #theme-dialog,
+  .mobile-device #sync-dialog {
     max-width: calc(
       100% - env(safe-area-inset-left) - env(safe-area-inset-right)
     );
@@ -1814,4 +1852,12 @@ button.brand:active {
 /* The system keyboard owns the home-indicator area while it is showing. */
 .mobile-device.keyboard-open #toast {
   bottom: calc(var(--mobile-keyboard-inset, 0px) + 12px);
+}
+
+#sync-dialog::backdrop {
+  background: #263a2b66;
+}
+#sync-dialog .summary {
+  white-space: normal;
+  line-height: 1.6;
 }

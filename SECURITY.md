@@ -25,3 +25,7 @@ Run the release checks on the exact files being submitted, and run secret scanni
 Use the repository's private vulnerability-reporting channel if it is enabled. Otherwise contact the maintainer privately before opening a public issue. Include the affected version, reproducible steps using dummy data, the expected security boundary, and a redacted impact description. Never attach active credentials or personal account exports to a public issue.
 
 Only the current release branch is actively maintained. Platform integrations depend on unofficial interfaces and can change independently of Ting. macOS is the currently validated platform; other operating systems need separate credential-storage and packaging validation before release.
+
+## iCloud Drive 文件夹同步
+
+仅在用户通过系统选择器授权的目录内读写 Ting-Sync-v1，书签留在本机，云文件只含白名单歌单元数据与随机同步标识，不含音乐平台登录凭据。JSON 不使用自定义加密；权限沿用用户的 iCloud 账号与所选目录。停用不删除数据；系统授权和文件协调失效时保留本机修改。原生层拒绝符号链接及超限文件，Rust 拒绝未知字段与未知版本。

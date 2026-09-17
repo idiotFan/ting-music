@@ -1,4 +1,5 @@
 import { songKey, uniqueSongs, formatTime } from "./model.mjs";
+import { changes, type Batch } from "./library-sync-model";
 export type Source = "netease" | "qq";
 export type Song = {
   source?: Source;
@@ -45,7 +46,23 @@ function read<T>(key: string, fallback: T): T {
     return fallback;
   }
 }
-const saved = read<unknown>("ting.playlists", []);
+const envelope = read<{
+  version?: number;
+  playlists?: unknown;
+  pending?: Batch[];
+  device?: string;
+} | null>("ting.library-sync.v1", null);
+let syncEnabled =
+  envelope?.version === 1 &&
+  Array.isArray(envelope.playlists) &&
+  Array.isArray(envelope.pending);
+let backendDevice: string | undefined = syncEnabled
+  ? envelope?.device
+  : undefined;
+let pending: Batch[] = syncEnabled ? envelope!.pending! : [];
+const saved = syncEnabled
+  ? envelope!.playlists
+  : read<unknown>("ting.playlists", []);
 let internal: SavedPlaylist[] = Array.isArray(saved)
   ? saved
       .filter(
@@ -64,10 +81,74 @@ let internal: SavedPlaylist[] = Array.isArray(saved)
         songs: uniqueSongs(p.songs.filter(validSong)),
       }))
   : [];
+function persist(
+  next: SavedPlaylist[],
+  outbox: Batch[],
+  device = backendDevice,
+) {
+  localStorage.setItem(
+    "ting.library-sync.v1",
+    JSON.stringify({ version: 1, playlists: next, pending: outbox, device }),
+  );
+}
 function commit(next: SavedPlaylist[]) {
-  // Persist first: quota/errors must leave the visible library unchanged.
-  localStorage.setItem("ting.playlists", JSON.stringify(next));
+  // The visible library and its outbox are one atomic localStorage value.
+  if (syncEnabled) {
+    const edits = changes(internal, next);
+    const outbox = edits.length
+      ? [...pending, { id: crypto.randomUUID(), changes: edits }]
+      : pending;
+    persist(next, outbox);
+    pending = outbox;
+  } else localStorage.setItem("ting.playlists", JSON.stringify(next));
   internal = next;
+  window.dispatchEvent(new Event("ting:library-change"));
+}
+export function startSyncLibrary() {
+  if (syncEnabled) return;
+  const edits = changes([], internal);
+  const outbox = edits.length
+    ? [{ id: crypto.randomUUID(), changes: edits }]
+    : [];
+  persist(internal, outbox);
+  pending = outbox;
+  syncEnabled = true;
+}
+export function syncDevice(): string | undefined {
+  return backendDevice;
+}
+export function pendingLibraryChanges(): Batch[] {
+  return [...pending];
+}
+export function acceptSyncLibrary(
+  playlists: SavedPlaylist[],
+  ack: string[],
+  device: string,
+): boolean {
+  if (
+    !Array.isArray(playlists) ||
+    !playlists.every(
+      (p) =>
+        p.internal === true &&
+        Number.isSafeInteger(p.id) &&
+        p.id > 0 &&
+        typeof p.name === "string" &&
+        Array.isArray(p.songs) &&
+        p.songs.every(validSong),
+    )
+  )
+    throw new Error("同步歌单数据无效");
+  const confirmed = new Set(ack);
+  const remaining = pending.filter((b) => !confirmed.has(b.id));
+  // An edit made while IPC was in flight must be acknowledged in a later pass
+  // before replacing the UI snapshot with the merged native state.
+  const next = remaining.length ? internal : playlists;
+  const changed = JSON.stringify(next) !== JSON.stringify(internal);
+  persist(next, remaining, device);
+  backendDevice = device;
+  pending = remaining;
+  internal = next;
+  return changed;
 }
 export function internalPlaylists(): Playlist[] {
   return internal.map(({ songs, ...p }) => ({
@@ -337,7 +418,7 @@ export function setupLibrary(o: Options) {
   function create(song?: Song) {
     screen(
       "新建本机歌单",
-      `<p class="summary">可混合收纳网易云和 QQ 歌曲。歌单保存在本机，在线歌曲仍需联网播放。</p><form id="playlist-name-form"><label for="playlist-name">歌单名称</label><input id="playlist-name" maxlength="60" required placeholder="给歌单起个名字"/><button class="primary" type="submit">${song ? "创建并加入" : "创建歌单"}</button></form>`,
+      `<p class="summary">可混合收纳网易云和 QQ 歌曲。歌单离线保存在本机，可通过 iCloud 同步。在线歌曲仍需联网播放。</p><form id="playlist-name-form"><label for="playlist-name">歌单名称</label><input id="playlist-name" maxlength="60" required placeholder="给歌单起个名字"/><button class="primary" type="submit">${song ? "创建并加入" : "创建歌单"}</button></form>`,
     );
     q<HTMLFormElement>("#playlist-name-form").onsubmit = (e) => {
       e.preventDefault();
@@ -345,7 +426,9 @@ export function setupLibrary(o: Options) {
       if (!name) return;
       void write(
         async () => {
-          let id = Date.now();
+          const random = crypto.getRandomValues(new Uint32Array(2));
+          let id = (random[0] & 0x1fffff) * 0x100000000 + random[1];
+          if (!id) id = 1;
           while (internal.some((p) => p.id === id)) id++;
           commit([
             ...internal,
