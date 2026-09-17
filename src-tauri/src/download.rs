@@ -30,12 +30,44 @@ impl Drop for Scratch {
         let _ = std::fs::remove_dir_all(&self.0);
     }
 }
+fn ensure_writable(folder: &PathBuf) -> std::io::Result<()> {
+    std::fs::create_dir_all(folder)?;
+    let probe = folder.join(format!(".ting-write-{}", uuid::Uuid::new_v4()));
+    std::fs::write(&probe, b"ok")?;
+    let _ = std::fs::remove_file(&probe);
+    Ok(())
+}
+
 fn directory(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     #[cfg(target_os = "ios")]
-    let folder = app.path().document_dir();
+    {
+        return Ok(app
+            .path()
+            .document_dir()
+            .map_err(|_| "找不到下载目录")?
+            .join("Ting"));
+    }
     #[cfg(not(target_os = "ios"))]
-    let folder = app.path().download_dir();
-    Ok(folder.map_err(|_| "找不到下载目录")?.join("Ting"))
+    {
+        // Prefer the user Downloads folder. On Windows, Controlled Folder Access often
+        // blocks unsigned apps there — fall back to app-local data so downloads still work.
+        let mut candidates: Vec<PathBuf> = Vec::new();
+        if let Ok(dir) = app.path().download_dir() {
+            candidates.push(dir.join("Ting"));
+        }
+        if let Ok(dir) = app.path().app_local_data_dir() {
+            candidates.push(dir.join("downloads"));
+        }
+        if let Ok(dir) = app.path().app_data_dir() {
+            candidates.push(dir.join("downloads"));
+        }
+        for folder in candidates {
+            if ensure_writable(&folder).is_ok() {
+                return Ok(folder);
+            }
+        }
+        Err("下载文件无法写入，请检查磁盘空间和目录权限".into())
+    }
 }
 fn account_cookie(cookie: &str) -> Option<&str> {
     cookie

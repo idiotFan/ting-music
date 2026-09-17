@@ -278,7 +278,13 @@ fn stored_session() -> Option<String> {
     .ok()
     .and_then(|v| String::from_utf8(v).ok())
 }
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+fn stored_session() -> Option<String> {
+    keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+        .ok()
+        .and_then(|entry| entry.get_password().ok())
+}
+#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "windows", target_os = "linux")))]
 fn stored_session() -> Option<String> {
     None
 }
@@ -291,7 +297,15 @@ fn store_session(cookie: &str) -> Result<(), String> {
     )
     .map_err(|_| "已登录，但钥匙串保存失败；本次会话仍可使用".into())
 }
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+fn store_session(cookie: &str) -> Result<(), String> {
+    let entry = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+        .map_err(|_| "已登录，但凭据保存失败；本次会话仍可使用".to_string())?;
+    entry
+        .set_password(cookie)
+        .map_err(|_| "已登录，但凭据保存失败；本次会话仍可使用".into())
+}
+#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "windows", target_os = "linux")))]
 fn store_session(_: &str) -> Result<(), String> {
     Err("此平台暂仅保留本次登录会话".into())
 }
@@ -304,7 +318,17 @@ fn delete_session() -> Result<(), String> {
         Err(_) => Err("无法清除钥匙串登录记录，请重试退出".into()),
     }
 }
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+fn delete_session() -> Result<(), String> {
+    let entry = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+        .map_err(|_| "无法清除登录凭据，请重试退出".to_string())?;
+    match entry.delete_credential() {
+        Ok(()) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(_) => Err("无法清除登录凭据，请重试退出".into()),
+    }
+}
+#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "windows", target_os = "linux")))]
 fn delete_session() -> Result<(), String> {
     Ok(())
 }

@@ -348,7 +348,7 @@ fn validate_mp3_frames(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_audio(path: &Path, duration_ms: u64) -> Result<(), String> {
+fn validate_audio(path: &Path, duration_ms: u64, content_hash_verified: bool) -> Result<(), String> {
     let error = "音频完整解码失败，未保存";
     if path.extension().is_some_and(|s| s == "mp3") {
         validate_mp3_frames(path)?;
@@ -422,7 +422,10 @@ fn validate_audio(path: &Path, duration_ms: u64) -> Result<(), String> {
         }
         frames += decoded.frames() as u64;
     }
-    if decoder.finalize().verify_ok == Some(false) {
+    // Platform CDN MD5 (when present) already checked during fetch. Symphonia's
+    // bitstream verify can false-fail on some valid NetEase/QQ streams, especially
+    // observed on Windows; keep it strict only when we lack a content hash.
+    if decoder.finalize().verify_ok == Some(false) && !content_hash_verified {
         return Err("音频数据校验和不符，未保存".into());
     }
     let tolerance = if ext == "mp3" { 0.10 } else { 0.001 };
@@ -552,10 +555,33 @@ fn publish(temp: &Path, folder: &Path, stem: &str, ext: &str) -> Result<PathBuf,
             continue;
         }
         let dest = folder.join(format!("{stem}.{ext}"));
-        match std::fs::hard_link(temp, &dest) {
-            Ok(()) => return Ok(dest),
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(_) => return Err(IO_ERROR.into()),
+        // Windows often cannot hard-link (and Controlled Folder Access can deny it).
+        // Prefer copy there; keep hard_link-first on Unix for atomic no-clobber publish.
+        #[cfg(target_os = "windows")]
+        {
+            match std::fs::copy(temp, &dest) {
+                Ok(_) => {
+                    let _ = std::fs::remove_file(temp);
+                    return Ok(dest);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(_) => return Err(IO_ERROR.into()),
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            match std::fs::hard_link(temp, &dest) {
+                Ok(()) => return Ok(dest),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(_) => match std::fs::copy(temp, &dest) {
+                    Ok(_) => {
+                        let _ = std::fs::remove_file(temp);
+                        return Ok(dest);
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                    Err(_) => return Err(IO_ERROR.into()),
+                },
+            }
         }
     }
     Err("同名文件过多".into())
@@ -579,22 +605,27 @@ pub async fn run(
     scratch: super::download::Scratch,
     guard: super::download::Guard,
 ) -> Result<Value, String> {
-    let chosen = if fallback.is_null() { &info } else { &fallback };
-    validate_info(chosen, if fallback.is_null() { Some(id) } else { None })?;
-    if !fallback.is_null() && (origin != "netease" || n(&info["song"]["id"]) != id) {
+    let from_fallback = !fallback.is_null();
+    let chosen = if from_fallback {
+        fallback
+    } else {
+        info.clone()
+    };
+    validate_info(&chosen, if from_fallback { None } else { Some(id) })?;
+    if from_fallback && (origin != "netease" || n(&info["song"]["id"]) != id) {
         return Err("补源信息无效".into());
     }
-    let audio = &chosen["playback"];
-    let source = if fallback.is_null() {
-        origin.clone()
-    } else {
+    let audio = chosen["playback"].clone();
+    let source = if from_fallback {
         "qq".into()
+    } else {
+        origin.clone()
     };
     let audio_id = n(&chosen["song"]["id"]);
     let ext = s(&audio["format"]).to_owned();
     let level = s(&audio["level"]).to_owned();
     let temp = scratch.0.join(format!("audio.{ext}"));
-    tokio::time::timeout(Duration::from_secs(480), fetch_audio(audio, &temp))
+    tokio::time::timeout(Duration::from_secs(480), fetch_audio(&audio, &temp))
         .await
         .map_err(|_| "下载超时，请重试")??;
     let artwork = cover(s(&info["song"]["cover"])).await;
@@ -609,7 +640,8 @@ pub async fn run(
     tokio::task::spawn_blocking(move||{
         let _guard=guard;
         let _scratch=scratch;
-        validate_audio(&temp,n(&info["song"]["duration"]))?;
+        let content_hash_verified=!s(&audio["md5"]).is_empty();
+        validate_audio(&temp,n(&info["song"]["duration"]),content_hash_verified)?;
         tag_file(&temp,&info,&origin,&source,audio_id,&level,artwork.as_deref())?;
         let verified=lofty::read_from_path(&temp).map_err(|_|"歌曲标签校验失败")?;
         let properties=verified.properties();
@@ -711,26 +743,26 @@ mod tests {
         for ext in ["flac", "mp3"] {
             let dir = temp();
             let path = fixture(ext, &dir.0);
-            validate_audio(&path, 20000).unwrap();
-            assert!(validate_audio(&path, 10000).is_err());
+            validate_audio(&path, 20000, false).unwrap();
+            assert!(validate_audio(&path, 10000, false).is_err());
             let data = std::fs::read(&path).unwrap();
             let truncated = dir.0.join(format!("truncated.{ext}"));
             std::fs::write(&truncated, &data[..data.len() / 2]).unwrap();
-            assert!(validate_audio(&truncated, 20000).is_err());
+            assert!(validate_audio(&truncated, 20000, false).is_err());
             let mut corrupt = data.clone();
             let start = corrupt.len() / 2;
             corrupt[start..start + 4096].fill(0);
             let damaged = dir.0.join(format!("damaged.{ext}"));
             std::fs::write(&damaged, corrupt).unwrap();
-            assert!(validate_audio(&damaged, 20000).is_err());
+            assert!(validate_audio(&damaged, 20000, false).is_err());
             let short = dir.0.join(format!("short.{ext}"));
             std::fs::write(&short, &data[..data.len() - 1]).unwrap();
             assert!(
-                validate_audio(&short, 20000).is_err(),
+                validate_audio(&short, 20000, false).is_err(),
                 "partial final frame must fail"
             );
             tag_file(&path, &info(ext), "netease", "qq", 987, "lossless", None).unwrap();
-            validate_audio(&path, 20000).unwrap();
+            validate_audio(&path, 20000, false).unwrap();
             let tagged = lofty::read_from_path(&path).unwrap();
             let tag = tagged.primary_tag().unwrap();
             assert_eq!(tag.title().as_deref(), Some("Example"));

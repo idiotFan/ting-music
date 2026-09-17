@@ -29,7 +29,14 @@ fn load() -> Option<Value> {
     .ok()
     .and_then(|b| serde_json::from_slice(&b).ok())
 }
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+fn load() -> Option<Value> {
+    keyring::Entry::new("com.ting.music.demo", "qq-session")
+        .ok()
+        .and_then(|entry| entry.get_password().ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+}
+#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "windows", target_os = "linux")))]
 fn load() -> Option<Value> {
     None
 }
@@ -51,7 +58,23 @@ fn persist(value: Option<&Value>) -> Result<(), String> {
         }
     }
 }
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+fn persist(value: Option<&Value>) -> Result<(), String> {
+    let entry = keyring::Entry::new("com.ting.music.demo", "qq-session")
+        .map_err(|_| "QQ 已登录，但凭据保存失败，本次会话可用".to_string())?;
+    if let Some(v) = value {
+        entry
+            .set_password(&v.to_string())
+            .map_err(|_| "QQ 已登录，但凭据保存失败，本次会话可用".into())
+    } else {
+        match entry.delete_credential() {
+            Ok(()) => Ok(()),
+            Err(keyring::Error::NoEntry) => Ok(()),
+            Err(_) => Err("无法清除 QQ 登录凭据，请重试".into()),
+        }
+    }
+}
+#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "windows", target_os = "linux")))]
 fn persist(value: Option<&Value>) -> Result<(), String> {
     if value.is_none() {
         Ok(())
