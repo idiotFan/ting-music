@@ -16,7 +16,8 @@ if (existsSync(`${local}/cargo/bin/cargo`)) {
   env.RUSTUP_HOME = `${local}/rustup`;
   env.PATH = `${local}/cargo/bin${delimiter}${env.PATH}`;
 }
-const child = spawn(resolve("node_modules/.bin/tauri"), process.argv.slice(2), {
+// Run the JS entry directly: Windows cannot spawn the extensionless .bin shim.
+const child = spawn(process.execPath, [resolve("node_modules/@tauri-apps/cli/tauri.js"), ...process.argv.slice(2)], {
   stdio: "inherit",
   env,
 });

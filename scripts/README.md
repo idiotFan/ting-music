@@ -4,6 +4,8 @@
 
 ## 构建
 
+Windows x64 使用 Node.js、Rust MSVC 工具链和 Visual Studio C++ Build Tools，运行 `npm run tauri -- build --bundles nsis -- --locked`。安装包输出到 `src-tauri/target/release/bundle/nsis/`。必须通过 Tauri CLI 构建正式版；普通 `cargo build --release` 不会自动启用生产环境的 `custom-protocol`，生成的程序仍依赖开发服务器。
+
 需要 Node.js 22、Rust stable 和 Xcode。Python 3 只用于开发机上的发布、安全扫描和基础设施测试。
 
 ```sh

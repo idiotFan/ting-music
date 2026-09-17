@@ -1846,7 +1846,7 @@ $("#download-current").onclick = async () => {
       `已保存 · ${source} · ${quality} · ${result.format.toUpperCase()} · ${detail}`;
     $("#download-status").title = result.path;
     toast(
-      `${result.filename} 已保存到${downloadLocation}${result.warnings.length ? " · " + result.warnings.join("；") : ""}`,
+      `${result.filename} 已保存到${mobileDevice ? downloadLocation : result.path.replace(/[\\/][^\\/]+$/, "")}${result.warnings.length ? " · " + result.warnings.join("；") : ""}`,
     );
   } catch (e) {
     $("#download-status").textContent = "下载未完成，可点击下载按钮重试";

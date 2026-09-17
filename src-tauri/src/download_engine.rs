@@ -393,7 +393,11 @@ fn validate_mp3_frames(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_audio(path: &Path, duration_ms: u64, content_hash_verified: bool) -> Result<(), String> {
+fn validate_audio(
+    path: &Path,
+    duration_ms: u64,
+    content_hash_verified: bool,
+) -> Result<(), String> {
     let error = "音频完整解码失败，未保存";
     if path.extension().is_some_and(|s| s == "mp3") {
         validate_mp3_frames(path)?;
@@ -584,6 +588,16 @@ fn safe_name(value: &str) -> String {
         clean
     }
 }
+fn sync_audio(path: &Path) -> Result<(), String> {
+    // Windows FlushFileBuffers requires write access, including after tagging.
+    // Open the existing file without creating or truncating its audio data.
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)
+        .and_then(|file| file.sync_all())
+        .map_err(|err| format_io_error(path, &err))
+}
+
 fn publish(temp: &Path, folder: &Path, stem: &str, ext: &str) -> Result<PathBuf, String> {
     for number in 0..1000 {
         let stem = if number == 0 {
@@ -699,7 +713,7 @@ pub async fn run(
         let properties=verified.properties();
         let artists:Vec<_>=info["artists"].as_array().into_iter().flatten().map(s).collect();
         let stem=format!("{} [{}{}]",safe_name(&format!("{} - {}",s(&info["song"]["name"]),artists.join(" & "))),if origin=="qq"{"QQ-"}else{""},id);
-        std::fs::File::open(&temp).and_then(|f|f.sync_all()).map_err(|e| format_io_error(&temp, &e))?;
+        sync_audio(&temp)?;
         if canceled.load(std::sync::atomic::Ordering::Acquire){return Err("下载已取消".into());}
         let dest=publish(&temp,&folder,&stem,&ext)?;
         let mut warnings=Vec::new();let lyric=s(&info["lyric"]);
@@ -814,6 +828,7 @@ mod tests {
                 "partial final frame must fail"
             );
             tag_file(&path, &info(ext), "netease", "qq", 987, "lossless", None).unwrap();
+            sync_audio(&path).unwrap();
             validate_audio(&path, 20000, false).unwrap();
             let tagged = lofty::read_from_path(&path).unwrap();
             let tag = tagged.primary_tag().unwrap();
@@ -843,12 +858,28 @@ mod tests {
         std::fs::write(&source, b"test audio").unwrap();
         std::fs::write(dir.0.join("Song.json"), b"existing").unwrap();
         let first = publish(&source, &dir.0, "Song", "mp3").unwrap();
+        // A successful publish may consume the scratch file on Windows.
+        std::fs::write(&source, b"test audio").unwrap();
         let second = publish(&source, &dir.0, "Song", "mp3").unwrap();
         assert_ne!(first, second);
         assert_eq!(first.file_name().unwrap(), "Song (1).mp3");
         assert_eq!(std::fs::read(dir.0.join("Song.json")).unwrap(), b"existing");
         assert!(sidecar(&first, b"overwrite").is_err());
     }
+    #[test]
+    fn sync_before_publish_preserves_audio_and_requires_existing_file() {
+        let dir = temp();
+        let path = dir.0.join("audio.flac");
+        let data = b"downloaded and tagged audio";
+        std::fs::write(&path, data).unwrap();
+        sync_audio(&path).unwrap();
+        let dest = publish(&path, &dir.0, "Song", "flac").unwrap();
+        assert_eq!(std::fs::read(dest).unwrap(), data);
+        let missing = dir.0.join("missing.flac");
+        assert!(sync_audio(&missing).is_err());
+        assert!(!missing.exists());
+    }
+
     #[test]
     fn filenames_are_sanitized_and_bounded() {
         assert_eq!(safe_name("A/B:C*?"), "A／B：C__");

@@ -36,7 +36,12 @@ fn load() -> Option<Value> {
         .and_then(|entry| entry.get_password().ok())
         .and_then(|s| serde_json::from_str(&s).ok())
 }
-#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "windows", target_os = "linux")))]
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "windows",
+    target_os = "linux"
+)))]
 fn load() -> Option<Value> {
     None
 }
@@ -74,7 +79,12 @@ fn persist(value: Option<&Value>) -> Result<(), String> {
         }
     }
 }
-#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "windows", target_os = "linux")))]
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "windows",
+    target_os = "linux"
+)))]
 fn persist(value: Option<&Value>) -> Result<(), String> {
     if value.is_none() {
         Ok(())

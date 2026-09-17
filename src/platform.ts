@@ -29,6 +29,4 @@ export function loginInstructions(source: string, kind: string) {
 }
 export const downloadLocation = platform.ios
   ? "文件 App → 浏览 → 我的 iPhone / iPad → 听 · Ting → Ting"
-  : /Win/.test(navigator.platform) || /Windows/.test(navigator.userAgent)
-    ? "应用数据目录下的 downloads 文件夹（受系统保护的「下载」目录不可写时自动使用）"
-    : "系统下载目录中的 Ting 文件夹";
+  : "系统下载目录中的 Ting 文件夹";

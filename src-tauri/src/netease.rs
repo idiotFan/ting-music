@@ -284,7 +284,12 @@ fn stored_session() -> Option<String> {
         .ok()
         .and_then(|entry| entry.get_password().ok())
 }
-#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "windows", target_os = "linux")))]
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "windows",
+    target_os = "linux"
+)))]
 fn stored_session() -> Option<String> {
     None
 }
@@ -305,7 +310,12 @@ fn store_session(cookie: &str) -> Result<(), String> {
         .set_password(cookie)
         .map_err(|_| "已登录，但凭据保存失败；本次会话仍可使用".into())
 }
-#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "windows", target_os = "linux")))]
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "windows",
+    target_os = "linux"
+)))]
 fn store_session(_: &str) -> Result<(), String> {
     Err("此平台暂仅保留本次登录会话".into())
 }
@@ -328,7 +338,12 @@ fn delete_session() -> Result<(), String> {
         Err(_) => Err("无法清除登录凭据，请重试退出".into()),
     }
 }
-#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "windows", target_os = "linux")))]
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "windows",
+    target_os = "linux"
+)))]
 fn delete_session() -> Result<(), String> {
     Ok(())
 }

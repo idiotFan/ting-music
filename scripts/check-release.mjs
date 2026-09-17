@@ -9,7 +9,7 @@ const pkg = JSON.parse(read('package.json'));
 const npm = JSON.parse(read('package-lock.json'));
 const tauri = JSON.parse(read('src-tauri/tauri.conf.json'));
 const cargo = read('src-tauri/Cargo.toml').match(/\[package\][\s\S]*?\nversion\s*=\s*"([^"]+)"/)?.[1];
-const lockedCargo = read('src-tauri/Cargo.lock').match(/\[\[package\]\]\nname = "ting-music"\nversion = "([^"]+)"/)?.[1];
+const lockedCargo = read('src-tauri/Cargo.lock').match(/\[\[package\]\]\r?\nname = "ting-music"\r?\nversion = "([^"]+)"/)?.[1];
 for (const [name, version] of Object.entries({ 'package-lock.json': npm.version, 'package-lock root': npm.packages[''].version,
   'tauri.conf.json': tauri.version, 'Cargo.toml': cargo, 'Cargo.lock': lockedCargo })) {
   if (version !== pkg.version) throw new Error(`${name} version ${version} differs from package.json ${pkg.version}`);

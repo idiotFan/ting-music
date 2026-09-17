@@ -49,32 +49,17 @@ fn directory(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     }
     #[cfg(not(target_os = "ios"))]
     {
-        // Windows Controlled Folder Access blocks unsigned apps from Documents/Downloads.
-        // Prefer the app's own local data dir first on Windows; elsewhere prefer Downloads.
+        // Prefer the user's Downloads/Ting folder on every desktop platform.
+        // Fall back to app data only when the preferred folder is not writable.
         let mut candidates: Vec<PathBuf> = Vec::new();
-        #[cfg(target_os = "windows")]
-        {
-            if let Ok(dir) = app.path().app_local_data_dir() {
-                candidates.push(dir.join("downloads"));
-            }
-            if let Ok(dir) = app.path().app_data_dir() {
-                candidates.push(dir.join("downloads"));
-            }
-            if let Ok(dir) = app.path().download_dir() {
-                candidates.push(dir.join("Ting"));
-            }
+        if let Ok(dir) = app.path().download_dir() {
+            candidates.push(dir.join("Ting"));
         }
-        #[cfg(not(target_os = "windows"))]
-        {
-            if let Ok(dir) = app.path().download_dir() {
-                candidates.push(dir.join("Ting"));
-            }
-            if let Ok(dir) = app.path().app_local_data_dir() {
-                candidates.push(dir.join("downloads"));
-            }
-            if let Ok(dir) = app.path().app_data_dir() {
-                candidates.push(dir.join("downloads"));
-            }
+        if let Ok(dir) = app.path().app_local_data_dir() {
+            candidates.push(dir.join("downloads"));
+        }
+        if let Ok(dir) = app.path().app_data_dir() {
+            candidates.push(dir.join("downloads"));
         }
         let mut last_failure: Option<(PathBuf, std::io::Error)> = None;
         for folder in candidates {
@@ -174,7 +159,8 @@ pub async fn download_song(
     // On Windows, keep scratch under TEMP so antivirus/CFA/indexing on the final
     // downloads folder cannot block mid-write of the partial audio file.
     #[cfg(target_os = "windows")]
-    let scratch = Scratch(std::env::temp_dir().join(format!("ting-scratch-{}", uuid::Uuid::new_v4())));
+    let scratch =
+        Scratch(std::env::temp_dir().join(format!("ting-scratch-{}", uuid::Uuid::new_v4())));
     #[cfg(not(target_os = "windows"))]
     let scratch = Scratch(folder.join(format!(".ting-{}", uuid::Uuid::new_v4())));
     let mut builder = std::fs::DirBuilder::new();
