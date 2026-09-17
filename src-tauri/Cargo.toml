@@ -21,7 +21,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 aes = "0.8"
 cbc = { version = "0.1", features = ["alloc"] }
 base64 = "0.22"
-num-bigint = "0.4"
+num-bigint = "0.5"
 uuid = { version = "1", features = ["v4"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "io-util", "time"] }
 unicode-normalization = "0.1"
