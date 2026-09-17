@@ -51,11 +51,16 @@ const envelope = read<{
   playlists?: unknown;
   pending?: Batch[];
   device?: string;
+  favoritesMigrated?: boolean;
 } | null>("ting.library-sync.v1", null);
 let syncEnabled =
   envelope?.version === 1 &&
   Array.isArray(envelope.playlists) &&
   Array.isArray(envelope.pending);
+// A reserved shared collection uses the same per-song Rust merge/tombstones as
+// playlists. It is hidden from playlist management and excluded from new IDs.
+const FAVORITES_ID = Number.MAX_SAFE_INTEGER;
+let favoritesMigrated = syncEnabled && envelope?.favoritesMigrated === true;
 let backendDevice: string | undefined = syncEnabled
   ? envelope?.device
   : undefined;
@@ -85,10 +90,17 @@ function persist(
   next: SavedPlaylist[],
   outbox: Batch[],
   device = backendDevice,
+  migrated = favoritesMigrated,
 ) {
   localStorage.setItem(
     "ting.library-sync.v1",
-    JSON.stringify({ version: 1, playlists: next, pending: outbox, device }),
+    JSON.stringify({
+      version: 1,
+      playlists: next,
+      pending: outbox,
+      device,
+      favoritesMigrated: migrated,
+    }),
   );
 }
 function commit(next: SavedPlaylist[]) {
@@ -104,15 +116,53 @@ function commit(next: SavedPlaylist[]) {
   internal = next;
   window.dispatchEvent(new Event("ting:library-change"));
 }
+function favoriteCollection(songs: Song[]): SavedPlaylist {
+  return {
+    id: FAVORITES_ID,
+    internal: true,
+    name: "收藏",
+    songs,
+    creator: "本机",
+    owned: true,
+    cover: "",
+    trackCount: songs.length,
+  };
+}
+export function favoriteSongs(): Song[] {
+  if (favoritesMigrated)
+    return [...(internal.find((p) => p.id === FAVORITES_ID)?.songs || [])];
+  const legacy = read<unknown>("ting.favorites", []);
+  return Array.isArray(legacy) ? uniqueSongs(legacy.filter(validSong)) : [];
+}
 export function startSyncLibrary() {
-  if (syncEnabled) return;
-  const edits = changes([], internal);
+  if (syncEnabled && favoritesMigrated) return;
+  const songs = favoriteSongs();
+  const existing = internal.find((p) => p.id === FAVORITES_ID);
+  if (existing && existing.name !== "收藏")
+    throw new Error("收藏同步标识与已有歌单冲突，已保留本机数据");
+  const next = songs.length
+    ? [
+        ...internal.filter((p) => p.id !== FAVORITES_ID),
+        favoriteCollection(uniqueSongs([...(existing?.songs || []), ...songs])),
+      ]
+    : internal;
+  const edits = changes(syncEnabled ? internal : [], next);
   const outbox = edits.length
-    ? [{ id: crypto.randomUUID(), changes: edits }]
-    : [];
-  persist(internal, outbox);
+    ? [...pending, { id: crypto.randomUUID(), changes: edits }]
+    : pending;
+  // Migration flag, legacy favorites, and outbox must commit together. Keep the
+  // old favorites key untouched as backup; never import it again after removal.
+  persist(next, outbox, backendDevice, true);
+  internal = next;
   pending = outbox;
-  syncEnabled = true;
+  favoritesMigrated = syncEnabled = true;
+}
+export function setFavoriteSongs(songs: Song[]) {
+  startSyncLibrary();
+  commit([
+    ...internal.filter((p) => p.id !== FAVORITES_ID),
+    favoriteCollection(uniqueSongs(songs.filter(validSong))),
+  ]);
 }
 export function syncDevice(): string | undefined {
   return backendDevice;
@@ -151,11 +201,13 @@ export function acceptSyncLibrary(
   return changed;
 }
 export function internalPlaylists(): Playlist[] {
-  return internal.map(({ songs, ...p }) => ({
-    ...p,
-    trackCount: songs.length,
-    cover: songs[0]?.cover || "",
-  }));
+  return internal
+    .filter((p) => p.id !== FAVORITES_ID)
+    .map(({ songs, ...p }) => ({
+      ...p,
+      trackCount: songs.length,
+      cover: songs[0]?.cover || "",
+    }));
 }
 export function internalSongs(p: Playlist): Song[] {
   const found = internal.find((x) => x.id === p.id);
@@ -429,7 +481,8 @@ export function setupLibrary(o: Options) {
           const random = crypto.getRandomValues(new Uint32Array(2));
           let id = (random[0] & 0x1fffff) * 0x100000000 + random[1];
           if (!id) id = 1;
-          while (internal.some((p) => p.id === id)) id++;
+          while (id === FAVORITES_ID || internal.some((p) => p.id === id))
+            id = id >= FAVORITES_ID - 1 ? 1 : id + 1;
           commit([
             ...internal,
             {

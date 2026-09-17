@@ -56,6 +56,8 @@ import {
 
 import {
   setupLibrary,
+  favoriteSongs,
+  setFavoriteSongs,
   internalPlaylists,
   internalSongs,
   playlistKey,
@@ -234,7 +236,7 @@ function restore(key: string): Song[] {
     return [];
   }
 }
-let favorites = restore("ting.favorites"),
+let favorites = favoriteSongs(),
   locals: Song[] = [],
   results: Song[] = [];
 const playbackQueue = new PlaybackQueue(restore("ting.queue"));
@@ -265,10 +267,6 @@ audio.preload = "metadata";
 audio.volume = 0.7;
 function save() {
   try {
-    localStorage.setItem(
-      "ting.favorites",
-      JSON.stringify(favorites.filter((s) => !s.localUrl)),
-    );
     localStorage.setItem(
       "ting.queue",
       JSON.stringify(playbackQueue.songs.filter((s) => !s.localUrl)),
@@ -379,6 +377,10 @@ const library = setupLibrary({
   },
 });
 setupSync(() => {
+  favorites = favoriteSongs();
+  syncRows();
+  updateFavorite();
+  if (view === "favorites") renderSongs();
   playlistEditVersion++;
   const local = internalPlaylists();
   playlists = [...local, ...playlists.filter((p) => !p.internal)];
@@ -584,7 +586,7 @@ function setView(next: View) {
   $("#error").hidden = true;
   const titles = {
     discover: "搜索结果",
-    favorites: "本机收藏",
+    favorites: "收藏",
     playlists: "我的歌单",
     playlist: selectedPlaylist
       ? `${playlistLabel(selectedPlaylist)} · ${selectedPlaylist.name}`
@@ -642,10 +644,16 @@ async function search(term: string, append = false) {
 }
 function toggleFavorite(song: Song) {
   if (song.localUrl) return;
-  favorites = favorites.some((s) => songKey(s) === songKey(song))
+  const next = favorites.some((s) => songKey(s) === songKey(song))
     ? favorites.filter((s) => songKey(s) !== songKey(song))
     : [song, ...favorites];
-  save();
+  try {
+    setFavoriteSongs(next);
+    favorites = favoriteSongs();
+  } catch {
+    toast("本地存储空间不足，收藏修改未保存");
+    return;
+  }
   if (view === "favorites") renderSongs();
   else syncRows();
   updateFavorite();

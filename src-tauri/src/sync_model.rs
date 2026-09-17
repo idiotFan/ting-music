@@ -463,6 +463,37 @@ mod tests {
         assert_eq!(before, a);
     }
     #[test]
+    fn favorites_from_independent_devices_merge_and_keep_removal_tombstones() {
+        let mut a = Document::default();
+        let mut b = Document::default();
+        let mut ca = change(MAX_ID);
+        ca.create = true;
+        ca.name = Some("收藏".into());
+        ca.add = vec![song(1)];
+        edit(&mut a, A, ca);
+        let mut cb = change(MAX_ID);
+        cb.create = true;
+        cb.name = Some("收藏".into());
+        let mut qq = song(1);
+        qq.source = "qq".into();
+        cb.add = vec![qq];
+        edit(&mut b, B, cb);
+        let old_a = a.clone();
+        a.merge(&b).unwrap();
+        b.merge(&old_a).unwrap();
+        assert_eq!(a, b);
+        assert_eq!(a.playlists()[0].songs.len(), 2);
+        let stale = b.clone();
+        let mut c = change(MAX_ID);
+        c.remove = vec!["netease:1".into()];
+        edit(&mut a, A, c);
+        a.merge(&stale).unwrap();
+        b.merge(&a).unwrap();
+        assert_eq!(a, b);
+        assert_eq!(b.playlists()[0].songs.len(), 1);
+        assert_eq!(b.playlists()[0].songs[0].source, "qq");
+    }
+    #[test]
     fn documents_reject_new_versions_and_unexpected_credentials() {
         let mut d = initial();
         d.version = 2;

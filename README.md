@@ -2,7 +2,7 @@
 
 一个小窗口里的网易云音乐 / QQ 音乐第三方桌面播放器。使用 Tauri v2、TypeScript 和 Rust，支持双账号、混合来源的本机歌单、同步歌词与本地音频播放。
 
-**当前源码版本：0.9.2；桌面交付目标为 macOS 15 及以上、Apple Silicon。** QQ 接口与下载已迁移到 Rust，应用不再携带 Python。iOS 16+ 开发签名真机版已完成构建与安装，功能验收中；Linux、Windows 和 Android 尚未完成发行适配。迁移范围与真机构建方法见 [Rust 迁移与 iOS](docs/RUST-MIGRATION.md)。
+**当前源码版本：0.9.3；桌面交付目标为 macOS 15 及以上、Apple Silicon。** QQ 接口与下载已迁移到 Rust，应用不再携带 Python。iOS 16+ 开发签名真机版已完成构建与安装，功能验收中；Linux、Windows 和 Android 尚未完成发行适配。迁移范围与真机构建方法见 [Rust 迁移与 iOS](docs/RUST-MIGRATION.md)。
 
 ![小窗口播放器与右侧歌词](docs/assets/lyrics-panel.png)
 
@@ -165,7 +165,7 @@ iOS 下载保存在应用 Documents/Ting，可在「文件 → 浏览 → 我的
 
 ### iCloud 歌单同步
 
-Mac 和 iPhone 顶栏的云朵按钮可选择同一个 iCloud Drive / Ting 文件夹，自动合并 Ting 本机混合歌单、歌曲增删和顺序。原有歌单保留，离线修改先保存本机，联网后由系统传输；不上传音乐平台登录凭据或音频文件。首次需在每台设备各授权一次目录，详情见 [iCloud 同步说明](docs/ICLOUD-SYNC.md)。
+Mac 和 iPhone 顶栏的云朵按钮可选择同一个 iCloud Drive / Ting 文件夹，自动合并 Ting 收藏、本机混合歌单、歌曲增删和顺序。原有歌单保留，离线修改先保存本机，联网后由系统传输；不上传音乐平台登录凭据或音频文件。首次需在每台设备各授权一次目录，详情见 [iCloud 同步说明](docs/ICLOUD-SYNC.md)。
 
 ### 平台交互与快捷键
 

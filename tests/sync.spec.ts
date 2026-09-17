@@ -271,3 +271,147 @@ test("sync settings fit a narrow phone and opening them does not log out either 
     ),
   ).toBe(true);
 });
+
+test("legacy favorites migrate once, remain outside playlists, and removals survive reload", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    if (localStorage.getItem("__seededFavorites")) return;
+    localStorage.setItem("__seededFavorites", "yes");
+    localStorage.setItem(
+      "ting.favorites",
+      JSON.stringify([
+        {
+          id: 1,
+          source: "netease",
+          name: "同步歌曲",
+          artist: "歌手",
+          album: "专辑",
+          cover: "",
+          duration: 10000,
+          fee: 0,
+          cookie: "favorite-secret-must-not-sync",
+        },
+      ]),
+    );
+  });
+  await setup(page);
+  await expect(page.locator("#fav-count")).toHaveText("1");
+  const calls = await page.evaluate(() => (window as any).__syncCalls);
+  expect(
+    calls[0].batches[0].changes.some(
+      (c: any) => c.id === Number.MAX_SAFE_INTEGER && c.add.length === 1,
+    ),
+  ).toBe(true);
+  expect(JSON.stringify(calls)).not.toContain("favorite-secret-must-not-sync");
+  await playlists(page);
+  await expect(page.locator(".playlist-card")).toHaveCount(1);
+  await page.locator('[data-view="favorites"]').tap();
+  await page.locator('[data-favorite="netease:1"]').tap();
+  await expect(page.locator("#fav-count")).toHaveText("0");
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).__syncCalls.some((c: any) =>
+          c.batches.some((b: any) =>
+            b.changes.some((e: any) => e.remove?.includes("netease:1")),
+          ),
+        ),
+      ),
+    )
+    .toBe(true);
+  await page.reload();
+  await expect(page.locator("#fav-count")).toHaveText("0");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__syncCalls.length))
+    .toBeGreaterThan(0);
+  expect(
+    await page.evaluate(() => (window as any).__syncCalls[0].batches),
+  ).toEqual([]);
+});
+
+test("remote favorites refresh visible rows and hearts without changing playback queue", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.locator('[data-view="favorites"]').tap();
+  await page.evaluate(() => {
+    const b = (window as any).__syncBackend;
+    b.lists.push({ ...b.lists[0], id: Number.MAX_SAFE_INTEGER, name: "收藏" });
+    window.dispatchEvent(new Event("online"));
+  });
+  await expect(page.locator("#fav-count")).toHaveText("1");
+  await expect(page.locator('[data-favorite="netease:1"]')).toHaveClass(
+    /is-favorite/,
+  );
+  await expect(page.locator("#queue-count")).toHaveText("0");
+  await page.evaluate(() => {
+    (window as any).__syncBackend.lists.find(
+      (p: any) => p.id === Number.MAX_SAFE_INTEGER,
+    ).songs = [];
+    window.dispatchEvent(new Event("online"));
+  });
+  await expect(page.locator("#fav-count")).toHaveText("0");
+  await expect(page.locator("[data-favorite]")).toHaveCount(0);
+});
+
+test("favorite edit during stale exchange is durable when native sync fails", async ({
+  page,
+}) => {
+  await setup(page);
+  await expect(page.locator('[data-favorite="netease:1"]')).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).__holdSync = true;
+    window.dispatchEvent(new Event("online"));
+  });
+  await expect
+    .poll(() => page.evaluate(() => typeof (window as any).__releaseSync))
+    .toBe("function");
+  await page.locator('[data-favorite="netease:1"]').tap();
+  await page.evaluate(() => {
+    (window as any).__syncFail = true;
+    (window as any).__releaseSync();
+  });
+  await expect(page.locator("#fav-count")).toHaveText("1");
+  await page.locator("#sync-button").tap();
+  await expect(page.locator("#sync-warning")).toContainText("文件夹暂不可用");
+  await page.reload();
+  await expect(page.locator("#fav-count")).toHaveText("1");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          JSON.parse(localStorage.getItem("ting.library-sync.v1")!).pending
+            .length,
+      ),
+    )
+    .toBe(0);
+});
+
+test("0.9.2 already acknowledged playlists upgrade without recreating them or dropping favorites", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.evaluate(() => {
+    const saved = JSON.parse(localStorage.getItem("ting.library-sync.v1")!);
+    delete saved.favoritesMigrated;
+    localStorage.setItem("ting.library-sync.v1", JSON.stringify(saved));
+    localStorage.setItem(
+      "ting.favorites",
+      JSON.stringify(saved.playlists[0].songs),
+    );
+  });
+  await page.reload();
+  await expect(page.locator("#fav-count")).toHaveText("1");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__syncCalls.length))
+    .toBeGreaterThan(0);
+  const edits = await page.evaluate(() =>
+    (window as any).__syncCalls[0].batches.flatMap((b: any) => b.changes),
+  );
+  expect(edits).toHaveLength(1);
+  expect(edits[0].id).toBe(Number.MAX_SAFE_INTEGER);
+  expect(edits[0].add).toHaveLength(1);
+  await playlists(page);
+  await expect(page.locator(".playlist-card")).toHaveCount(1);
+});
