@@ -21,7 +21,7 @@ if (result.status !== 0) process.exit(result.status ?? 1);
 // `ios init` supplies Tauri's default icon; use Ting's existing artwork instead.
 const iconDir = mkdtempSync(resolve(tmpdir(), 'ting-icons-'));
 try {
-  const generated = spawnSync(process.execPath, ['scripts/tauri.mjs', 'icon', 'src-tauri/icons/icon.png', '--output', iconDir, '--ios-color', '#304939'], { stdio: 'inherit' });
+  const generated = spawnSync(process.execPath, ['scripts/tauri.mjs', 'icon', 'src-tauri/app-icon.svg', '--output', iconDir, '--ios-color', '#a6ed55'], { stdio: 'inherit' });
   if (generated.status !== 0) throw new Error('Failed to generate iOS icons.');
   const assets = resolve('src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset');
   const manifest = JSON.parse(readFileSync(resolve(assets, 'Contents.json'), 'utf8'));

@@ -33,4 +33,6 @@ npm run tauri -- ios build --ci --export-method debugging -- --locked
 
 The generated Xcode project and signing identity stay outside Git. `prepare-ios.mjs` makes the generated deployment target and command path reproducible. iOS uses the existing app identifier, but credentials remain on that iPhone; no Mac session is copied to the phone.
 
+`Info.ios.plist` declares `UIApplicationSceneManifest` with `UIApplicationSupportsMultipleScenes=true`: Tao 0.35 uses that flag to register its built-in scene delegate. Without it, an iOS 27 SDK build traps at startup in `UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption`. This setting enables the scene lifecycle; multiple-window behavior on iPad remains unvalidated. See [Apple’s migration requirement](https://developer.apple.com/documentation/uikit/transitioning-to-the-uikit-scene-based-life-cycle).
+
 Phone adaptation includes safe areas, a full-window lyrics sheet, no desktop window resizing, and iOS Keychain persistence. Downloads use Documents/Ting in the app sandbox, exposed through Files sharing. Playback currently uses WKWebView audio. Native background playback, lock-screen controls and an on-device alternative to scanning a QR displayed on the same phone remain future work. This is a device-test build, not an App Store release.
