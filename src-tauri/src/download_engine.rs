@@ -24,6 +24,23 @@ use symphonia::core::{
 };
 use tokio::io::AsyncWriteExt;
 const IO_ERROR: &str = "下载文件无法写入，请检查磁盘空间和目录权限";
+
+fn format_io_error(path: &Path, err: &std::io::Error) -> String {
+    let detail = match err.raw_os_error() {
+        Some(code) => format!("{:?}/os={code}", err.kind()),
+        None => format!("{:?}: {err}", err.kind()),
+    };
+    format!("{IO_ERROR}（{}: {detail}）", path.display())
+}
+
+#[cfg(target_os = "windows")]
+fn windows_io_retryable(err: &std::io::Error) -> bool {
+    matches!(
+        err.kind(),
+        std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::TimedOut
+    ) || matches!(err.raw_os_error(), Some(5) | Some(32) | Some(33))
+}
+
 fn s(v: &Value) -> &str {
     v.as_str().unwrap_or("")
 }
@@ -200,6 +217,35 @@ async fn fetch_audio(audio: &Value, path: &Path) -> Result<(), String> {
     let response = open_cdn(s(&audio["url"]), false).await?;
     write_audio_response(audio, path, response).await
 }
+async fn open_scratch_audio(path: &Path) -> Result<tokio::fs::File, String> {
+    match tokio::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .await
+    {
+        Ok(file) => Ok(file),
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+            tokio::fs::remove_file(path)
+                .await
+                .map_err(|e| format_io_error(path, &e))?;
+            tokio::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(path)
+                .await
+                .map_err(|e| format_io_error(path, &e))
+        }
+        Err(_) => tokio::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(path)
+            .await
+            .map_err(|e| format_io_error(path, &e)),
+    }
+}
+
 async fn write_audio_response(
     audio: &Value,
     path: &Path,
@@ -210,12 +256,7 @@ async fn write_audio_response(
     if length > limit || n(&audio["size"]) > limit {
         return Err("单曲超过 512 MB".into());
     }
-    let mut file = tokio::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-        .await
-        .map_err(|_| IO_ERROR)?;
+    let mut file = open_scratch_audio(path).await?;
     let mut count = 0u64;
     let mut digest = Md5::new();
     while let Some(chunk) = response.chunk().await.map_err(|_| "音频下载中断，请重试")? {
@@ -224,9 +265,13 @@ async fn write_audio_response(
             return Err("单曲超过 512 MB".into());
         }
         digest.update(&chunk);
-        file.write_all(&chunk).await.map_err(|_| IO_ERROR)?;
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| format_io_error(path, &e))?;
     }
-    file.sync_all().await.map_err(|_| IO_ERROR)?;
+    file.sync_all()
+        .await
+        .map_err(|e| format_io_error(path, &e))?;
     if count < 1000
         || (length > 0 && count != length)
         || (n(&audio["size"]) > 0 && count != n(&audio["size"]))
@@ -374,7 +419,7 @@ fn validate_audio(path: &Path, duration_ms: u64, content_hash_verified: bool) ->
     {
         return Err("下载时长或音频参数与歌曲不符，未保存".into());
     }
-    let file = std::fs::File::open(path).map_err(|_| IO_ERROR)?;
+    let file = std::fs::File::open(path).map_err(|e| format_io_error(path, &e))?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     hint.with_extension(ext);
@@ -559,13 +604,20 @@ fn publish(temp: &Path, folder: &Path, stem: &str, ext: &str) -> Result<PathBuf,
         // Prefer copy there; keep hard_link-first on Unix for atomic no-clobber publish.
         #[cfg(target_os = "windows")]
         {
-            match std::fs::copy(temp, &dest) {
-                Ok(_) => {
-                    let _ = std::fs::remove_file(temp);
-                    return Ok(dest);
+            let mut attempt = 0u32;
+            loop {
+                match std::fs::copy(temp, &dest) {
+                    Ok(_) => {
+                        let _ = std::fs::remove_file(temp);
+                        return Ok(dest);
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => break,
+                    Err(e) if windows_io_retryable(&e) && attempt < 4 => {
+                        attempt += 1;
+                        std::thread::sleep(Duration::from_millis(40 * u64::from(attempt)));
+                    }
+                    Err(e) => return Err(format_io_error(&dest, &e)),
                 }
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(_) => return Err(IO_ERROR.into()),
             }
         }
         #[cfg(not(target_os = "windows"))]
@@ -579,7 +631,7 @@ fn publish(temp: &Path, folder: &Path, stem: &str, ext: &str) -> Result<PathBuf,
                         return Ok(dest);
                     }
                     Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                    Err(_) => return Err(IO_ERROR.into()),
+                    Err(e) => return Err(format_io_error(&dest, &e)),
                 },
             }
         }
@@ -647,13 +699,13 @@ pub async fn run(
         let properties=verified.properties();
         let artists:Vec<_>=info["artists"].as_array().into_iter().flatten().map(s).collect();
         let stem=format!("{} [{}{}]",safe_name(&format!("{} - {}",s(&info["song"]["name"]),artists.join(" & "))),if origin=="qq"{"QQ-"}else{""},id);
-        std::fs::File::open(&temp).and_then(|f|f.sync_all()).map_err(|_|IO_ERROR)?;
+        std::fs::File::open(&temp).and_then(|f|f.sync_all()).map_err(|e| format_io_error(&temp, &e))?;
         if canceled.load(std::sync::atomic::Ordering::Acquire){return Err("下载已取消".into());}
         let dest=publish(&temp,&folder,&stem,&ext)?;
         let mut warnings=Vec::new();let lyric=s(&info["lyric"]);
         if artwork.is_none(){warnings.push("封面暂不可用");}if lyric.is_empty(){warnings.push("歌词暂不可用");}
         if !lyric.is_empty()&&sidecar(&dest.with_extension("lrc"),lyric.as_bytes()).is_err(){warnings.push("歌词文件写入失败");}
-        let mut result=json!({"filename":dest.file_name().unwrap_or_default().to_string_lossy(),"path":dest.to_string_lossy(),"source":source,"level":level,"format":ext,"bytes":std::fs::metadata(&dest).map_err(|_|IO_ERROR)?.len(),"bitrate":properties.audio_bitrate().unwrap_or(0)*1000,"sampleRate":properties.sample_rate().unwrap_or(0),"bitDepth":properties.bit_depth().unwrap_or(0),"cover":artwork.is_some(),"lyrics":!lyric.is_empty(),"warnings":warnings});
+        let mut result=json!({"filename":dest.file_name().unwrap_or_default().to_string_lossy(),"path":dest.to_string_lossy(),"source":source,"level":level,"format":ext,"bytes":std::fs::metadata(&dest).map_err(|e| format_io_error(&dest, &e))?.len(),"bitrate":properties.audio_bitrate().unwrap_or(0)*1000,"sampleRate":properties.sample_rate().unwrap_or(0),"bitDepth":properties.bit_depth().unwrap_or(0),"cover":artwork.is_some(),"lyrics":!lyric.is_empty(),"warnings":warnings});
         let mut provenance=result.clone();provenance["origin"]=json!({"platform":origin,"id":id});provenance["audio"]=json!({"platform":source,"id":audio_id});provenance["title"]=info["song"]["name"].clone();provenance["artists"]=info["artists"].clone();
         if sidecar(&dest.with_extension("json"),serde_json::to_string_pretty(&provenance).map_err(|_|IO_ERROR)?.as_bytes()).is_err(){warnings.push("来源记录写入失败");result["warnings"]=json!(warnings);}
         Ok(result)
@@ -802,6 +854,15 @@ mod tests {
         assert_eq!(safe_name("A/B:C*?"), "A／B：C__");
         assert_eq!(safe_name(" .. "), "_");
         assert_eq!(safe_name(&"歌".repeat(100)).chars().count(), 65);
+    }
+    #[test]
+    fn io_error_formatter_includes_path_and_kind() {
+        let path = Path::new("/tmp/ting-write-test.flac");
+        let err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+        let msg = format_io_error(path, &err);
+        assert!(msg.starts_with(IO_ERROR));
+        assert!(msg.contains("ting-write-test.flac"));
+        assert!(msg.contains("PermissionDenied"));
     }
     async fn response(body: Vec<u8>, length: u64) -> reqwest::Response {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();

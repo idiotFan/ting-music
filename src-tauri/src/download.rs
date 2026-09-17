@@ -76,10 +76,22 @@ fn directory(app: &tauri::AppHandle) -> Result<PathBuf, String> {
                 candidates.push(dir.join("downloads"));
             }
         }
+        let mut last_failure: Option<(PathBuf, std::io::Error)> = None;
         for folder in candidates {
-            if ensure_writable(&folder).is_ok() {
-                return Ok(folder);
+            match ensure_writable(&folder) {
+                Ok(()) => return Ok(folder),
+                Err(err) => last_failure = Some((folder, err)),
             }
+        }
+        if let Some((path, err)) = last_failure {
+            let detail = match err.raw_os_error() {
+                Some(code) => format!("{:?}/os={code}", err.kind()),
+                None => format!("{:?}: {err}", err.kind()),
+            };
+            return Err(format!(
+                "下载文件无法写入，请检查磁盘空间和目录权限（{}: {detail}）",
+                path.display()
+            ));
         }
         Err("下载文件无法写入，请检查磁盘空间和目录权限".into())
     }
@@ -159,6 +171,11 @@ pub async fn download_song(
     tokio::fs::create_dir_all(&folder)
         .await
         .map_err(|_| "无法创建下载目录")?;
+    // On Windows, keep scratch under TEMP so antivirus/CFA/indexing on the final
+    // downloads folder cannot block mid-write of the partial audio file.
+    #[cfg(target_os = "windows")]
+    let scratch = Scratch(std::env::temp_dir().join(format!("ting-scratch-{}", uuid::Uuid::new_v4())));
+    #[cfg(not(target_os = "windows"))]
     let scratch = Scratch(folder.join(format!(".ting-{}", uuid::Uuid::new_v4())));
     let mut builder = std::fs::DirBuilder::new();
     #[cfg(unix)]
