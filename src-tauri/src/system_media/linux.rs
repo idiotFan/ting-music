@@ -178,10 +178,13 @@ impl Backend {
             b.property("CanControl").get(|_, _| Ok(true));
         });
         cr.insert(PATH, &[root, player], state.clone());
+        let cr = Mutex::new(cr);
         conn.start_receive(
             dbus::message::MatchRule::new_method_call(),
             Box::new(move |msg, conn| {
-                let _ = cr.handle_message(msg, conn);
+                if let Ok(mut cr) = cr.lock() {
+                    let _ = cr.handle_message(msg, conn);
+                }
                 true
             }),
         );
