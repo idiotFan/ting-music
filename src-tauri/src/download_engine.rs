@@ -615,6 +615,22 @@ fn sync_audio(path: &Path) -> Result<(), String> {
         .map_err(|err| format_io_error(path, &err))
 }
 
+fn copy_new(mut source: impl Read, dest: &Path) -> std::io::Result<()> {
+    // The destination can appear after publish's filename check. Claim it with
+    // create_new so another downloader's completed file can never be truncated.
+    let mut target = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(dest)?;
+    let result = std::io::copy(&mut source, &mut target).and_then(|_| target.sync_all());
+    drop(target); // Windows requires closing the handle before removing it.
+    if result.is_err() {
+        // Only this invocation created the file; an existing target fails above.
+        let _ = std::fs::remove_file(dest);
+    }
+    result
+}
+
 fn publish(temp: &Path, folder: &Path, stem: &str, ext: &str) -> Result<PathBuf, String> {
     for number in 0..1000 {
         let stem = if number == 0 {
@@ -637,7 +653,7 @@ fn publish(temp: &Path, folder: &Path, stem: &str, ext: &str) -> Result<PathBuf,
         {
             let mut attempt = 0u32;
             loop {
-                match std::fs::copy(temp, &dest) {
+                match std::fs::File::open(temp).and_then(|source| copy_new(source, &dest)) {
                     Ok(_) => {
                         let _ = std::fs::remove_file(temp);
                         return Ok(dest);
@@ -656,14 +672,16 @@ fn publish(temp: &Path, folder: &Path, stem: &str, ext: &str) -> Result<PathBuf,
             match std::fs::hard_link(temp, &dest) {
                 Ok(()) => return Ok(dest),
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(_) => match std::fs::copy(temp, &dest) {
-                    Ok(_) => {
-                        let _ = std::fs::remove_file(temp);
-                        return Ok(dest);
+                Err(_) => {
+                    match std::fs::File::open(temp).and_then(|source| copy_new(source, &dest)) {
+                        Ok(_) => {
+                            let _ = std::fs::remove_file(temp);
+                            return Ok(dest);
+                        }
+                        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                        Err(e) => return Err(format_io_error(&dest, &e)),
                     }
-                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                    Err(e) => return Err(format_io_error(&dest, &e)),
-                },
+                }
             }
         }
     }
@@ -882,6 +900,60 @@ mod tests {
         assert_eq!(first.file_name().unwrap(), "Song (1).mp3");
         assert_eq!(std::fs::read(dir.0.join("Song.json")).unwrap(), b"existing");
         assert!(sidecar(&first, b"overwrite").is_err());
+    }
+    #[test]
+    fn copy_publication_claims_destination_once_under_concurrency() {
+        let dir = temp();
+        let dest = dir.0.join("Song.mp3");
+        let gate = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let payloads = [vec![11u8; 65536], vec![22u8; 65536]];
+        let threads: Vec<_> = payloads
+            .iter()
+            .map(|payload| {
+                let payload = payload.clone();
+                let gate = gate.clone();
+                let dest = dest.clone();
+                std::thread::spawn(move || {
+                    gate.wait();
+                    copy_new(std::io::Cursor::new(payload), &dest)
+                })
+            })
+            .collect();
+        let results: Vec<_> = threads.into_iter().map(|t| t.join().unwrap()).collect();
+        assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1);
+        assert_eq!(
+            results
+                .iter()
+                .find_map(|r| r.as_ref().err())
+                .unwrap()
+                .kind(),
+            std::io::ErrorKind::AlreadyExists
+        );
+        let complete = std::fs::read(&dest).unwrap();
+        assert!(payloads.contains(&complete));
+    }
+    #[test]
+    fn copy_publication_removes_partial_output_but_never_an_existing_file() {
+        struct FailedRead;
+        impl Read for FailedRead {
+            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("fixture read failure"))
+            }
+        }
+        let dir = temp();
+        let dest = dir.0.join("Song.mp3");
+        let partial = std::io::Cursor::new(b"partial audio").chain(FailedRead);
+        assert!(copy_new(partial, &dest).is_err());
+        assert!(
+            !dest.exists(),
+            "failed copies must not appear as completed downloads"
+        );
+        copy_new(std::io::Cursor::new(b"complete audio"), &dest).unwrap();
+        assert_eq!(
+            copy_new(FailedRead, &dest).unwrap_err().kind(),
+            std::io::ErrorKind::AlreadyExists
+        );
+        assert_eq!(std::fs::read(dest).unwrap(), b"complete audio");
     }
     #[test]
     fn sync_before_publish_preserves_audio_and_requires_existing_file() {

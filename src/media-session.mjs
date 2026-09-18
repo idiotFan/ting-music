@@ -102,11 +102,15 @@ export function createMediaSession(audio, options) {
     stopped = false;
   });
   for (const event of events) audio.addEventListener(event, state);
-  // WebKit can rebuild its media session when a new resource becomes playable.
-  audio.addEventListener("playing", () => {
-    publish();
-    state();
-  });
+  // WebKit drops supported commands registered before its remote listener
+  // exists. Re-publish them when a real media resource becomes ready/active.
+  for (const event of ["loadedmetadata", "playing"]) {
+    audio.addEventListener(event, () => {
+      publish();
+      state();
+      registerActions();
+    });
+  }
   audio.addEventListener("error", clear);
   function clear() {
     generation++;
@@ -144,12 +148,12 @@ export function createMediaSession(audio, options) {
       stopped = false;
       options.play();
     },
-    pause: () => audio.pause(),
+    pause: options.pause ?? (() => audio.pause()),
     previoustrack: options.previous,
     nexttrack: options.next,
     stop: () => {
       stopped = true;
-      audio.pause();
+      (options.pause ?? (() => audio.pause()))();
       seek(0);
     },
     seekby: (details) => seek(audio.currentTime + details.offset),
@@ -165,14 +169,21 @@ export function createMediaSession(audio, options) {
     seekbackward: null,
     seekforward: null,
   };
-  for (const [name, handler] of Object.entries(handlers))
-    safely(() => session?.setActionHandler(name, handler));
+  function registerActions() {
+    for (const [name, handler] of Object.entries(handlers))
+      safely(() => session?.setActionHandler(name, handler));
+  }
+  registerActions();
   return {
+    get active() {
+      return active;
+    },
     select,
     clear,
     refresh: () => {
       publish();
       state();
+      registerActions();
     },
   };
 }

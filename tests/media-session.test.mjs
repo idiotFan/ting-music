@@ -169,3 +169,50 @@ test("system stop resets progress while retaining the track for play", () => {
   f.audio.dispatchEvent(new Event("play"));
   assert.equal(f.session.playbackState, "playing");
 });
+
+test("WebKit commands are restored when the media listener appears or is rebuilt", () => {
+  const audio = new EventTarget();
+  Object.assign(audio, {
+    paused: true,
+    ended: false,
+    duration: 100,
+    currentTime: 0,
+    playbackRate: 1,
+  });
+  const commands = new Map();
+  let ready = false,
+    next = 0,
+    previous = 0;
+  const session = {
+    setActionHandler(action, handler) {
+      if (ready) commands.set(action, handler);
+    },
+    setPositionState() {},
+  };
+  const media = createMediaSession(audio, {
+    session,
+    metadata: (v) => v,
+    fallbackArtwork: null,
+    loadArtwork: async () => null,
+    play() {},
+    next() {
+      next++;
+    },
+    previous() {
+      previous++;
+    },
+  });
+  assert.equal(commands.size, 0); // WebKit has no remote listener for an empty Audio.
+  media.select({ ...song(1), cover: "" });
+  ready = true;
+  audio.dispatchEvent(new Event("loadedmetadata"));
+  commands.get("nexttrack")();
+  commands.clear();
+  audio.dispatchEvent(new Event("playing"));
+  commands.get("previoustrack")();
+  commands.clear();
+  media.refresh();
+  assert.equal(typeof commands.get("nexttrack"), "function");
+  assert.equal(commands.get("seekforward"), null);
+  assert.deepEqual([next, previous], [1, 1]);
+});

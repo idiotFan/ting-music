@@ -1,6 +1,6 @@
 use super::*;
 use ::windows::{
-    core::HSTRING,
+    core::{Ref, HSTRING},
     Foundation::{TimeSpan, TypedEventHandler},
     Media::*,
     Storage::{StorageFile, Streams::RandomAccessStreamReference},
@@ -31,8 +31,8 @@ impl Backend {
             controls.SetIsRewindEnabled(false)?;
             let handle = app.clone();
             let buttons = controls.ButtonPressed(&TypedEventHandler::new(
-                move |_, args: &Option<SystemMediaTransportControlsButtonPressedEventArgs>| {
-                    if let Some(args) = args {
+                move |_, args: Ref<'_, SystemMediaTransportControlsButtonPressedEventArgs>| {
+                    if let Some(args) = args.as_ref() {
                         let action = match args.Button()? {
                             SystemMediaTransportControlsButton::Play => "play",
                             SystemMediaTransportControlsButton::Pause => "pause",
@@ -48,8 +48,8 @@ impl Backend {
             ))?;
             let handle = app.clone();
             let position = match controls.PlaybackPositionChangeRequested(&TypedEventHandler::new(
-                move |_, args: &Option<PlaybackPositionChangeRequestedEventArgs>| {
-                    if let Some(args) = args {
+                move |_, args: Ref<'_, PlaybackPositionChangeRequestedEventArgs>| {
+                    if let Some(args) = args.as_ref() {
                         emit(
                             &handle,
                             "seekto",
@@ -96,15 +96,10 @@ impl Backend {
                     props.SetTitle(&HSTRING::from(&track.title))?;
                     props.SetArtist(&HSTRING::from(&track.artist))?;
                     props.SetAlbumTitle(&HSTRING::from(&track.album))?;
-                    if let Some(path) = super::save_cover(&self.app, track)
-                        .map_err(|_| ::windows::core::Error::empty())?
-                    {
-                        let file = StorageFile::GetFileFromPathAsync(&HSTRING::from(
-                            path.to_string_lossy().as_ref(),
-                        ))?
-                        .get()?;
-                        updater
-                            .SetThumbnail(&RandomAccessStreamReference::CreateFromFile(&file)?)?;
+                    // Artwork is optional. A full/unavailable cache or image load
+                    // failure must not suppress title, playback status or buttons.
+                    if let Some(thumbnail) = thumbnail(&self.app, track) {
+                        let _ = updater.SetThumbnail(&thumbnail);
                     }
                 }
                 updater.Update()?;
@@ -135,6 +130,14 @@ impl Backend {
         })();
         result.map_err(|_| "Windows 系统媒体更新失败".into())
     }
+}
+fn thumbnail(app: &tauri::AppHandle, track: &Track) -> Option<RandomAccessStreamReference> {
+    let path = super::save_cover(app, track).ok()??;
+    let file = StorageFile::GetFileFromPathAsync(&HSTRING::from(path.to_string_lossy().as_ref()))
+        .ok()?
+        .get()
+        .ok()?;
+    RandomAccessStreamReference::CreateFromFile(&file).ok()
 }
 impl Drop for Backend {
     fn drop(&mut self) {

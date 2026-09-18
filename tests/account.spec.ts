@@ -56,7 +56,7 @@ async function setup(
             w.__mediaCallback = args.handler;
             return 1;
           }
-          if (nativeMedia && cmd === "system_media_init") return "apple";
+          if (nativeMedia && cmd === "system_media_init") return "windows";
           if (nativeMedia && cmd === "system_media_update") {
             w.__snapshot = args.snapshot;
             return;
@@ -138,6 +138,7 @@ async function setup(
         },
       };
       if (nativeMedia) {
+        Object.defineProperty(navigator, "platform", { value: "Win32" });
         w.__TAURI_INTERNALS__.transformCallback = (fn: any) => {
           w.__nativeEvent = fn;
           return 1;
@@ -936,4 +937,113 @@ test("native transport owns the system session and drives queue, pause, seek and
       .map((c: any) => c.args.id),
   );
   expect(reads).toEqual([1, 2, 1]);
+});
+
+test("a fresh user gesture after NotAllowedError restores playback and keeps system metadata", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.evaluate(() => {
+    const original = HTMLMediaElement.prototype.play;
+    let first = true;
+    HTMLMediaElement.prototype.play = function () {
+      if (first) {
+        first = false;
+        return Promise.reject(
+          new DOMException("User gesture required", "NotAllowedError"),
+        );
+      }
+      return original.call(this);
+    };
+  });
+  await page.locator(".song-row").first().dblclick();
+  await expect(page.locator("#toast")).toContainText("轻点播放");
+  await page.locator("#toggle").click();
+  await expect
+    .poll(() => page.evaluate(() => navigator.mediaSession.playbackState))
+    .toBe("playing");
+  await expect
+    .poll(() => page.evaluate(() => navigator.mediaSession.metadata?.title))
+    .toBe("我的歌曲 1");
+});
+
+test("rapid system next requests preserve play intent while a URL is loading", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const actions: Record<string, any> = {};
+    (window as any).__systemActions = actions;
+    const original = navigator.mediaSession.setActionHandler.bind(
+      navigator.mediaSession,
+    );
+    navigator.mediaSession.setActionHandler = (action, handler) => {
+      actions[action] = handler;
+      original(action, handler);
+    };
+  });
+  await setup(page);
+  await page.locator(".song-row").first().dblclick();
+  await expect
+    .poll(() => page.evaluate(() => navigator.mediaSession.playbackState))
+    .toBe("playing");
+  await page.evaluate(() => {
+    const w = window as any,
+      original = w.__TAURI_INTERNALS__.invoke;
+    w.__TAURI_INTERNALS__.invoke = async (cmd: string, args: any) => {
+      if (cmd === "song_url" && args.id === 2)
+        await new Promise((r) => setTimeout(r, 500));
+      return original(cmd, args);
+    };
+    w.__systemActions.nexttrack();
+    w.__systemActions.nexttrack();
+  });
+  await expect(page.locator("#now-name")).toHaveText("我的歌曲 3");
+  await expect
+    .poll(() => page.evaluate(() => navigator.mediaSession.playbackState))
+    .toBe("playing");
+  await expect
+    .poll(() => page.evaluate(() => navigator.mediaSession.metadata?.title))
+    .toBe("我的歌曲 3");
+});
+
+test("pause during a pending system next prevents delayed playback from restarting", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const actions: Record<string, any> = {};
+    (window as any).__systemActions = actions;
+    const original = navigator.mediaSession.setActionHandler.bind(
+      navigator.mediaSession,
+    );
+    navigator.mediaSession.setActionHandler = (action, handler) => {
+      actions[action] = handler;
+      original(action, handler);
+    };
+  });
+  await setup(page);
+  await page.locator(".song-row").first().dblclick();
+  await expect
+    .poll(() => page.evaluate(() => navigator.mediaSession.playbackState))
+    .toBe("playing");
+  await page.evaluate(() => {
+    const w = window as any,
+      original = w.__TAURI_INTERNALS__.invoke;
+    w.__TAURI_INTERNALS__.invoke = async (cmd: string, args: any) => {
+      if (cmd === "song_url" && args.id === 2)
+        await new Promise((r) => setTimeout(r, 250));
+      return original(cmd, args);
+    };
+    w.__systemActions.nexttrack();
+    w.__systemActions.pause();
+  });
+  await expect(page.locator("#now-name")).toHaveText("我的歌曲 2");
+  await expect(page.locator("#duration")).toHaveText("0:20");
+  await expect(page.locator("#toggle")).toHaveAttribute("aria-label", "播放");
+  expect(await page.evaluate(() => navigator.mediaSession.playbackState)).toBe(
+    "paused",
+  );
+  await page.locator("#toggle").click();
+  await expect
+    .poll(() => page.evaluate(() => navigator.mediaSession.playbackState))
+    .toBe("playing");
 });

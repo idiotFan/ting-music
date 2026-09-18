@@ -6,9 +6,19 @@ test.use({
   userAgent:
     "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile",
 });
-async function setup(page: Page) {
-  await page.addInitScript(() => {
+async function setup(
+  page: Page,
+  device?: { platform: string; userAgent: string },
+) {
+  await page.addInitScript((device) => {
     const w = window as any;
+    if (device) {
+      Object.defineProperty(navigator, "platform", { value: device.platform });
+      Object.defineProperty(navigator, "userAgent", {
+        value: device.userAgent,
+      });
+      Object.defineProperty(navigator, "maxTouchPoints", { value: 0 });
+    }
     const song = {
       id: 1,
       source: "netease",
@@ -54,6 +64,7 @@ async function setup(page: Page) {
         if (cmd !== "sync_library") return null;
         w.__syncCalls.push(structuredClone(args));
         if (w.__syncFail) throw new Error("文件夹暂不可用");
+        if (args.batches.length > 2000) throw new Error("待同步修改过多");
         const backend = w.__syncBackend;
         for (const batch of args.batches) {
           if (backend.applied.includes(batch.id)) continue;
@@ -110,7 +121,7 @@ async function setup(page: Page) {
         return response;
       },
     };
-  });
+  }, device);
   await page.goto("/");
   await expect
     .poll(() =>
@@ -122,6 +133,83 @@ async function setup(page: Page) {
     )
     .toBe("00000000-0000-4000-8000-000000000001");
 }
+const otherPlatforms = [
+  { platform: "Win32", userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
+  { platform: "Linux x86_64", userAgent: "Mozilla/5.0 (X11; Linux x86_64)" },
+  { platform: "Linux armv8l", userAgent: "Mozilla/5.0 (Linux; Android 15)" },
+];
+for (const device of otherPlatforms) {
+  test(`${device.platform} acknowledges local favorites and playlists without exposing iCloud`, async ({
+    page,
+  }) => {
+    await setup(page, device);
+    await expect(page.locator("#sync-button")).toBeHidden();
+    await expect(page.locator("#sync-dialog")).toHaveCount(0);
+    await page.locator('[data-favorite="netease:1"]').tap();
+    await expect(page.locator("#fav-count")).toHaveText("1");
+    await playlists(page);
+    await create(page, "保留在这台设备");
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            JSON.parse(localStorage.getItem("ting.library-sync.v1")!).pending
+              .length,
+        ),
+      )
+      .toBe(0);
+    expect(
+      await page.evaluate(() =>
+        (window as any).__syncCalls.every(
+          (call: any) => call.exchange === false,
+        ),
+      ),
+    ).toBe(true);
+    await page.reload();
+    await expect(page.locator("#fav-count")).toHaveText("1");
+    await playlists(page);
+    await expect(
+      page.locator(".playlist-card").filter({ hasText: "保留在这台设备" }),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(() => (window as any).__syncCalls[0].batches),
+    ).toEqual([]);
+  });
+}
+
+test("old non-Apple outboxes above the native limit drain without losing pending edits", async ({
+  page,
+}) => {
+  await setup(page, otherPlatforms[0]);
+  await page.evaluate(() => {
+    const saved = JSON.parse(localStorage.getItem("ting.library-sync.v1")!);
+    saved.pending = Array.from({ length: 2001 }, (_, index) => ({
+      id: crypto.randomUUID(),
+      changes: [{ id: 42, name: `待恢复的改名 ${index}` }],
+    }));
+    saved.playlists[0].name = "待恢复的改名 2000";
+    localStorage.setItem("ting.library-sync.v1", JSON.stringify(saved));
+  });
+  await page.reload();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          JSON.parse(localStorage.getItem("ting.library-sync.v1")!).pending
+            .length,
+      ),
+    )
+    .toBe(0);
+  expect(
+    await page.evaluate(() =>
+      (window as any).__syncCalls.map((call: any) => call.batches.length),
+    ),
+  ).toEqual([2000, 1]);
+  await playlists(page);
+  await expect(page.locator(".playlist-card")).toContainText(
+    "待恢复的改名 2000",
+  );
+});
 async function playlists(page: Page) {
   await page.locator('[data-view="playlists"]').tap();
   await page.locator('[data-playlist-filter="internal"]').tap();

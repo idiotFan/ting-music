@@ -268,13 +268,25 @@ let lyrics: { time: number; text: string }[] = [],
 const audio = new Audio();
 audio.preload = "metadata";
 audio.volume = 0.7;
+const mediaBackend = await systemMediaBackend();
 const systemMedia = createMediaSession(audio, {
-  ...(await systemMediaBackend()),
+  ...mediaBackend,
   fallbackArtwork: fallbackArtwork(),
   loadArtwork: loadMediaArtwork,
-  play: () => void audio.play().catch(() => {}),
-  previous: () => skip(-1, false, !audio.paused),
-  next: () => skip(1, false, !audio.paused),
+  play: () => {
+    resumeAfterLoad = true;
+    if (!preparingPlayback) void audio.play().catch(() => {});
+    else updateTransport();
+  },
+  pause: () => {
+    resumeAfterLoad = false;
+    audio.pause();
+    if (preparingPlayback) updateTransport();
+  },
+  previous: () =>
+    skip(-1, false, preparingPlayback ? resumeAfterLoad : !audio.paused),
+  next: () =>
+    skip(1, false, preparingPlayback ? resumeAfterLoad : !audio.paused),
 });
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) systemMedia.refresh();
@@ -692,7 +704,7 @@ function updateFavorite() {
   );
 }
 function updateTransport() {
-  const playing = !audio.paused;
+  const playing = preparingPlayback ? resumeAfterLoad : !audio.paused;
   if ($("#toggle").dataset.playing !== String(playing)) {
     $("#toggle").innerHTML = icon(playing ? "Pause" : "Play");
     $("#toggle").dataset.playing = String(playing);
@@ -720,6 +732,7 @@ async function play(
   preserveNavigation = false,
 ) {
   const serial = ++playSerial;
+  resumeAfterLoad = shouldResume;
   preparingPlayback = true;
   systemMedia.clear();
   playlistToRemember = playlistContext
@@ -738,7 +751,6 @@ async function play(
   const sameSong = songKey(current) === songKey(song);
   current = song;
   pendingSeek = resumeAt;
-  resumeAfterLoad = shouldResume;
   if (!sameSong) lyrics = [];
   activeLine = -1;
   lyricFollower.reset();
@@ -753,6 +765,7 @@ async function play(
     return;
   }
   syncAudioLoop();
+  systemMedia.select(song);
   save();
   if (view === "queue") renderSongs();
   else syncRows();
@@ -784,10 +797,9 @@ async function play(
           `已请求${qualityNames[quality]}，${sourceName(song)}实际提供${actual}音质`,
         );
     } else $("#track-tag").textContent = "本地音频 · 离线可听";
-    systemMedia.select(song);
     audio.src = url;
     audio.load();
-    const playPromise = shouldResume ? audio.play() : Promise.resolve();
+    const playPromise = resumeAfterLoad ? audio.play() : Promise.resolve();
     if (song.localUrl)
       $("#lyrics").innerHTML =
         '<p class="lyric-placeholder">本地音乐<br>享受没有文字的片刻。</p>';
@@ -823,6 +835,14 @@ async function play(
       updateTransport();
       return;
     }
+    // iOS can require a fresh user gesture after an async URL request. Keep
+    // the selected song so a second tap restores the same system media session.
+    if (e instanceof DOMException && e.name === "NotAllowedError") {
+      resumeAfterLoad = false;
+      updateTransport();
+      toast("轻点播放按钮继续播放");
+      return;
+    }
     systemMedia.clear();
     $("#track-tag").textContent = "播放未成功";
     if (!audio.getAttribute("src") && !lyrics.length)
@@ -830,7 +850,10 @@ async function play(
         '<p class="lyric-placeholder">可以换一首歌，<br>或导入本地音频。</p>';
     toast(e instanceof Error ? e.message : String(e));
   } finally {
-    if (serial === playSerial) preparingPlayback = false;
+    if (serial === playSerial) {
+      preparingPlayback = false;
+      updateTransport();
+    }
   }
 }
 function skip(delta: number, automatic = false, shouldResume = true) {
@@ -869,9 +892,19 @@ function toggle() {
     if (list().length) playSelection(list()[0]);
     return;
   }
+  if (preparingPlayback) {
+    resumeAfterLoad = !resumeAfterLoad;
+    if (!resumeAfterLoad) audio.pause();
+    updateTransport();
+    return;
+  }
+  resumeAfterLoad = audio.paused;
   if (audio.paused) {
     if (!audio.getAttribute("src")) void play(current);
-    else void audio.play().catch(() => toast("播放失败，请重新选择歌曲"));
+    else {
+      if (current && !systemMedia.active) systemMedia.select(current);
+      void audio.play().catch(() => toast("播放失败，请重新选择歌曲"));
+    }
   } else audio.pause();
 }
 function importFiles(files: FileList | null) {
@@ -1118,7 +1151,8 @@ audio.addEventListener("volumechange", () => {
     audio.muted || !audio.volume ? "VolumeX" : "Volume2",
   );
 });
-let mediaErrorShown = false;
+let mediaErrorShown = "degraded" in mediaBackend && mediaBackend.degraded;
+if (mediaErrorShown) toast("系统媒体控制暂不可用，可继续使用应用内播放按钮");
 window.addEventListener("system-media-error", () => {
   if (!mediaErrorShown) {
     mediaErrorShown = true;

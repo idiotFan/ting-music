@@ -20,15 +20,19 @@ type Status = {
 };
 export function setupSync(changed: () => void) {
   const button = document.querySelector<HTMLButtonElement>("#sync-button")!;
-  if (!isTauri() || (!platform.mac && !platform.ios)) {
+  if (!isTauri()) {
     button.hidden = true;
     return;
   }
+  // All native platforms acknowledge local edits durably. Only Apple platforms
+  // expose the folder picker and exchange those edits through iCloud Drive.
+  const supportsCloud = platform.mac || platform.ios;
+  button.hidden = !supportsCloud;
   const dialog = document.createElement("dialog");
   dialog.id = "sync-dialog";
   dialog.setAttribute("aria-labelledby", "sync-title");
   dialog.innerHTML = `<button class="dialog-close icon-button" id="sync-close" aria-label="关闭同步设置">×</button><h2 id="sync-title">iCloud 歌单同步</h2><p class="summary">在 Mac 和 iPhone 上，选择同一个 iCloud 云盘文件夹。两端都需安装 0.9.3 或更新版本并各自授权；只在手机上开启不会上传 Mac 的数据。首次可新建一个「Ting」文件夹。</p><p class="summary">同步 Ting 收藏、本机混合歌单、歌曲增删与顺序。网易云 / QQ 歌单需在各设备登录同一音乐账号后读取；不传输登录凭据或音频文件。</p><p id="sync-status" role="status"></p><p id="sync-folder" class="summary"></p><p id="sync-warning" role="alert" hidden></p><div class="sync-actions"><button id="sync-connect" class="primary">选择 iCloud 文件夹</button><button id="sync-now" class="outline" hidden>立即同步</button><button id="sync-disconnect" class="quiet" hidden>停用同步</button></div><small class="summary sync-note">离线修改自动保留。文件由 iCloud 传输，另一台设备可能稍后才收到；停用不会删除已有歌单或云端文件。</small>`;
-  document.body.append(dialog);
+  if (supportsCloud) document.body.append(dialog);
   const q = <T extends HTMLElement = HTMLElement>(s: string) =>
     dialog.querySelector<T>(s)!;
   let status: Status | undefined;
@@ -81,7 +85,7 @@ export function setupSync(changed: () => void) {
     }, 30_000);
   }
   async function run(cloud: boolean) {
-    wantCloud ||= cloud;
+    wantCloud ||= supportsCloud && cloud;
     if (running || choosing) {
       again = true;
       return;
@@ -95,7 +99,9 @@ export function setupSync(changed: () => void) {
         again = false;
         const exchange = wantCloud;
         wantCloud = false;
-        const batches = pendingLibraryChanges();
+        // Older non-Apple builds accumulated an unacknowledged outbox. Drain it
+        // in bounded chunks instead of permanently exceeding the native limit.
+        const batches = pendingLibraryChanges().slice(0, 2000);
         const result = await invoke<Status>("sync_library", {
           batches,
           exchange,

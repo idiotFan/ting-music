@@ -166,7 +166,16 @@ impl Backend {
             b.property("Position")
                 .get(|_, s| Ok(s.lock().unwrap().position()))
                 .emits_changed_false();
-            b.property("Rate").get(|_, _| Ok(1.0f64));
+            b.property("Rate")
+                .get(|_, _| Ok(1.0f64))
+                .set(|_, s, v: f64| {
+                    // MPRIS requires a writable Rate even for a fixed-speed player;
+                    // setting zero is defined as Pause. Other rates are unsupported.
+                    if v == 0.0 {
+                        action(s, "pause", None);
+                    }
+                    Ok(None)
+                });
             b.property("MinimumRate").get(|_, _| Ok(1.0f64));
             b.property("MaximumRate").get(|_, _| Ok(1.0f64));
             b.property("Volume")
@@ -219,7 +228,11 @@ impl Backend {
     }
     pub fn update(&mut self, snapshot: &Snapshot) -> Result<(), String> {
         if !self.alive.load(Ordering::Relaxed) {
-            return Err("MPRIS 会话已断开".into());
+            // A restarted desktop session bus invalidates both the connection
+            // and its registered name. Re-register on the next snapshot rather
+            // than remaining permanently disconnected until the app restarts.
+            let app = self.app.clone();
+            *self = Self::new(&app)?;
         }
         let mut p = self.state.lock().map_err(|_| "MPRIS 状态不可用")?;
         let mut changed = PropMap::new();
@@ -227,28 +240,7 @@ impl Backend {
         let duration_changed = p.snapshot.position.as_ref().map(|p| p.duration)
             != snapshot.position.as_ref().map(|p| p.duration);
         if track_changed || duration_changed {
-            let mut metadata = PropMap::new();
-            if let Some(track) = &snapshot.track {
-                metadata.insert("mpris:trackid".into(), Variant(Box::new(track_path(track))));
-                for (k, v) in [("xesam:title", &track.title), ("xesam:album", &track.album)] {
-                    metadata.insert(k.into(), Variant(Box::new(v.clone())));
-                }
-                metadata.insert(
-                    "xesam:artist".into(),
-                    Variant(Box::new(vec![track.artist.clone()])),
-                );
-                if let Some(pos) = &snapshot.position {
-                    metadata.insert(
-                        "mpris:length".into(),
-                        Variant(Box::new((pos.duration * 1_000_000.0) as i64)),
-                    );
-                }
-                if let Some(path) = super::save_cover(&self.app, track)? {
-                    if let Ok(url) = reqwest::Url::from_file_path(path) {
-                        metadata.insert("mpris:artUrl".into(), Variant(Box::new(url.to_string())));
-                    }
-                }
-            }
+            let metadata = metadata_for(snapshot, |track| super::save_cover(&self.app, track));
             changed.insert("Metadata".into(), Variant(Box::new(clone_map(&metadata))));
             p.metadata = metadata;
         }
@@ -284,6 +276,36 @@ impl Backend {
         Ok(())
     }
 }
+fn metadata_for(
+    snapshot: &Snapshot,
+    save: impl FnOnce(&Track) -> Result<Option<std::path::PathBuf>, String>,
+) -> PropMap {
+    let mut metadata = PropMap::new();
+    if let Some(track) = &snapshot.track {
+        metadata.insert("mpris:trackid".into(), Variant(Box::new(track_path(track))));
+        for (k, v) in [("xesam:title", &track.title), ("xesam:album", &track.album)] {
+            metadata.insert(k.into(), Variant(Box::new(v.clone())));
+        }
+        metadata.insert(
+            "xesam:artist".into(),
+            Variant(Box::new(vec![track.artist.clone()])),
+        );
+        if let Some(pos) = &snapshot.position {
+            metadata.insert(
+                "mpris:length".into(),
+                Variant(Box::new((pos.duration * 1_000_000.0) as i64)),
+            );
+        }
+        // Keep song information and transport usable even when the artwork
+        // cache cannot be written (permissions, full disk, removed directory).
+        if let Ok(Some(path)) = save(track) {
+            if let Ok(url) = reqwest::Url::from_file_path(path) {
+                metadata.insert("mpris:artUrl".into(), Variant(Box::new(url.to_string())));
+            }
+        }
+    }
+    metadata
+}
 fn clone_map(map: &PropMap) -> PropMap {
     map.iter()
         .map(|(k, v)| (k.clone(), Variant(v.0.box_clone())))
@@ -292,7 +314,54 @@ fn clone_map(map: &PropMap) -> PropMap {
 fn track_path(track: &Track) -> Path<'static> {
     // Frontend generation is numeric; encode all bytes anyway to keep a valid path.
     let id: String = track.track_id.bytes().map(|b| format!("{b:02x}")).collect();
-    Path::new(format!("/org/mpris/MediaPlayer2/track/t{id}")).unwrap()
+    // /org/mpris is reserved by the protocol, including its NoTrack sentinel.
+    Path::new(format!("/com/ting/music/track/t{id}")).unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn snapshot() -> Snapshot {
+        Snapshot {
+            track: Some(Track {
+                track_id: "qq/歌曲 42".into(),
+                title: "Current title".into(),
+                artist: "Artist".into(),
+                album: "Album".into(),
+                artwork: String::new(),
+            }),
+            playback_state: Playback::Playing,
+            position: Some(Position {
+                duration: 180.5,
+                position: 3.0,
+                playback_rate: 1.0,
+            }),
+            volume: 0.7,
+        }
+    }
+
+    #[test]
+    fn failed_artwork_cache_keeps_track_and_timeline_metadata() {
+        let snapshot = snapshot();
+        let metadata = metadata_for(&snapshot, |_| Err("cache unavailable".into()));
+        assert_eq!(metadata["xesam:title"].0.as_str(), Some("Current title"));
+        assert_eq!(metadata["mpris:length"].0.as_i64(), Some(180_500_000));
+        assert!(metadata.contains_key("mpris:trackid"));
+        assert!(!metadata.contains_key("mpris:artUrl"));
+        assert!(metadata_for(&Snapshot::default(), |_| panic!("no track")).is_empty());
+    }
+
+    #[test]
+    fn track_ids_use_valid_unique_paths_outside_the_reserved_namespace() {
+        let mut track = snapshot().track.unwrap();
+        let first = track_path(&track);
+        assert!(first.starts_with("/com/ting/music/track/"));
+        assert!(!first.starts_with("/org/mpris"));
+        assert!(Path::new(first.to_string()).is_ok());
+        track.track_id.push('2');
+        assert_ne!(first, track_path(&track));
+    }
 }
 impl Drop for Backend {
     fn drop(&mut self) {

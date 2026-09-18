@@ -51,8 +51,6 @@ jobs:
           python3 -B scripts/infrastructure-test.py
           xcrun clang -fobjc-arc -fblocks -framework Foundation -framework AppKit tests/folder_sync_native.m -o /tmp/ting-folder-sync-test
           /tmp/ting-folder-sync-test
-          xcrun clang -fobjc-arc -fblocks -framework Foundation -framework AppKit -framework MediaPlayer -framework AVFoundation tests/media_controls_native.m -o /tmp/ting-media-test
-          /tmp/ting-media-test
       - name: Build native app
         run: npm run tauri -- build -- --locked
       - name: Frontend dependency audit
@@ -86,14 +84,19 @@ jobs:
           cache: npm
       - name: Linux native prerequisites
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libdbus-1-dev
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libdbus-1-dev ffmpeg
+      - name: Windows test audio dependencies
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg --yes --no-progress
       - name: Prepare
+        shell: bash
         run: |
           npm ci
           rustup toolchain install stable --profile minimal
           rustup default stable
           node scripts/prepare-desktop.mjs
       - name: Build and native regression
+        shell: bash
         run: |
           npm run build
           npm test
@@ -101,7 +104,7 @@ jobs:
           npm run tauri -- build -- --locked
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: Ting-0.9.5-build-90502-${{ runner.os }}
+          name: Ting-0.9.5-build-90503-${{ runner.os }}
           path: |
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/deb/*.deb

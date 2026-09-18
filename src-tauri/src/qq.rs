@@ -10,13 +10,29 @@ pub struct Session {
     credential: Option<Value>,
     pending: Option<(String, Value, Instant)>,
 }
+impl Session {
+    fn restored(credential: Option<Value>) -> Self {
+        Self {
+            revision: 0,
+            // An invalid legacy record must not prevent generating a fresh QR.
+            // Keep the stored record untouched until login or explicit logout.
+            credential: credential.and_then(|value| client::normalize_credential(value).ok()),
+            pending: None,
+        }
+    }
+    fn request_credential(&self, operation: &str) -> Value {
+        if matches!(operation, "login_qr_start" | "login_qr_check") {
+            // New authorization is independent of the currently signed-in user;
+            // canceling it must leave a valid existing session intact.
+            Value::Null
+        } else {
+            self.credential.clone().unwrap_or(Value::Null)
+        }
+    }
+}
 impl Qq {
     pub fn new() -> Self {
-        Self(tokio::sync::Mutex::new(Session {
-            revision: 0,
-            credential: load(),
-            pending: None,
-        }))
+        Self(tokio::sync::Mutex::new(Session::restored(load())))
     }
 }
 #[cfg(any(target_os = "macos", target_os = "ios"))]
@@ -149,7 +165,7 @@ pub async fn qq_request(
         session.revision += 1;
         session.pending = None;
     }
-    let credential = session.credential.clone().unwrap_or(Value::Null);
+    let credential = session.request_credential(&operation);
     let pending = session
         .pending
         .as_ref()
@@ -217,4 +233,57 @@ pub async fn qq_request(
         }
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_saved_credentials_restore_as_signed_out_without_blocking_new_login() {
+        for value in [
+            json!({}),
+            json!({"musicid": 0, "musickey": "fixture-only"}),
+            json!({"musicid": 123, "musickey": ""}),
+            json!({"legacy": "fixture-only"}),
+            Value::Null,
+        ] {
+            let session = Session::restored(Some(value));
+            assert!(session.credential.is_none());
+            for operation in ["login_qr_start", "login_qr_check", "search_songs"] {
+                assert!(client::Client::new(
+                    session.request_credential(operation),
+                    "fixture-guid".into()
+                )
+                .is_ok());
+            }
+        }
+    }
+
+    #[test]
+    fn new_qr_clients_ignore_old_credentials_and_preserve_valid_sessions() {
+        let mut session = Session::restored(Some(json!({
+            "musicid": 123, "musickey": "fixture-only", "loginType": 2,
+            "refreshKey": "fixture-refresh"
+        })));
+        let existing = session.credential.clone().unwrap();
+        assert_eq!(existing["login_type"], 2);
+        assert_eq!(existing["refresh_key"], "fixture-refresh");
+        for operation in ["login_qr_start", "login_qr_check"] {
+            assert!(session.request_credential(operation).is_null());
+            assert_eq!(session.credential.as_ref(), Some(&existing));
+        }
+        assert_eq!(session.request_credential("song_url"), existing);
+
+        // Even if a future adapter supplies malformed in-memory state, a fresh
+        // authorization can still construct its client without that old state.
+        session.credential = Some(json!({"musicid": 0}));
+        for operation in ["login_qr_start", "login_qr_check"] {
+            assert!(client::Client::new(
+                session.request_credential(operation),
+                "fixture-guid".into()
+            )
+            .is_ok());
+        }
+    }
 }

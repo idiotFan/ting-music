@@ -6,6 +6,10 @@ pub mod netease;
 mod qq;
 mod sync;
 mod sync_model;
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+mod system_media;
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+#[path = "system_media_web.rs"]
 mod system_media;
 use netease::{
     Api, Playback, PlaylistPage, PlaylistTracks, Profile, QrLogin, QrStatus, SearchResult,

@@ -4,14 +4,10 @@ use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager};
 
-#[cfg(any(target_os = "macos", target_os = "ios"))]
-mod apple;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "windows")]
 mod windows;
-#[cfg(any(target_os = "macos", target_os = "ios"))]
-use apple::Backend;
 #[cfg(target_os = "linux")]
 use linux::Backend;
 #[cfg(target_os = "windows")]

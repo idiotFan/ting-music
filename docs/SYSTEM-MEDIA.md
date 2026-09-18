@@ -4,7 +4,7 @@
 
 | 平台 | 原生接口 | 说明 |
 | --- | --- | --- |
-| macOS / iOS | MPRemoteCommandCenter + MPNowPlayingInfoCenter | 显式启用切歌，关闭跳秒和快进按钮；iOS 使用 Playback 音频会话及 audio 后台模式 |
+| macOS / iOS | WKWebView Web Media Session | 在音频就绪、开始播放和返回前台后重申切歌动作；保持真实音频会话的元信息 |
 | Windows | SystemMediaTransportControls (SMTC) | 绑定主窗口，发布音乐元数据和时间轴，禁用 WebView2 自带媒体会话以避免重复控制 |
 | Linux | MPRIS 2 / D-Bus session bus | 独立实例名，支持桌面媒体面板和 playerctl；需要有桌面会话和支持 MPRIS 的环境 |
 | 浏览器预览 / Android | Web Media Session | 按浏览器能力回退；不承诺系统面板具有与原生相同布局 |
@@ -15,17 +15,25 @@
 
 - 使用一条串行 IPC，合并等待期间的更新。递增序号拦截旧状态；封面只在变化时从前端传入，进度最多约每 750 ms 上报一次。
 - 封面使用现有有大小限制、无账号凭据的 CDN 加载器，转为最多 512×512 PNG。系统层不接收网络封面地址，不接收 Cookie、音乐 URL 或访问令牌。
-- Apple 直接使用 PNG；Windows / Linux 使用内容散列命名的私有缓存文件，避免系统缓存上一首封面，并清理过期文件。
+- Apple 通过 Web Media Session 使用 PNG；Windows / Linux 使用内容散列命名的私有缓存文件，避免系统缓存上一首封面，并清理过期文件。
 - 注销、播放失败或清空会话时同时清理元数据和播放状态。初始化幂等，单个进程不会重复注册按钮；Windows 移除按钮和进度订阅，Linux 服务随进程结束。
 - Linux 的 SetPosition 校验 track id，防止上一首歌延迟到达的进度指令改变当前歌曲。
 - 音频仍由应用现有播放器输出，原生桥负责系统会话。iOS 后台连续切歌等场景必须真机验证，不能用浏览器测试替代。
 
 ## 验证
 
-`npm test` 覆盖 IPC 合并、失败恢复、过期封面、单次事件分发；Playwright 覆盖原生回调驱动真实音频及队列。Rust 测试校验状态合并和有界封面输入。`tests/media_controls_native.m` 在 macOS 上调用公开 MediaPlayer API，验证上／下一曲注册、进度控制、元数据清空和重复初始化。
+`npm test` 覆盖 IPC 合并、失败恢复、过期封面、单次事件分发；Playwright 覆盖原生回调驱动真实音频及队列。Rust 测试校验状态合并和有界封面输入。WebKit 回归模拟监听器在播放后才建立的生命周期，验证此时上／下一曲动作会重新注册。
 
 CI 在 macOS、Windows、Ubuntu 分别运行 Rust 测试和原生构建。Linux 可用 `playerctl -l` 找到 `ting.instance...`，再用 `playerctl -p <名称> next`、`previous`、`play-pause`、`metadata` 验证。
 
 ## 版本策略
 
-本轮保持 0.9.5，Apple 构建号为 90502。调试和验收迭代使用构建号；完成一批功能和回归后再统一升级版本，不覆盖已发布的同名二进制。
+本轮保持 0.9.5，Apple 构建号为 90503。调试和验收迭代使用构建号；完成一批功能和回归后再统一升级版本，不覆盖已发布的同名二进制。
+
+## 90502 回归与 90503 修复依据
+
+90502 将 Apple 元信息移到宿主进程的 MPNowPlayingInfoCenter，但音频仍由 WKWebView 输出。清空 Web Media Session 后，真机确认封面和标题丢失。这个独立桥及只验证进程内字典的测试已移除，避免误当成控制中心实测。
+
+WebKit 的 NowPlayingManager 只在远程监听器存在时接收 supported commands；监听器随活跃音频会话创建，空 Audio 初始化时注册一次可能落空。90503 在 loadedmetadata、playing 和返回前台时按「元信息 → 播放状态 → 动作」顺序重申，上／下一曲与 seekto 保留，跳秒关闭。相同动作替换原回调，不增加多次触发。
+
+官方源码依据：[NowPlayingManager](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/platform/NowPlayingManager.cpp)、[MediaSession](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/Modules/mediasession/MediaSession.cpp)、[Cocoa 系统媒体信息发布](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/platform/audio/cocoa/MediaSessionManagerCocoa.mm)。这些代码解释实现策略；最终系统按钮显示仍需用户真机验收。
