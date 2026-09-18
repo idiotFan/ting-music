@@ -44,13 +44,20 @@ impl Player {
             })
             .unwrap_or(0)
     }
-    fn action(&self, action: &str, value: Option<(&str, f64)>) {
-        if self.snapshot.track.is_some() {
-            emit(&self.app, action, value);
-        }
-    }
 }
 type Shared = Arc<Mutex<Player>>;
+// Tauri can dispatch work to the UI thread. Never hold the player lock while
+// emitting an action or raising a window: UI updates acquire this same lock.
+fn action(state: &Shared, action: &str, value: Option<(&str, f64)>) {
+    let app = state
+        .lock()
+        .ok()
+        .and_then(|p| p.snapshot.track.as_ref().map(|_| p.app.clone()));
+    if let Some(app) = app {
+        emit(&app, action, value);
+    }
+}
+
 pub struct Backend {
     app: tauri::AppHandle,
     state: Shared,
@@ -94,8 +101,9 @@ impl Backend {
                 b.property("SupportedMimeTypes")
                     .get(|_, _| Ok(Vec::<String>::new()));
                 b.method("Raise", (), (), |_, s, (): ()| {
-                    if let Ok(p) = s.lock() {
-                        if let Some(w) = p.app.get_webview_window("main") {
+                    let app = s.lock().ok().map(|p| p.app.clone());
+                    if let Some(app) = app {
+                        if let Some(w) = app.get_webview_window("main") {
                             let _ = w.show();
                             let _ = w.set_focus();
                         }
@@ -114,16 +122,12 @@ impl Backend {
                 ("Previous", "previoustrack"),
             ] {
                 b.method(method, (), (), move |_, s, (): ()| {
-                    if let Ok(p) = s.lock() {
-                        p.action(action, None);
-                    }
+                    self::action(s, action, None);
                     Ok(())
                 });
             }
             b.method("Seek", ("Offset",), (), |_, s, (offset,): (i64,)| {
-                if let Ok(p) = s.lock() {
-                    p.action("seekby", Some(("offset", offset as f64 / 1_000_000.0)));
-                }
+                action(s, "seekby", Some(("offset", offset as f64 / 1_000_000.0)));
                 Ok(())
             });
             b.method(
@@ -142,7 +146,13 @@ impl Backend {
                                 .as_ref()
                                 .is_some_and(|x| position as f64 / 1_000_000.0 <= x.duration)
                         {
-                            p.action("seekto", Some(("seekTime", position as f64 / 1_000_000.0)));
+                            let app = p.app.clone();
+                            drop(p);
+                            emit(
+                                &app,
+                                "seekto",
+                                Some(("seekTime", position as f64 / 1_000_000.0)),
+                            );
                         }
                     }
                     Ok(())
@@ -163,9 +173,7 @@ impl Backend {
                 .get(|_, s| Ok(s.lock().unwrap().snapshot.volume))
                 .set(|_, s, v: f64| {
                     if v.is_finite() {
-                        s.lock()
-                            .unwrap()
-                            .action("volume", Some(("volume", v.clamp(0.0, 1.0))));
+                        action(s, "volume", Some(("volume", v.clamp(0.0, 1.0))));
                     }
                     Ok(None)
                 });
