@@ -6,6 +6,7 @@ pub mod netease;
 mod qq;
 mod sync;
 mod sync_model;
+mod system_media;
 use netease::{
     Api, Playback, PlaylistPage, PlaylistTracks, Profile, QrLogin, QrStatus, SearchResult,
 };
@@ -150,12 +151,15 @@ fn set_lyrics_panel(open: bool) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .manage(LyricsWindow::default())
+        .manage(system_media::State::default())
         .manage(sync::SyncState::default())
         .manage(download::Downloads::default())
         .manage(qq::Qq::new())
         .manage(Api::persistent().expect("HTTP client initialization failed"))
         .invoke_handler(tauri::generate_handler![
             set_lyrics_panel,
+            system_media::system_media_init,
+            system_media::system_media_update,
             sync::sync_choose_folder,
             sync::sync_disconnect,
             sync::sync_library,

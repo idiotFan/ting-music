@@ -3,10 +3,14 @@ fn main() {
     if target == "macos" || target == "ios" {
         cc::Build::new()
             .file("native/folder_sync.m")
+            .file("native/media_controls.m")
             .flag("-fobjc-arc")
             .flag("-fblocks")
             .compile("ting_folder_sync");
         println!("cargo:rustc-link-lib=framework=Foundation");
+        println!("cargo:rustc-link-lib=framework=MediaPlayer");
+        println!("cargo:rustc-link-lib=framework=AVFoundation");
+        println!("cargo:rerun-if-changed=native/media_controls.m");
         println!(
             "cargo:rustc-link-lib=framework={}",
             if target == "ios" { "UIKit" } else { "AppKit" }

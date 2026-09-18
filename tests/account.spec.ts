@@ -3,7 +3,12 @@ import { PNG } from "pngjs";
 import jsQR from "jsqr";
 const qrUrl =
   "http://music.163.com/login?codekey=qa-only-key&chainId=v1_0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF01234567_web_login_1789543000000";
-async function setup(page: any, restoreDelay = 0, restored = false) {
+async function setup(
+  page: any,
+  restoreDelay = 0,
+  restored = false,
+  nativeMedia = false,
+) {
   await page.exposeFunction("__resizeLyricsForTest", async (open: boolean) => {
     const size = page.viewportSize();
     await page.setViewportSize({
@@ -12,7 +17,7 @@ async function setup(page: any, restoreDelay = 0, restored = false) {
     });
   });
   await page.addInitScript(
-    ({ qrUrl, restoreDelay, restored }: any) => {
+    ({ qrUrl, restoreDelay, restored, nativeMedia }: any) => {
       const w = window as any;
       w.__calls = [];
       w.__status = 801;
@@ -47,6 +52,17 @@ async function setup(page: any, restoreDelay = 0, restored = false) {
       w.__TAURI_INTERNALS__ = {
         invoke: async (cmd: string, args: any) => {
           w.__calls.push({ cmd, args });
+          if (nativeMedia && cmd === "plugin:event|listen") {
+            w.__mediaCallback = args.handler;
+            return 1;
+          }
+          if (nativeMedia && cmd === "system_media_init") return "apple";
+          if (nativeMedia && cmd === "system_media_update") {
+            w.__snapshot = args.snapshot;
+            return;
+          }
+          if (nativeMedia && cmd === "plugin:event|unlisten") return;
+
           if (cmd === "qq_request" && args.operation === "account_status")
             return null;
           if (cmd === "set_lyrics_panel") {
@@ -121,9 +137,16 @@ async function setup(page: any, restoreDelay = 0, restored = false) {
           throw new Error(`unexpected ${cmd}`);
         },
       };
+      if (nativeMedia) {
+        w.__TAURI_INTERNALS__.transformCallback = (fn: any) => {
+          w.__nativeEvent = fn;
+          return 1;
+        };
+        w.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
+      }
       Object.defineProperty(window, "isTauri", { value: true });
     },
-    { qrUrl, restoreDelay, restored },
+    { qrUrl, restoreDelay, restored, nativeMedia },
   );
   await page.goto("/");
 }
@@ -872,4 +895,45 @@ test("system track actions navigate the actual queue and update metadata", async
   await expect
     .poll(() => page.evaluate(() => navigator.mediaSession.playbackState))
     .toBe("playing");
+});
+
+test("native transport owns the system session and drives queue, pause, seek and resume", async ({
+  page,
+}) => {
+  await setup(page, 0, false, true);
+  await page.locator(".song-row").nth(0).dblclick();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__snapshot?.playbackState))
+    .toBe("playing");
+  expect(await page.evaluate(() => navigator.mediaSession.metadata)).toBeNull();
+  const send = (action: string, detail = {}) =>
+    page.evaluate(
+      ({ action, detail }) => {
+        (window as any).__nativeEvent({
+          event: "system-media-action",
+          id: 1,
+          payload: { action, ...detail },
+        });
+      },
+      { action, detail },
+    );
+  await send("nexttrack");
+  await expect(page.locator("#now-name")).toHaveText("我的歌曲 2");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__snapshot?.playbackState))
+    .toBe("playing");
+  await send("pause");
+  await expect(page.locator("#toggle")).toHaveAttribute("aria-label", "播放");
+  await send("seekto", { seekTime: 8 });
+  await expect(page.locator("#elapsed")).toHaveText("0:08");
+  await send("play");
+  await expect(page.locator("#toggle")).toHaveAttribute("aria-label", "暂停");
+  await send("previoustrack");
+  await expect(page.locator("#now-name")).toHaveText("我的歌曲 1");
+  const reads = await page.evaluate(() =>
+    (window as any).__calls
+      .filter((c: any) => c.cmd === "song_url")
+      .map((c: any) => c.args.id),
+  );
+  expect(reads).toEqual([1, 2, 1]);
 });

@@ -21,6 +21,7 @@ export function createMediaSession(audio, options) {
       session.metadata =
         active && track
           ? metadata({
+              trackId: String(generation),
               title: track.name,
               artist: track.artist,
               album: track.album,
@@ -38,6 +39,7 @@ export function createMediaSession(audio, options) {
           ? "paused"
           : "playing";
     });
+    safely(() => session.setVolume?.(audio.muted ? 0 : audio.volume));
     safely(() => {
       const duration = audio.duration;
       if (!active || !Number.isFinite(duration) || duration <= 0) {
@@ -89,6 +91,7 @@ export function createMediaSession(audio, options) {
     "loadedmetadata",
     "durationchange",
     "ratechange",
+    "volumechange",
     "seeked",
     "timeupdate",
     "ended",
@@ -134,6 +137,17 @@ export function createMediaSession(audio, options) {
     pause: () => audio.pause(),
     previoustrack: options.previous,
     nexttrack: options.next,
+    stop: () => {
+      audio.pause();
+      seek(0);
+    },
+    seekby: (details) => seek(audio.currentTime + details.offset),
+    volume: (details) => {
+      if (Number.isFinite(details.volume)) {
+        audio.volume = Math.max(0, Math.min(1, details.volume));
+        audio.muted = false;
+      }
+    },
     seekto: (details) => seek(details.seekTime),
     // Track navigation and interval skipping compete for iOS transport buttons.
     // Music uses previous/next; timeline scrubbing remains available via seekto.

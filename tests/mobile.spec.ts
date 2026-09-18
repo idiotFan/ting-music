@@ -393,3 +393,36 @@ test("phone search releases space for the keyboard and restores playback after s
   );
   await context.close();
 });
+
+test("mobile lyrics closing can interrupt opening and reduced motion skips transitions", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    viewport: { width: 393, height: 852 },
+    isMobile: true,
+    hasTouch: true,
+    userAgent: phoneUA,
+  });
+  const page = await context.newPage();
+  await mobileFixture(page);
+  await page.locator("#lyrics-toggle").tap();
+  await page.evaluate(() =>
+    document.querySelector<HTMLButtonElement>("#lyrics-close")!.click(),
+  );
+  await expect(page.locator("#lyrics-panel")).toBeHidden();
+  expect(
+    await page.locator("#app").evaluate((el) => (el as HTMLElement).inert),
+  ).toBe(false);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.locator("#lyrics-toggle").tap();
+  await expect(page.locator("#lyrics-panel")).toBeVisible();
+  expect(
+    await page
+      .locator("#lyrics-panel")
+      .evaluate((el) => el.getAnimations().length),
+  ).toBe(0);
+  await page.locator("#lyrics-close").tap();
+  await expect(page.locator("#lyrics-panel")).toBeHidden();
+  await expect(page.locator("#lyrics-toggle")).toBeFocused();
+  await context.close();
+});

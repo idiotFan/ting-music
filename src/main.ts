@@ -46,6 +46,7 @@ import { makeLoginQr, verifyOriginalQr, qrPngForSharing } from "./qr";
 import { mountPhoneLogin, type PhoneLoginResult } from "./phone-login";
 import { setupMobileViewport } from "./mobile-viewport";
 import { setupSync } from "./sync";
+import { systemMediaBackend } from "./system-media";
 import { createMediaSession } from "./media-session.mjs";
 import { fallbackArtwork, loadMediaArtwork } from "./media-artwork";
 import {
@@ -268,8 +269,7 @@ const audio = new Audio();
 audio.preload = "metadata";
 audio.volume = 0.7;
 const systemMedia = createMediaSession(audio, {
-  session: navigator.mediaSession,
-  metadata: (value: MediaMetadataInit) => new MediaMetadata(value),
+  ...(await systemMediaBackend()),
   fallbackArtwork: fallbackArtwork(),
   loadArtwork: loadMediaArtwork,
   play: () => void audio.play().catch(() => {}),
@@ -1110,6 +1110,20 @@ audio.addEventListener("playing", () => {
     toast("最近播放记录未保存，本地空间可能不足");
   }
   if (view === "playlists") renderSongs();
+});
+audio.addEventListener("volumechange", () => {
+  ($("#volume") as HTMLInputElement).value = String(audio.volume);
+  $("#mute").setAttribute("aria-label", audio.muted ? "取消静音" : "静音");
+  $("#mute").innerHTML = icon(
+    audio.muted || !audio.volume ? "VolumeX" : "Volume2",
+  );
+});
+let mediaErrorShown = false;
+window.addEventListener("system-media-error", () => {
+  if (!mediaErrorShown) {
+    mediaErrorShown = true;
+    toast("系统媒体控制暂不可用，可继续使用应用内播放按钮");
+  }
 });
 audio.addEventListener("play", updateTransport);
 audio.addEventListener("pause", updateTransport);

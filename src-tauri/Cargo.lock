@@ -617,6 +617,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "dbus-crossroads"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64bff0bd181fba667660276c6b7ebdc50cff37ce593e7adf9e734f89c8f444e8"
+dependencies = [
+ "dbus",
+]
+
+[[package]]
 name = "dbus-secret-service"
 version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3971,6 +3980,8 @@ dependencies = [
  "block2",
  "cbc",
  "cc",
+ "dbus",
+ "dbus-crossroads",
  "keyring",
  "lofty",
  "md-5",
@@ -3991,6 +4002,7 @@ dependencies = [
  "unicode-casefold",
  "unicode-normalization",
  "uuid",
+ "windows",
 ]
 
 [[package]]

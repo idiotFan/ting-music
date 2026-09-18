@@ -1861,3 +1861,16 @@ button.brand:active {
   white-space: normal;
   line-height: 1.6;
 }
+
+/* The mobile lyrics sheet animates independently of the lyric scroll position. */
+.mobile-device #app {
+  transition: opacity 260ms ease;
+}
+.mobile-device body.lyrics-open #app {
+  opacity: 0.82;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mobile-device #app {
+    transition: none;
+  }
+}

@@ -23,7 +23,8 @@
         "trafficLightPosition": {
           "x": 16,
           "y": 28
-        }
+        },
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,HardwareMediaKeyHandling,MediaSessionService --autoplay-policy=no-user-gesture-required"
       }
     ],
     "security": {
@@ -48,7 +49,8 @@
       "../resources/licenses/": "licenses/"
     },
     "macOS": {
-      "minimumSystemVersion": "15.0"
+      "minimumSystemVersion": "15.0",
+      "bundleVersion": "90502"
     }
   }
 }

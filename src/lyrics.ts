@@ -49,27 +49,79 @@ export function setupLyrics(
     });
     center(instant);
   }
+  let opened = false,
+    transition = 0,
+    sheetAnimation: Animation | undefined;
+  const app = document.querySelector<HTMLElement>("#app")!;
   async function setOpen(open: boolean) {
-    if (resizing || open === !panel.hidden) return;
+    if ((!mobileDevice && resizing) || open === opened) return;
+    const serial = ++transition;
+    opened = open;
+    const previousOpacity = getComputedStyle(panel).opacity;
+    const previousTransform = getComputedStyle(panel).transform;
+    const wasVisible = !panel.hidden;
+    sheetAnimation?.cancel();
     resizing = true;
-    toggle.disabled = close.disabled = true;
+    if (!mobileDevice) toggle.disabled = close.disabled = true;
     try {
       if (isTauri() && !mobileDevice)
         await invoke("set_lyrics_panel", { open });
-      panel.hidden = box.hidden = !open;
-      document.body.classList.toggle("lyrics-open", open);
+      if (open) {
+        panel.hidden = box.hidden = false;
+        document.body.classList.add("lyrics-open");
+        if (mobileDevice) {
+          app.inert = true;
+          close.focus({ preventScroll: true });
+        }
+        requestAnimationFrame(() => center(true));
+      }
       toggle.setAttribute("aria-expanded", String(open));
       toggle.setAttribute("aria-label", open ? "隐藏歌词" : "显示歌词");
-      if (open) requestAnimationFrame(() => center(true));
+      if (mobileDevice && !reduced()) {
+        const resting = { opacity: 1, transform: "translateY(0)" };
+        const outside = { opacity: 0, transform: "translateY(36px)" };
+        sheetAnimation = panel.animate(
+          [
+            wasVisible
+              ? { opacity: previousOpacity, transform: previousTransform }
+              : outside,
+            open ? resting : outside,
+          ],
+          {
+            duration: open ? 300 : 220,
+            easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+            fill: "both",
+          },
+        );
+        await sheetAnimation.finished.catch(() => {});
+      }
+      if (serial !== transition) return;
+      sheetAnimation?.cancel();
+      sheetAnimation = undefined;
+      if (!open) {
+        panel.hidden = box.hidden = true;
+        document.body.classList.remove("lyrics-open");
+        app.inert = false;
+        if (mobileDevice) toggle.focus({ preventScroll: true });
+      }
     } catch (e) {
+      opened = !panel.hidden;
       onError(`无法调整歌词窗口：${String(e)}`);
     } finally {
-      resizing = false;
-      toggle.disabled = close.disabled = false;
+      if (serial === transition) {
+        resizing = false;
+        toggle.disabled = close.disabled = false;
+      }
     }
   }
-  toggle.onclick = () => void setOpen(panel.hidden);
+  toggle.onclick = () => void setOpen(!opened);
   close.onclick = () => void setOpen(false);
+  panel.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      void setOpen(false);
+    }
+  });
   function browse() {
     manual = true;
     cancelAnimationFrame(frame);
