@@ -60,6 +60,25 @@ export async function systemMediaBackend() {
   return {
     degraded,
     session: navigator.mediaSession,
-    metadata: (value: MediaMetadataInit) => new MediaMetadata(value),
+    metadata: (value: MediaMetadataInit) => {
+      const current = navigator.mediaSession?.metadata;
+      if (!current) return new MediaMetadata(value);
+      // Replacing the entire object makes WebKit discard its decoded artwork.
+      // Update text in place and leave the displayed image until it changes.
+      for (const key of ["title", "artist", "album"] as const)
+        if (current[key] !== (value[key] ?? ""))
+          current[key] = value[key] ?? "";
+      const images = value.artwork ?? [];
+      if (
+        current.artwork.length !== images.length ||
+        images.some((image, i) =>
+          (["src", "sizes", "type"] as const).some(
+            (key) => (current.artwork[i][key] ?? "") !== (image[key] ?? ""),
+          ),
+        )
+      )
+        current.artwork = images;
+      return current;
+    },
   };
 }

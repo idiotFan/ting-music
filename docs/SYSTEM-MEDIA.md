@@ -28,7 +28,7 @@ CI 在 macOS、Windows、Ubuntu 分别运行 Rust 测试和原生构建。Linux 
 
 ## 版本策略
 
-本轮保持 0.9.5，Apple 构建号为 90503。调试和验收迭代使用构建号；完成一批功能和回归后再统一升级版本，不覆盖已发布的同名二进制。
+本轮保持 0.9.5，Apple 构建号为 90504。调试和验收迭代使用构建号；完成一批功能和回归后再统一升级版本，不覆盖已发布的同名二进制。
 
 ## 90502 回归与 90503 修复依据
 
@@ -37,3 +37,9 @@ CI 在 macOS、Windows、Ubuntu 分别运行 Rust 测试和原生构建。Linux 
 WebKit 的 NowPlayingManager 只在远程监听器存在时接收 supported commands；监听器随活跃音频会话创建，空 Audio 初始化时注册一次可能落空。90503 在 loadedmetadata、playing 和返回前台时按「元信息 → 播放状态 → 动作」顺序重申，上／下一曲与 seekto 保留，跳秒关闭。相同动作替换原回调，不增加多次触发。
 
 官方源码依据：[NowPlayingManager](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/platform/NowPlayingManager.cpp)、[MediaSession](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/Modules/mediasession/MediaSession.cpp)、[Cocoa 系统媒体信息发布](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/platform/audio/cocoa/MediaSessionManagerCocoa.mm)。这些代码解释实现策略；最终系统按钮显示仍需用户真机验收。
+
+## 90504 封面过渡
+
+90503 已由用户真机确认：歌曲信息恢复、上／下一曲可正常切歌。随后反馈切歌时闪现 App Logo，定位为每次切歌先清空会话、再把封面重置为占位图。正常切歌现在保留已显示封面，新封面完整解码后才替换；确认无封面或请求失败时才回退占位图。旧请求失败与成功均校验曲目世代，避免快速切歌时显示过期图片。
+
+同一元数据去重；Web MediaMetadata 就地更新文本，封面不变时不重新设置 artwork 或整个 metadata 对象，保留 WebKit 已解码的图。音频就绪和前台恢复仍重申动作。依据：[MediaSession::setMetadata](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/Modules/mediasession/MediaSession.cpp)、[MediaMetadata 图片生命周期](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/Modules/mediasession/MediaMetadata.cpp)。这些实现细节支持消除重复加载的修复策略，不替代真机视觉验收。

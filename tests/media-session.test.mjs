@@ -92,6 +92,70 @@ test("failed or absent cover clears previous artwork without blocking transport"
   f.actions.previoustrack();
   assert.deepEqual(f.counts(), [1, 1]);
 });
+test("track transitions keep the displayed cover until the latest image is ready", async () => {
+  const pending = [];
+  const f = fixture(
+    (url) =>
+      new Promise((resolve, reject) => pending.push({ url, resolve, reject })),
+  );
+  f.media.select(song(1));
+  pending[0].resolve({ src: "cover 1" });
+  await new Promise(setImmediate);
+  let value = f.session.metadata;
+  const writes = [];
+  Object.defineProperty(f.session, "metadata", {
+    get: () => value,
+    set: (next) => {
+      writes.push(next);
+      value = next;
+    },
+  });
+  f.media.select(song(2));
+  f.audio.dispatchEvent(new Event("loadedmetadata"));
+  f.audio.dispatchEvent(new Event("playing"));
+  f.media.refresh();
+  assert.equal(writes.length, 1); // Readiness does not reload identical artwork.
+  assert.equal(value.title, "song 2");
+  assert.equal(value.artwork[0].src, "cover 1");
+  f.media.select(song(3));
+  pending[1].reject(Error("obsolete request failed"));
+  await new Promise(setImmediate);
+  assert.equal(value.title, "song 3");
+  assert.equal(value.artwork[0].src, "cover 1");
+  pending[2].resolve({ src: "cover 3" });
+  await new Promise(setImmediate);
+  assert.deepEqual(
+    writes.map((entry) => entry?.artwork[0]?.src),
+    ["cover 1", "cover 1", "cover 3"],
+  );
+  f.media.clear();
+  assert.equal(value, null);
+  f.media.select(song(4));
+  assert.equal(value.artwork[0].src, "fallback");
+  pending[3].resolve(null);
+  await new Promise(setImmediate);
+  assert.equal(value.artwork[0].src, "fallback");
+});
+test("metadata publication retries after an optional API failure or external clear", () => {
+  const f = fixture();
+  let value = null,
+    fail = true;
+  Object.defineProperty(f.session, "metadata", {
+    get: () => value,
+    set: (next) => {
+      if (fail) throw Error("temporarily unavailable");
+      value = next;
+    },
+  });
+  f.media.select({ ...song(1), cover: "" });
+  assert.equal(value, null);
+  fail = false;
+  f.media.refresh();
+  assert.equal(value.title, "song 1");
+  value = null;
+  f.media.refresh();
+  assert.equal(value.title, "song 1");
+});
 test("play, pause, seek, duration and rate are mirrored with valid positions", () => {
   const f = fixture();
   f.media.select(song(1));

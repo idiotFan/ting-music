@@ -50,7 +50,7 @@
     },
     "macOS": {
       "minimumSystemVersion": "15.0",
-      "bundleVersion": "90503"
+      "bundleVersion": "90504"
     }
   }
 }

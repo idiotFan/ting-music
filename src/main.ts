@@ -734,7 +734,6 @@ async function play(
   const serial = ++playSerial;
   resumeAfterLoad = shouldResume;
   preparingPlayback = true;
-  systemMedia.clear();
   playlistToRemember = playlistContext
     ? {
         item: playlistContext,
@@ -761,6 +760,7 @@ async function play(
     playbackQueue.replace(replaceQueue);
   }
   if (!preserveNavigation && !playbackQueue.start(song, { fromHistory })) {
+    systemMedia.clear();
     preparingPlayback = false;
     return;
   }

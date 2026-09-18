@@ -853,6 +853,140 @@ test("system media metadata follows real audio switching, pause and resume", asy
     .toBe("playing");
 });
 
+test("switching real audio retains system artwork without a logo or empty metadata between tracks", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.evaluate(() => {
+    const w = window as any,
+      original = w.__TAURI_INTERNALS__.invoke;
+    w.__covers = ["#cc2222", "#22bb44", "#2244cc"].map((color) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 512;
+      const ctx = canvas.getContext("2d")!;
+      ctx.fillStyle = color;
+      ctx.fillRect(0, 0, 512, 512);
+      return canvas.toDataURL("image/png");
+    });
+    w.__coverReady = {};
+    w.__TAURI_INTERNALS__.invoke = async (cmd: string, args: any) => {
+      if (cmd === "media_artwork") {
+        const index = w.__covers.indexOf(args.url);
+        if (index > 0)
+          await new Promise((resolve) => {
+            w.__coverReady[index] = resolve;
+          });
+        return args.url;
+      }
+      const result = await original(cmd, args);
+      if (cmd === "search_songs")
+        result.songs = result.songs.map((song: any, i: number) => ({
+          ...song,
+          cover: w.__covers[i],
+        }));
+      return result;
+    };
+  });
+  await page.locator("#search").fill("封面切换测试");
+  await page
+    .locator("#search-form")
+    .evaluate((form: HTMLFormElement) => form.requestSubmit());
+  await expect(page.locator(".song-row img")).toHaveCount(3);
+  await page.locator(".song-row").first().dblclick();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          navigator.mediaSession.metadata?.artwork[0]?.src ===
+          (window as any).__covers[0],
+      ),
+    )
+    .toBe(true);
+  await page.evaluate(() => {
+    const w = window as any,
+      session = navigator.mediaSession;
+    w.__initialMetadata = session.metadata;
+    w.__metadataWrites = [];
+    w.__artworkWrites = [];
+    const descriptor = Object.getOwnPropertyDescriptor(
+      Object.getPrototypeOf(session),
+      "metadata",
+    )!;
+    Object.defineProperty(session, "metadata", {
+      get: () => descriptor.get!.call(session),
+      set(value) {
+        w.__metadataWrites.push(value?.title ?? null);
+        descriptor.set!.call(session, value);
+      },
+    });
+    const metadata = session.metadata!;
+    const artwork = Object.getOwnPropertyDescriptor(
+      Object.getPrototypeOf(metadata),
+      "artwork",
+    )!;
+    Object.defineProperty(metadata, "artwork", {
+      get: () => artwork.get!.call(metadata),
+      set(value) {
+        w.__artworkWrites.push(value[0]?.src ?? null);
+        artwork.set!.call(metadata, value);
+      },
+    });
+  });
+  await page.locator("#next").click();
+  await expect
+    .poll(() => page.evaluate(() => navigator.mediaSession.metadata?.title))
+    .toBe("我的歌曲 2");
+  await expect
+    .poll(() => page.evaluate(() => navigator.mediaSession.playbackState))
+    .toBe("playing");
+  expect(
+    await page.evaluate(
+      () =>
+        navigator.mediaSession.metadata?.artwork[0]?.src ===
+        (window as any).__covers[0],
+    ),
+  ).toBe(true);
+  await page.locator("#next").click();
+  await expect
+    .poll(() => page.evaluate(() => navigator.mediaSession.metadata?.title))
+    .toBe("我的歌曲 3");
+  await page.evaluate(() => (window as any).__coverReady[1]());
+  await expect
+    .poll(() => page.evaluate(() => typeof (window as any).__coverReady[2]))
+    .toBe("function");
+  expect(
+    await page.evaluate(
+      () =>
+        navigator.mediaSession.metadata?.artwork[0]?.src ===
+        (window as any).__covers[0],
+    ),
+  ).toBe(true);
+  await page.evaluate(() => (window as any).__coverReady[2]());
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          navigator.mediaSession.metadata?.artwork[0]?.src ===
+          (window as any).__covers[2],
+      ),
+    )
+    .toBe(true);
+  expect(
+    await page.evaluate(() => ({
+      sameObject:
+        navigator.mediaSession.metadata === (window as any).__initialMetadata,
+      metadataWrites: (window as any).__metadataWrites,
+      artworkWrites: (window as any).__artworkWrites,
+      cover: (window as any).__covers[2],
+    })),
+  ).toEqual({
+    sameObject: true,
+    metadataWrites: [],
+    artworkWrites: [await page.evaluate(() => (window as any).__covers[2])],
+    cover: await page.evaluate(() => (window as any).__covers[2]),
+  });
+});
+
 test("system track actions navigate the actual queue and update metadata", async ({
   page,
 }) => {

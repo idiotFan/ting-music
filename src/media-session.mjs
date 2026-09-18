@@ -9,6 +9,7 @@ export function createMediaSession(audio, options) {
   let active = false,
     fetching = false,
     requested = null;
+  let published = null;
   const safely = (fn) => {
     try {
       fn();
@@ -19,7 +20,13 @@ export function createMediaSession(audio, options) {
   function publish() {
     if (!session) return;
     safely(() => {
-      session.metadata =
+      if (
+        published?.generation === generation &&
+        published.artwork === artwork &&
+        session.metadata === published.value
+      )
+        return;
+      const value =
         active && track
           ? metadata({
               trackId: String(generation),
@@ -29,6 +36,8 @@ export function createMediaSession(audio, options) {
               artwork: artwork ? [artwork] : [],
             })
           : null;
+      if (session.metadata !== value) session.metadata = value;
+      published = { generation, artwork, value };
     });
   }
   function state() {
@@ -71,15 +80,16 @@ export function createMediaSession(audio, options) {
       while (requested) {
         const request = requested;
         requested = null;
+        let image = null;
         try {
-          const image = await loadArtwork(request.url);
-          if (request.generation === generation && active && image) {
-            artwork = image;
-            publish();
-            state();
-          }
+          image = await loadArtwork(request.url);
         } catch {
-          /* Keep this track's fallback, never the preceding cover. */
+          /* A confirmed failure replaces the temporary preceding cover. */
+        }
+        if (request.generation === generation && active) {
+          artwork = image || fallbackArtwork;
+          publish();
+          state();
         }
       }
     } finally {
@@ -127,7 +137,9 @@ export function createMediaSession(audio, options) {
     active = true;
     stopped = false;
     track = song;
-    artwork = fallbackArtwork;
+    // Keep the displayed image while the next one loads. Publishing a fallback
+    // here produces a visible app-logo flash in the system media panel.
+    if (!song.cover) artwork = fallbackArtwork;
     requested = song.cover ? { generation, url: song.cover } : null;
     publish();
     state();
