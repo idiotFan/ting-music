@@ -46,6 +46,8 @@ import { makeLoginQr, verifyOriginalQr, qrPngForSharing } from "./qr";
 import { mountPhoneLogin, type PhoneLoginResult } from "./phone-login";
 import { setupMobileViewport } from "./mobile-viewport";
 import { setupSync } from "./sync";
+import { createMediaSession } from "./media-session.mjs";
+import { fallbackArtwork, loadMediaArtwork } from "./media-artwork";
 import {
   platform,
   mobileDevice,
@@ -265,6 +267,18 @@ let lyrics: { time: number; text: string }[] = [],
 const audio = new Audio();
 audio.preload = "metadata";
 audio.volume = 0.7;
+const systemMedia = createMediaSession(audio, {
+  session: navigator.mediaSession,
+  metadata: (value: MediaMetadataInit) => new MediaMetadata(value),
+  fallbackArtwork: fallbackArtwork(),
+  loadArtwork: loadMediaArtwork,
+  play: () => void audio.play().catch(() => {}),
+  previous: () => skip(-1),
+  next: () => skip(1),
+});
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) systemMedia.refresh();
+});
 function save() {
   try {
     localStorage.setItem(
@@ -707,6 +721,7 @@ async function play(
 ) {
   const serial = ++playSerial;
   preparingPlayback = true;
+  systemMedia.clear();
   playlistToRemember = playlistContext
     ? {
         item: playlistContext,
@@ -769,6 +784,7 @@ async function play(
           `已请求${qualityNames[quality]}，${sourceName(song)}实际提供${actual}音质`,
         );
     } else $("#track-tag").textContent = "本地音频 · 离线可听";
+    systemMedia.select(song);
     audio.src = url;
     audio.load();
     const playPromise = shouldResume ? audio.play() : Promise.resolve();
@@ -800,14 +816,6 @@ async function play(
     await playPromise;
     if (serial !== playSerial) return;
     updateTransport();
-    if ("mediaSession" in navigator) {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: song.name,
-        artist: song.artist,
-        album: song.album,
-        artwork: song.cover ? [{ src: song.cover }] : [],
-      });
-    }
   } catch (e) {
     if (serial !== playSerial) return;
     // A user pause may interrupt the pending HTMLMediaElement.play promise.
@@ -815,6 +823,7 @@ async function play(
       updateTransport();
       return;
     }
+    systemMedia.clear();
     $("#track-tag").textContent = "播放未成功";
     if (!audio.getAttribute("src") && !lyrics.length)
       $("#lyrics").innerHTML =
@@ -1148,15 +1157,6 @@ audio.addEventListener("error", () => {
     toast("音频加载失败，可能已过期或格式不受支持；重新选择歌曲可重试。");
   }
 });
-if ("mediaSession" in navigator) {
-  navigator.mediaSession.setActionHandler(
-    "play",
-    () => void audio.play().catch(() => {}),
-  );
-  navigator.mediaSession.setActionHandler("pause", () => audio.pause());
-  navigator.mediaSession.setActionHandler("previoustrack", () => skip(-1));
-  navigator.mediaSession.setActionHandler("nexttrack", () => skip(1));
-}
 window.addEventListener("offline", () => toast("网络已断开，本地音乐仍可播放"));
 renderSongs();
 void initialize();
@@ -1682,6 +1682,7 @@ $("#logout").onclick = async () => {
       (current.source || "netease") === source
     ) {
       ++playSerial;
+      systemMedia.clear();
       audio.pause();
       audio.removeAttribute("src");
       audio.load();

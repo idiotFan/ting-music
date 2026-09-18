@@ -2,7 +2,7 @@
 
 一个小窗口里的网易云音乐 / QQ 音乐第三方桌面播放器。使用 Tauri v2、TypeScript 和 Rust，支持双账号、混合来源的本机歌单、同步歌词与本地音频播放。
 
-**当前源码版本：0.9.3；本次发布 Windows x64 修复版。** Windows 版已实测启动、播放和下载，默认保存到系统下载目录的 `Ting` 文件夹。macOS 交付目标仍为 macOS 15 及以上、Apple Silicon；本次未重新构建 macOS / Linux 安装包。QQ 接口与下载已迁移到 Rust，应用不再携带 Python。iOS 16+ 开发签名真机版处于功能验收阶段，Android 尚未完成发行适配。迁移范围与真机构建方法见 [Rust 迁移与 iOS](docs/RUST-MIGRATION.md)。
+**当前源码版本：0.9.4；本次发布 Windows x64 修复版。** Windows 版已实测启动、播放和下载，默认保存到系统下载目录的 `Ting` 文件夹。macOS 交付目标仍为 macOS 15 及以上、Apple Silicon；本次未重新构建 macOS / Linux 安装包。QQ 接口与下载已迁移到 Rust，应用不再携带 Python。iOS 16+ 开发签名真机版处于功能验收阶段，Android 尚未完成发行适配。迁移范围与真机构建方法见 [Rust 迁移与 iOS](docs/RUST-MIGRATION.md)。
 
 ![小窗口播放器与右侧歌词](docs/assets/lyrics-panel.png)
 

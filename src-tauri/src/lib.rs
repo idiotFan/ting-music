@@ -170,6 +170,7 @@ pub fn run() {
             send_login_code,
             login_phone,
             mobile::share_login_qr,
+            download_engine::media_artwork,
             logout,
             my_playlists,
             playlist_tracks,

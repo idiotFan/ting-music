@@ -17,9 +17,11 @@ export const credentialNotice = !isTauri()
     ? "登录凭据保存在此设备的 iOS 钥匙串中，不保存密码。"
     : platform.mac
       ? "登录凭据保存在此 Mac 的 macOS 钥匙串中，不保存密码。"
-      : /Win/.test(navigator.platform) || /Windows/.test(navigator.userAgent)
-        ? "登录凭据保存在此电脑的 Windows 凭据管理器中，不保存密码。"
-        : "登录凭据由系统凭据存储保管，不保存密码。";
+      : platform.android
+        ? "登录凭据仅用于本次运行，关闭应用后需重新登录，不保存密码。"
+        : /Win/.test(navigator.platform) || /Windows/.test(navigator.userAgent)
+          ? "登录凭据保存在此电脑的 Windows 凭据管理器中，不保存密码。"
+          : "登录凭据由系统凭据存储保管，不保存密码。";
 export function loginInstructions(source: string, kind: string) {
   const app =
     source === "qq" ? (kind === "wx" ? "微信" : "手机 QQ") : "网易云音乐 App";

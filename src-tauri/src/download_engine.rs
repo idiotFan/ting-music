@@ -299,6 +299,23 @@ async fn cover(url: &str) -> Option<Vec<u8>> {
         .ok()
         .flatten()
 }
+// Use the same bounded CDN policy as download covers, without account cookies.
+#[tauri::command]
+pub async fn media_artwork(url: String) -> Result<String, String> {
+    use base64::Engine;
+    let bytes = tokio::time::timeout(Duration::from_secs(10), cover(&url))
+        .await
+        .map_err(|_| "封面加载超时")?
+        .ok_or("封面暂不可用")?;
+    let info = PictureInformation::from_jpeg(&bytes).map_err(|_| "封面格式无效")?;
+    if info.width > 8192 || info.height > 8192 {
+        return Err("封面尺寸过大".into());
+    }
+    Ok(format!(
+        "data:image/jpeg;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
+}
 fn validate_info(info: &Value, id: Option<u64>) -> Result<(), String> {
     let song = &info["song"];
     let audio = &info["playback"];

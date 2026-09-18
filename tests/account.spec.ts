@@ -797,3 +797,34 @@ test("malformed saved records do not prevent startup or discard valid songs", as
   await page.locator('[data-playlist-filter="internal"]').click();
   await expect(page.locator(".playlist-card")).toHaveCount(0);
 });
+
+test("system media metadata follows real audio switching, pause and resume", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.locator(".song-row").nth(0).dblclick();
+  await expect
+    .poll(() => page.evaluate(() => navigator.mediaSession.metadata?.title))
+    .toBe("我的歌曲 1");
+  await expect
+    .poll(() => page.evaluate(() => navigator.mediaSession.playbackState))
+    .toBe("playing");
+  const artwork = await page.evaluate(
+    () => navigator.mediaSession.metadata!.artwork[0],
+  );
+  expect(artwork.sizes).toBe("512x512");
+  expect(artwork.type).toBe("image/png");
+  const png = PNG.sync.read(Buffer.from(artwork.src.split(",")[1], "base64"));
+  expect(png.width).toBe(512);
+  await page.locator("#toggle").click();
+  await expect
+    .poll(() => page.evaluate(() => navigator.mediaSession.playbackState))
+    .toBe("paused");
+  await page.locator(".song-row").nth(1).dblclick();
+  await expect
+    .poll(() => page.evaluate(() => navigator.mediaSession.metadata?.title))
+    .toBe("我的歌曲 2");
+  await expect
+    .poll(() => page.evaluate(() => navigator.mediaSession.playbackState))
+    .toBe("playing");
+});

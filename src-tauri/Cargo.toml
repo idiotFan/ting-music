@@ -1,6 +1,6 @@
 [package]
 name = "ting-music"
-version = "0.9.3"
+version = "0.9.4"
 description = "A compact player for NetEase Cloud Music and QQ Music"
 authors = ["Ting contributors"]
 edition = "2021"
