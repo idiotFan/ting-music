@@ -15,6 +15,11 @@ const version = JSON.parse(readFileSync('package.json', 'utf8')).version;
 const buildNumber = JSON.parse(readFileSync('src-tauri/tauri.ios.conf.json', 'utf8')).bundle.iOS.bundleVersion || version;
 text = text.replace(/CFBundleShortVersionString: .*/, `CFBundleShortVersionString: ${version}`).replace(/CFBundleVersion: .*/, `CFBundleVersion: "${buildNumber}"`);
 text = text.replace(/script: .*? ios xcode-script/, 'script: node "$SRCROOT/../../../scripts/tauri.mjs" ios xcode-script');
+// Existing generated projects also need the frameworks added after an upgrade.
+for (const framework of ['MediaPlayer', 'AVFoundation']) {
+  if (!text.includes(`sdk: ${framework}.framework`))
+    text = text.replace('      - sdk: UIKit.framework', `      - sdk: ${framework}.framework\n      - sdk: UIKit.framework`);
+}
 writeFileSync(project, text);
 const result = spawnSync('xcodegen', ['generate', '--spec', project], {stdio: 'inherit'});
 if (result.status !== 0) process.exit(result.status ?? 1);

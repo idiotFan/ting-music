@@ -3,7 +3,11 @@
     "iOS": {
       "minimumSystemVersion": "16.0",
       "infoPlist": "Info.ios.plist",
-      "bundleVersion": "90502"
+      "bundleVersion": "90502",
+      "frameworks": [
+        "MediaPlayer",
+        "AVFoundation"
+      ]
     }
   },
   "app": {
