@@ -135,10 +135,10 @@ export function createMediaSession(audio, options) {
     previoustrack: options.previous,
     nexttrack: options.next,
     seekto: (details) => seek(details.seekTime),
-    seekbackward: (details) =>
-      seek(audio.currentTime - (details.seekOffset ?? 10)),
-    seekforward: (details) =>
-      seek(audio.currentTime + (details.seekOffset ?? 10)),
+    // Track navigation and interval skipping compete for iOS transport buttons.
+    // Music uses previous/next; timeline scrubbing remains available via seekto.
+    seekbackward: null,
+    seekforward: null,
   };
   for (const [name, handler] of Object.entries(handlers))
     safely(() => session?.setActionHandler(name, handler));

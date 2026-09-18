@@ -828,3 +828,48 @@ test("system media metadata follows real audio switching, pause and resume", asy
     .poll(() => page.evaluate(() => navigator.mediaSession.playbackState))
     .toBe("playing");
 });
+
+test("system track actions navigate the actual queue and update metadata", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const actions: Record<string, MediaSessionActionHandler | null> = {};
+    (window as any).__mediaActions = actions;
+    const original = navigator.mediaSession.setActionHandler.bind(
+      navigator.mediaSession,
+    );
+    navigator.mediaSession.setActionHandler = (action, handler) => {
+      actions[action] = handler;
+      original(action, handler);
+    };
+  });
+  await setup(page);
+  await page.locator(".song-row").nth(0).dblclick();
+  await expect
+    .poll(() => page.evaluate(() => navigator.mediaSession.playbackState))
+    .toBe("playing");
+  expect(
+    await page.evaluate(() => [
+      (window as any).__mediaActions.seekbackward,
+      (window as any).__mediaActions.seekforward,
+    ]),
+  ).toEqual([null, null]);
+  await page.evaluate(() =>
+    (window as any).__mediaActions.nexttrack({ action: "nexttrack" }),
+  );
+  await expect
+    .poll(() => page.evaluate(() => navigator.mediaSession.metadata?.title))
+    .toBe("我的歌曲 2");
+  await expect
+    .poll(() => page.evaluate(() => navigator.mediaSession.playbackState))
+    .toBe("playing");
+  await page.evaluate(() =>
+    (window as any).__mediaActions.previoustrack({ action: "previoustrack" }),
+  );
+  await expect
+    .poll(() => page.evaluate(() => navigator.mediaSession.metadata?.title))
+    .toBe("我的歌曲 1");
+  await expect
+    .poll(() => page.evaluate(() => navigator.mediaSession.playbackState))
+    .toBe("playing");
+});

@@ -28,7 +28,6 @@ function fixture(loadArtwork = async (url) => ({ src: url })) {
       positions.push(value);
     },
     setActionHandler(name, fn) {
-      if (name === "seekbackward") throw Error("unsupported");
       actions[name] = fn;
     },
   };
@@ -111,7 +110,7 @@ test("play, pause, seek, duration and rate are mirrored with valid positions", (
   assert.equal(f.audio.currentTime, 100);
   f.actions.seekto({ seekTime: -10 });
   assert.equal(f.audio.currentTime, 0);
-  f.actions.seekforward({ seekOffset: 20 });
+  f.actions.seekto({ seekTime: 20 });
   assert.equal(f.audio.currentTime, 20);
   f.audio.playbackRate = 2;
   f.audio.dispatchEvent(new Event("ratechange"));
@@ -143,4 +142,16 @@ test("unsupported metadata and optional actions never interrupt app playback", (
   });
   assert.doesNotThrow(() => f.media.select(song(1)));
   assert.doesNotThrow(() => f.media.clear());
+});
+
+test("music exposes track navigation without competing interval skip commands", () => {
+  const f = fixture();
+  assert.equal(f.actions.seekbackward, null);
+  assert.equal(f.actions.seekforward, null);
+  f.media.select(song(1));
+  f.actions.nexttrack();
+  f.media.select(song(2));
+  f.audio.dispatchEvent(new Event("playing"));
+  f.actions.previoustrack();
+  assert.deepEqual(f.counts(), [1, 1]);
 });
