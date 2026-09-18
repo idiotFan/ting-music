@@ -273,8 +273,8 @@ const systemMedia = createMediaSession(audio, {
   fallbackArtwork: fallbackArtwork(),
   loadArtwork: loadMediaArtwork,
   play: () => void audio.play().catch(() => {}),
-  previous: () => skip(-1),
-  next: () => skip(1),
+  previous: () => skip(-1, false, !audio.paused),
+  next: () => skip(1, false, !audio.paused),
 });
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) systemMedia.refresh();
@@ -833,11 +833,11 @@ async function play(
     if (serial === playSerial) preparingPlayback = false;
   }
 }
-function skip(delta: number, automatic = false) {
+function skip(delta: number, automatic = false, shouldResume = true) {
   const next = playbackQueue.next(delta, playbackMode, automatic);
   if (next?.restart) audio.currentTime = 0;
   else if (next?.song)
-    void play(next.song, undefined, 0, true, next.fromHistory);
+    void play(next.song, undefined, 0, shouldResume, next.fromHistory);
   else updateTransport();
 }
 function syncAudioLoop() {

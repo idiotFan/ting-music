@@ -155,3 +155,17 @@ test("music exposes track navigation without competing interval skip commands", 
   f.actions.previoustrack();
   assert.deepEqual(f.counts(), [1, 1]);
 });
+
+test("system stop resets progress while retaining the track for play", () => {
+  const f = fixture();
+  f.media.select(song(1));
+  f.audio.duration = 100;
+  f.audio.currentTime = 40;
+  f.actions.stop();
+  assert.equal(f.audio.currentTime, 0);
+  assert.equal(f.session.playbackState, "none");
+  assert.equal(f.session.metadata.title, "song 1");
+  f.actions.play();
+  f.audio.dispatchEvent(new Event("play"));
+  assert.equal(f.session.playbackState, "playing");
+});

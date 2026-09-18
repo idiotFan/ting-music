@@ -5,6 +5,7 @@ export function createMediaSession(audio, options) {
   let track = null,
     generation = 0,
     artwork = fallbackArtwork;
+  let stopped = false;
   let active = false,
     fetching = false,
     requested = null;
@@ -33,11 +34,12 @@ export function createMediaSession(audio, options) {
   function state() {
     if (!session) return;
     safely(() => {
-      session.playbackState = !active
-        ? "none"
-        : audio.paused || audio.ended
-          ? "paused"
-          : "playing";
+      session.playbackState =
+        !active || stopped
+          ? "none"
+          : audio.paused || audio.ended
+            ? "paused"
+            : "playing";
     });
     safely(() => session.setVolume?.(audio.muted ? 0 : audio.volume));
     safely(() => {
@@ -96,6 +98,9 @@ export function createMediaSession(audio, options) {
     "timeupdate",
     "ended",
   ];
+  audio.addEventListener("play", () => {
+    stopped = false;
+  });
   for (const event of events) audio.addEventListener(event, state);
   // WebKit can rebuild its media session when a new resource becomes playable.
   audio.addEventListener("playing", () => {
@@ -107,6 +112,7 @@ export function createMediaSession(audio, options) {
     generation++;
     requested = null;
     active = false;
+    stopped = false;
     track = null;
     artwork = fallbackArtwork;
     publish();
@@ -115,6 +121,7 @@ export function createMediaSession(audio, options) {
   function select(song) {
     generation++;
     active = true;
+    stopped = false;
     track = song;
     artwork = fallbackArtwork;
     requested = song.cover ? { generation, url: song.cover } : null;
@@ -133,11 +140,15 @@ export function createMediaSession(audio, options) {
     state();
   };
   const handlers = {
-    play: options.play,
+    play: () => {
+      stopped = false;
+      options.play();
+    },
     pause: () => audio.pause(),
     previoustrack: options.previous,
     nexttrack: options.next,
     stop: () => {
+      stopped = true;
       audio.pause();
       seek(0);
     },
