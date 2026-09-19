@@ -28,7 +28,7 @@
     "pngjs": "^7.0.0",
     "prettier": "3.9.7",
     "typescript": "^5.8.3",
-    "vite": "^6.3.0"
+    "vite": "^8.3.0"
   },
   "description": "A compact Tauri music player for NetEase Cloud Music and QQ Music"
 }
