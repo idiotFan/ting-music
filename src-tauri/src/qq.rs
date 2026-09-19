@@ -56,7 +56,8 @@ fn load() -> Option<Value> {
     target_os = "macos",
     target_os = "ios",
     target_os = "windows",
-    target_os = "linux"
+    target_os = "linux",
+    target_os = "android"
 )))]
 fn load() -> Option<Value> {
     None
@@ -99,13 +100,27 @@ fn persist(value: Option<&Value>) -> Result<(), String> {
     target_os = "macos",
     target_os = "ios",
     target_os = "windows",
-    target_os = "linux"
+    target_os = "linux",
+    target_os = "android"
 )))]
 fn persist(value: Option<&Value>) -> Result<(), String> {
     if value.is_none() {
         Ok(())
     } else {
         Err("QQ 登录暂仅保留本次会话".into())
+    }
+}
+
+#[cfg(target_os = "android")]
+fn load() -> Option<Value> {
+    crate::android_credentials::load("qq-session")
+        .and_then(|value| serde_json::from_str(&value).ok())
+}
+#[cfg(target_os = "android")]
+fn persist(value: Option<&Value>) -> Result<(), String> {
+    match value {
+        Some(value) => crate::android_credentials::save("qq-session", &value.to_string()),
+        None => crate::android_credentials::remove("qq-session"),
     }
 }
 

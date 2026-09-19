@@ -215,7 +215,7 @@ for (const device of [
     name: "Android",
     ua: "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 Mobile",
     width: 360,
-    notice: "本次运行",
+    notice: "Android Keystore",
   },
   {
     name: "iPad desktop UA",

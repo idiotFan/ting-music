@@ -18,7 +18,7 @@ export const credentialNotice = !isTauri()
     : platform.mac
       ? "登录凭据保存在此 Mac 的 macOS 钥匙串中，不保存密码。"
       : platform.android
-        ? "登录凭据仅用于本次运行，关闭应用后需重新登录，不保存密码。"
+        ? "登录凭据经 Android Keystore 加密保存在此设备，重启后保持登录，不保存密码。"
         : /Win/.test(navigator.platform) || /Windows/.test(navigator.userAgent)
           ? "登录凭据保存在此电脑的 Windows 凭据管理器中，不保存密码。"
           : "登录凭据由系统凭据存储保管，不保存密码。";

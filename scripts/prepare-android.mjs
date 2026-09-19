@@ -21,3 +21,19 @@ if (!text.includes('android:roundIcon=')) {
     'android:icon="@mipmap/ic_launcher"\n        android:roundIcon="@mipmap/ic_launcher_round"'));
 }
 console.log('Android launcher icons synchronized with Ting artwork.');
+
+// Keep native code in version control; gen/android is intentionally disposable.
+cpSync(resolve(root, 'src-tauri/android/main'),
+  resolve(resources, '../java/com/ting/music/demo'), { recursive: true });
+cpSync(resolve(root, 'src-tauri/android/test'),
+  resolve(resources, '../../androidTest/java/com/ting/music/demo'), { recursive: true });
+const appGradle = resolve(root, 'src-tauri/gen/android/app/build.gradle.kts');
+let gradle = readFileSync(appGradle, 'utf8');
+if (!gradle.includes('testInstrumentationRunner =')) {
+  gradle = gradle.replace('defaultConfig {',
+    'defaultConfig {\n        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"');
+  writeFileSync(appGradle, gradle);
+}
+writeFileSync(resolve(root, 'src-tauri/gen/android/app/ting-credentials.pro'),
+  '-keep class com.ting.music.demo.CredentialPlugin { *; }\n' +
+  '-keep class com.ting.music.demo.CredentialArgs { *; }\n');

@@ -147,7 +147,7 @@ iOS 的扫码页提供「保存或分享二维码」系统面板，分享经过�
 
 音频标签和来源 JSON 分别记录原歌曲平台 / ID 与实际音源平台 / ID；网易云歌曲使用 QQ 补源时，两套标识都保留。来源 JSON 不包含登录凭据或签名音源 URL。
 
-iOS 下载保存在应用 Documents/Ting，可在「文件 → 浏览 → 我的 iPhone / iPad → 听 · Ting → Ting」查看。移动端歌词在全屏面板显示，音量使用设备按键，搜索提交后收起键盘；触控按钮保留至少 44px 点击区域。Android 暂无安全凭据持久化，登录仅保留本次运行。Windows / Linux 使用系统凭据存储（Windows 凭据管理器 / Linux secret service）保存登录；macOS / iOS 使用钥匙串。
+iOS 下载保存在应用 Documents/Ting，可在「文件 → 浏览 → 我的 iPhone / iPad → 听 · Ting → Ting」查看。移动端歌词在全屏面板显示，音量使用设备按键，搜索提交后收起键盘；触控按钮保留至少 44px 点击区域。Android 使用 Android Keystore 的不可导出密钥加密保存两个平台的凭据，应用重启后自动恢复；加密记录不参与系统备份或设备迁移，退出某个平台只清除该平台记录。Windows / Linux 使用系统凭据存储（Windows 凭据管理器 / Linux secret service）保存登录；macOS / iOS 使用钥匙串。
 
 下载不受播放音质选项限制，也不打断当前播放；一次只执行一个下载任务，目前没有取消按钮、批量下载或断点续传。
 

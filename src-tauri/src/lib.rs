@@ -1,3 +1,5 @@
+#[cfg(target_os = "android")]
+mod android_credentials;
 mod download;
 mod download_engine;
 mod http;
@@ -153,13 +155,22 @@ fn set_lyrics_panel(open: bool) -> Result<(), String> {
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(android_credentials::init());
+    builder
         .manage(LyricsWindow::default())
         .manage(system_media::State::default())
         .manage(sync::SyncState::default())
         .manage(download::Downloads::default())
-        .manage(qq::Qq::new())
-        .manage(Api::persistent().expect("HTTP client initialization failed"))
+        // Mobile plugins initialize before setup; restore sessions only after the
+        // Android Keystore bridge is ready, before any frontend commands run.
+        .setup(|app| {
+            use tauri::Manager;
+            app.manage(qq::Qq::new());
+            app.manage(Api::persistent().map_err(std::io::Error::other)?);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             set_lyrics_panel,
             system_media::system_media_init,

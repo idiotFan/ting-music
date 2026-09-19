@@ -266,6 +266,12 @@ fn check(body: Value) -> Result<Value, String> {
         Err(format!("网易云请求未成功（{code}）：{message}"))
     }
 }
+#[cfg(any(
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "windows",
+    target_os = "linux"
+))]
 const KEYCHAIN_SERVICE: &str = "com.ting.music.demo";
 const KEYCHAIN_ACCOUNT: &str = "netease-session";
 #[cfg(any(target_os = "macos", target_os = "ios"))]
@@ -288,7 +294,8 @@ fn stored_session() -> Option<String> {
     target_os = "macos",
     target_os = "ios",
     target_os = "windows",
-    target_os = "linux"
+    target_os = "linux",
+    target_os = "android"
 )))]
 fn stored_session() -> Option<String> {
     None
@@ -314,7 +321,8 @@ fn store_session(cookie: &str) -> Result<(), String> {
     target_os = "macos",
     target_os = "ios",
     target_os = "windows",
-    target_os = "linux"
+    target_os = "linux",
+    target_os = "android"
 )))]
 fn store_session(_: &str) -> Result<(), String> {
     Err("此平台暂仅保留本次登录会话".into())
@@ -342,11 +350,25 @@ fn delete_session() -> Result<(), String> {
     target_os = "macos",
     target_os = "ios",
     target_os = "windows",
-    target_os = "linux"
+    target_os = "linux",
+    target_os = "android"
 )))]
 fn delete_session() -> Result<(), String> {
     Ok(())
 }
+#[cfg(target_os = "android")]
+fn stored_session() -> Option<String> {
+    crate::android_credentials::load(KEYCHAIN_ACCOUNT)
+}
+#[cfg(target_os = "android")]
+fn store_session(cookie: &str) -> Result<(), String> {
+    crate::android_credentials::save(KEYCHAIN_ACCOUNT, cookie)
+}
+#[cfg(target_os = "android")]
+fn delete_session() -> Result<(), String> {
+    crate::android_credentials::remove(KEYCHAIN_ACCOUNT)
+}
+
 impl Api {
     pub fn download_cookie(&self) -> String {
         self.session().cookies()
