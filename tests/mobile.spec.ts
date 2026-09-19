@@ -3,6 +3,103 @@ import { readFileSync } from "node:fs";
 import { PNG } from "pngjs";
 import jsQR from "jsqr";
 
+for (const os of ["iPhone", "Android"]) {
+  test(`${os} fields stay at readable scale and pinch leaves the viewport unchanged`, async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      viewport: { width: 393, height: 852 },
+      isMobile: true,
+      hasTouch: true,
+      userAgent:
+        os === "iPhone"
+          ? phoneUA
+          : "Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Mobile",
+    });
+    const page = await context.newPage();
+    await mobileFixture(page, false);
+    // Check the computed cascade: the old generic 16px rule lost to #search.
+    await expect(page.locator("#search")).toHaveCSS("font-size", "16px");
+    await page.locator("#search").tap();
+    await expect(page.locator("#search")).toBeFocused();
+    await page.locator("#search").press("Enter");
+    const cdp = await context.newCDPSession(page);
+    await cdp.send("Input.synthesizePinchGesture", {
+      x: 190,
+      y: 350,
+      scaleFactor: 2,
+      gestureSourceType: "touch",
+    });
+    expect(await page.evaluate(() => visualViewport!.scale)).toBe(1);
+    await page.locator('[data-view="playlists"]').tap();
+    await page.locator("#new-playlist").tap();
+    await expect(page.locator("#playlist-name")).toHaveCSS("font-size", "16px");
+    await page.locator("#playlist-name").fill("字号检查");
+    await page.locator("#library-close").tap();
+    await page.locator("#account-button").tap();
+    const fields = page.locator('#account-dialog input:not([type="hidden"])');
+    expect(await fields.count()).toBeGreaterThan(0);
+    for (const field of await fields.all())
+      await expect(field).toHaveCSS("font-size", "16px");
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBe(393);
+    await context.close();
+  });
+}
+
+test("desktop zoom gestures are blocked while scrolling and editing shortcuts remain available", async ({
+  page,
+}) => {
+  await mobileFixture(page);
+  const result = await page.evaluate(() => {
+    const send = (event: Event) => {
+      document.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    return {
+      pinch: send(new Event("gesturestart", { cancelable: true })),
+      magnify: send(new Event("gesturechange", { cancelable: true })),
+      wheelZoom: send(
+        new WheelEvent("wheel", {
+          ctrlKey: true,
+          deltaY: -100,
+          cancelable: true,
+        }),
+      ),
+      scroll: send(new WheelEvent("wheel", { deltaY: 100, cancelable: true })),
+      zoomKey: send(
+        new KeyboardEvent("keydown", {
+          key: "+",
+          ctrlKey: true,
+          cancelable: true,
+        }),
+      ),
+      selectAll: send(
+        new KeyboardEvent("keydown", {
+          key: "a",
+          metaKey: true,
+          cancelable: true,
+        }),
+      ),
+      typing: send(
+        new KeyboardEvent("keydown", { key: "=", cancelable: true }),
+      ),
+    };
+  });
+  expect(result).toEqual({
+    pinch: true,
+    magnify: true,
+    wheelZoom: true,
+    scroll: false,
+    zoomKey: true,
+    selectAll: false,
+    typing: false,
+  });
+  await page.locator("#search").fill("ChiliChill");
+  await expect(page.locator("#search")).toHaveValue("ChiliChill");
+});
+
 test("iPhone layout keeps controls in viewport and lyrics use a dismissible full screen sheet", async ({
   browser,
 }) => {

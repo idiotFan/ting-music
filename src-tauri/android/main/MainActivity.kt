@@ -15,6 +15,11 @@ class MainActivity : TauriActivity() {
 
     override fun onWebViewCreate(webView: WebView) {
         super.onWebViewCreate(webView)
+        webView.settings.apply {
+            setSupportZoom(false)
+            builtInZoomControls = false
+            displayZoomControls = false
+        }
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 // Use the app's close buttons so login cancellation and pending

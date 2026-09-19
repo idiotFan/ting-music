@@ -171,6 +171,16 @@ pub fn run() {
         // Android Keystore bridge is ready, before any frontend commands run.
         .setup(|app| {
             use tauri::Manager;
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            if let Some(window) = app.get_webview_window("main") {
+                window.with_webview(|webview| {
+                    unsafe extern "C" {
+                        fn ting_disable_page_zoom(webview: *mut std::ffi::c_void);
+                    }
+                    // with_webview supplies a live WKWebView on the UI thread.
+                    unsafe { ting_disable_page_zoom(webview.inner()) };
+                })?;
+            }
             app.manage(qq::Qq::new());
             app.manage(Api::persistent().map_err(std::io::Error::other)?);
             Ok(())

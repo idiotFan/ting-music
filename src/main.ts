@@ -45,6 +45,7 @@ import { setupLyrics } from "./lyrics";
 import { makeLoginQr, verifyOriginalQr, qrPngForSharing } from "./qr";
 import { mountPhoneLogin, type PhoneLoginResult } from "./phone-login";
 import { setupMobileViewport } from "./mobile-viewport";
+import { setupPageScale } from "./page-scale";
 import { setupSync } from "./sync";
 import { systemMediaBackend } from "./system-media";
 import { createMediaSession } from "./media-session.mjs";
@@ -312,6 +313,7 @@ function toast(message: string) {
 }
 let toastTimer = 0;
 if (mobileDevice) document.documentElement.classList.add("mobile-device");
+setupPageScale();
 setupMobileViewport(mobileDevice);
 if (isTauri() && platform.mac)
   document.documentElement.classList.add("mac-window");
