@@ -25,7 +25,7 @@ npm run tauri -- android init --ci --skip-targets-install
 npm run tauri -- android build --debug --target aarch64 --apk --ci -- --locked
 ```
 
-Use the npm entry point when initializing: it lets Tauri generate a valid Gradle callback for the project's CLI wrapper. The wrapper runs `prepare-android.mjs` after initialization and before Android builds to copy Ting's checked-in bright green icons, including adaptive and round icons. A regenerated Android project must not retain Tauri's template launcher icon. The generated project and debug signing key remain outside Git. Routine platform builds keep the existing app version.
+Use the npm entry point when initializing: it lets Tauri generate a valid Gradle callback for the project's CLI wrapper. The wrapper runs `prepare-android.mjs` after initialization and before Android builds to copy Ting's checked-in bright green icons, native Kotlin integrations and FileProvider paths, including adaptive and round icons. A regenerated Android project must not retain Tauri's template launcher icon. The generated project and debug signing key remain outside Git. Routine platform builds keep the existing app version.
 
 ## iOS build
 

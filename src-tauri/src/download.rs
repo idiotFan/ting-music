@@ -47,7 +47,17 @@ fn directory(app: &tauri::AppHandle) -> Result<PathBuf, String> {
             .map_err(|_| "找不到下载目录")?
             .join("Ting"));
     }
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(target_os = "android")]
+    {
+        let path = app
+            .path()
+            .download_dir()
+            .map_err(|_| "下载目录不可用")?
+            .join("Ting");
+        ensure_writable(&path).map_err(|_| "无法写入下载目录")?;
+        Ok(path)
+    }
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
         // Prefer the user's Downloads/Ting folder on every desktop platform.
         // Fall back to app data only when the preferred folder is not writable.
@@ -261,7 +271,17 @@ pub async fn open_download_folder(app: tauri::AppHandle) -> Result<(), String> {
         command.arg(dir).spawn().map_err(|_| "无法打开下载目录")?;
         Ok(())
     }
-    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    #[cfg(target_os = "android")]
+    {
+        let _ = dir;
+        crate::android_platform::open_downloads().await
+    }
+    #[cfg(not(any(
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "linux",
+        target_os = "android"
+    )))]
     {
         let _ = dir;
         Err("此平台暂不支持打开目录".into())

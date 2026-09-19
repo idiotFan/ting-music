@@ -31,4 +31,6 @@ export function loginInstructions(source: string, kind: string) {
 }
 export const downloadLocation = platform.ios
   ? "文件 App → 浏览 → 我的 iPhone / iPad → 听 · Ting → Ting"
-  : "系统下载目录中的 Ting 文件夹";
+  : platform.android
+    ? "应用内「查看下载」（可保存或分享）"
+    : "系统下载目录中的 Ting 文件夹";

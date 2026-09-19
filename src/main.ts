@@ -1696,7 +1696,7 @@ $("#share-login-qr").onclick = async () => {
   try {
     const dataUrl = await qrPngForSharing(qr.src, qr.dataset.payload!);
     if (serial !== loginSerial) return;
-    if (platform.ios && isTauri()) await invoke("share_login_qr", { dataUrl });
+    if (mobileDevice && isTauri()) await invoke("share_login_qr", { dataUrl });
     else {
       const blob = await (await fetch(dataUrl)).blob();
       const files = [new File([blob], "Ting-login.png", { type: "image/png" })];
@@ -1905,7 +1905,8 @@ $("#download-current").onclick = async () => {
     updateDownloadButton();
   }
 };
+if (platform.android) $("#download-folder").textContent = "查看下载";
 $("#download-folder").onclick = () => {
-  if (mobileDevice) toast(`请前往${downloadLocation}查看下载文件`);
+  if (platform.ios) toast(`请前往${downloadLocation}查看下载文件`);
   else void invoke("open_download_folder").catch((e) => toast(String(e)));
 };

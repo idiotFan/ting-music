@@ -1,3 +1,19 @@
+## 0.9.5 Android 回归 · 2026-09-19
+
+公开版本维持 0.9.5，Android versionCode 维持 9005，用提交号区分产物。
+
+- 荣耀 MTN-AN00 / Android 16（API 36）真机：双平台登录在覆盖安装、强制停止及冷启动后恢复；前端直调凭据插件被拒绝。
+- 14 项应用流程通过：真实网易云/QQ搜索、触摸播放、重复轻点不重启、暂停继续、切歌、歌词、三种播放模式、QQ《红尘客栈》母带播放、短时后台播放、原生媒体会话、下载入口、歌单分类及无横向溢出/JS异常。
+- 新增 Android MediaSession 和媒体前台服务，实际系统面板显示封面/歌名/上一首/暂停/下一首；系统命令实际控制播放队列。WebView 不支持 Media Session 时不再静默失效。
+- 返回键先关闭歌词/账号弹窗；根页面返回桌面保留播放。真机键盘弹出、返回收起及界面宽度检查通过。
+- 原生二维码/音频分享面板实际打开；二维码文件字节保持一致，系统分享预览截图解码与合成测试载荷完全一致。未向联系人发送文件，也不将测试二维码视为真实扫码授权验收。
+- Keystore 原生测试 7 项（包括独立进程恢复）；原生平台测试 2 项覆盖媒体切歌/封面及 FileProvider 私有文件隔离。合成记录独立于用户账号。
+- 全量浏览器 94 项、Node 21 项、Rust 49 项通过；7 项依赖联网账号的 Rust 用例按配置跳过。Android Lint 无阻断错误；源码和历史凭据扫描通过。
+
+下载文件位于应用专属目录，在应用「查看下载」中选择后通过系统分享保存/导出；卸载前需要自行导出。真机范围限上述荣耀设备；长时间熄屏/Doze、蓝牙及通话中断、其他厂商系统仍需各自验收。朋友体验包为 ARM64 Debug 签名构建，不是商店正式签名发行包。
+
+复现原生测试：先构建并安装主 APK 和 `assembleUniversalDebugAndroidTest` 产物，再执行 `node scripts/test-android-credentials.mjs <serial>`；平台测试使用 `adb -s <serial> shell am instrument -w -r -e class com.ting.music.demo.PlatformTest com.ting.music.demo.test/androidx.test.runner.AndroidJUnitRunner`，需检查输出为 `OK (2 tests)`。
+
 ## 0.9.5 build 90504 — 系统封面过渡
 
 - 90503 真机已由用户确认「信息恢复，能正常切歌」。

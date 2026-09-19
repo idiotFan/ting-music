@@ -105,6 +105,7 @@ async function mobileFixture(
       w.__TAURI_INTERNALS__ = {
         invoke: async (cmd: string, args: any) => {
           w.__calls.push(cmd);
+          if (cmd === "share_login_qr") w.__sharedQr = args.dataUrl;
           const op = cmd === "qq_request" ? args.operation : cmd;
           if (op === "account_status")
             return loggedIn
@@ -424,5 +425,44 @@ test("mobile lyrics closing can interrupt opening and reduced motion skips trans
   await page.locator("#lyrics-close").tap();
   await expect(page.locator("#lyrics-panel")).toBeHidden();
   await expect(page.locator("#lyrics-toggle")).toBeFocused();
+  await context.close();
+});
+
+test("Android shares original QR through native IPC and opens its native downloads list", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    viewport: { width: 369, height: 812 },
+    isMobile: true,
+    hasTouch: true,
+    userAgent:
+      "Mozilla/5.0 (Linux; Android 16; Device) AppleWebKit/537.36 Mobile",
+  });
+  const page = await context.newPage();
+  await mobileFixture(page);
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "canShare", { value: undefined });
+    Object.defineProperty(navigator, "share", { value: undefined });
+  });
+  await page.locator("#account-button").tap();
+  await page.locator("#account-qq").tap();
+  await expect(page.locator("#login-qr")).toBeVisible();
+  await page.locator("#share-login-qr").tap();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__sharedQr))
+    .toMatch(/^data:image\/png;base64,/);
+  const url = await page.evaluate(() => (window as any).__sharedQr);
+  const image = PNG.sync.read(Buffer.from(url.split(",")[1], "base64"));
+  expect(
+    jsQR(new Uint8ClampedArray(image.data), image.width, image.height)?.data,
+  ).toBe("https://example.com/ting/test/wechat-qr?fixture=synthetic-470");
+  await page.locator("#account-close").tap();
+  await page.locator(".song-row").first().tap();
+  await page.locator("#download-current").tap();
+  await expect(page.locator("#download-folder")).toHaveText("查看下载");
+  await page.locator("#download-folder").tap();
+  expect(await page.evaluate(() => (window as any).__calls)).toContain(
+    "open_download_folder",
+  );
   await context.close();
 });

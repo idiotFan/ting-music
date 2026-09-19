@@ -2,7 +2,9 @@
 //! this layer never fetches a song, a remote artwork URL, or account credentials.
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
-use tauri::{Emitter, Manager};
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+use tauri::Emitter;
+use tauri::Manager;
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -13,7 +15,9 @@ use linux::Backend;
 #[cfg(target_os = "windows")]
 use windows::Backend;
 #[cfg(target_os = "android")]
-struct Backend;
+mod android;
+#[cfg(target_os = "android")]
+use android::Backend;
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -153,8 +157,21 @@ fn merge(previous: &Snapshot, value: &serde_json::Value) -> Result<Snapshot, Str
 pub async fn system_media_init(app: tauri::AppHandle) -> Result<String, String> {
     #[cfg(target_os = "android")]
     {
-        let _ = app;
-        Err("此平台使用 Web 媒体会话".into())
+        tauri::async_runtime::spawn_blocking(move || {
+            let state = app.state::<State>();
+            let mut inner = state.0.lock().map_err(|_| "系统媒体状态不可用")?;
+            inner.backend = Some(Backend::new(&app)?);
+            inner.sequence = 0;
+            inner.snapshot = Snapshot::default();
+            inner
+                .backend
+                .as_mut()
+                .unwrap()
+                .update(&Snapshot::default())?;
+            Ok(Backend::NAME.to_owned())
+        })
+        .await
+        .map_err(|_| "系统媒体初始化已取消")?
     }
     #[cfg(not(target_os = "android"))]
     {
@@ -190,8 +207,25 @@ pub async fn system_media_update(
 ) -> Result<(), String> {
     #[cfg(target_os = "android")]
     {
-        let _ = (app, snapshot);
-        Err("此平台使用 Web 媒体会话".into())
+        tauri::async_runtime::spawn_blocking(move || {
+            let state = app.state::<State>();
+            let mut inner = state.0.lock().map_err(|_| "系统媒体状态不可用")?;
+            let sequence = snapshot["sequence"].as_u64().ok_or("媒体序号无效")?;
+            if sequence <= inner.sequence {
+                return Ok(());
+            }
+            let next = merge(&inner.snapshot, &snapshot)?;
+            inner
+                .backend
+                .as_mut()
+                .ok_or("系统媒体尚未初始化")?
+                .update(&next)?;
+            inner.snapshot = next;
+            inner.sequence = sequence;
+            Ok(())
+        })
+        .await
+        .map_err(|_| "系统媒体更新已取消")?
     }
     #[cfg(not(target_os = "android"))]
     {

@@ -8,7 +8,7 @@ export async function systemMediaBackend() {
   // WKWebView owns the actual HTMLAudioElement session in its media process.
   // Publishing a second MPNowPlayingInfoCenter in the host cannot take it over.
   // Keep Apple metadata and commands on that real audio session.
-  if (isTauri() && !platform.ios && !platform.mac && !platform.android) {
+  if (isTauri() && !platform.ios && !platform.mac) {
     let unlisten: (() => void) | undefined;
     const session = createNativeSession({
       update: (snapshot: unknown) =>
@@ -20,7 +20,8 @@ export async function systemMediaBackend() {
         session.dispatch(event.payload),
       );
       const backend = await invoke<string>("system_media_init");
-      if (!["windows", "mpris"].includes(backend)) throw Error("unsupported");
+      if (!["windows", "mpris", "android"].includes(backend))
+        throw Error("unsupported");
       // Do not register web actions as well: two owners can hide buttons or
       // dispatch the same media key twice. Browser previews retain the web API.
       if (navigator.mediaSession) {

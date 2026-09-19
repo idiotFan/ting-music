@@ -1,5 +1,7 @@
 #[cfg(target_os = "android")]
 mod android_credentials;
+#[cfg(target_os = "android")]
+mod android_platform;
 mod download;
 mod download_engine;
 mod http;
@@ -8,9 +10,9 @@ pub mod netease;
 mod qq;
 mod sync;
 mod sync_model;
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "android"))]
 mod system_media;
-#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "android")))]
 #[path = "system_media_web.rs"]
 mod system_media;
 use netease::{
@@ -157,7 +159,9 @@ fn set_lyrics_panel(open: bool) -> Result<(), String> {
 pub fn run() {
     let builder = tauri::Builder::default();
     #[cfg(target_os = "android")]
-    let builder = builder.plugin(android_credentials::init());
+    let builder = builder
+        .plugin(android_credentials::init())
+        .plugin(android_platform::init());
     builder
         .manage(LyricsWindow::default())
         .manage(system_media::State::default())

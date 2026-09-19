@@ -7,7 +7,7 @@ async function setup(
   page: any,
   restoreDelay = 0,
   restored = false,
-  nativeMedia = false,
+  nativeMedia: boolean | "android" = false,
 ) {
   await page.exposeFunction("__resizeLyricsForTest", async (open: boolean) => {
     const size = page.viewportSize();
@@ -56,7 +56,8 @@ async function setup(
             w.__mediaCallback = args.handler;
             return 1;
           }
-          if (nativeMedia && cmd === "system_media_init") return "windows";
+          if (nativeMedia && cmd === "system_media_init")
+            return nativeMedia === "android" ? "android" : "windows";
           if (nativeMedia && cmd === "system_media_update") {
             w.__snapshot = args.snapshot;
             return;
@@ -138,7 +139,19 @@ async function setup(
         },
       };
       if (nativeMedia) {
-        Object.defineProperty(navigator, "platform", { value: "Win32" });
+        Object.defineProperty(navigator, "platform", {
+          value: nativeMedia === "android" ? "Linux aarch64" : "Win32",
+        });
+        if (nativeMedia === "android") {
+          Object.defineProperty(navigator, "userAgent", {
+            value:
+              "Mozilla/5.0 (Linux; Android 16; Device) AppleWebKit/537.36 Mobile",
+          });
+          Object.defineProperty(navigator, "mediaSession", {
+            value: undefined,
+          });
+          Object.defineProperty(window, "MediaMetadata", { value: undefined });
+        }
         w.__TAURI_INTERNALS__.transformCallback = (fn: any) => {
           w.__nativeEvent = fn;
           return 1;
@@ -1180,4 +1193,46 @@ test("pause during a pending system next prevents delayed playback from restarti
   await expect
     .poll(() => page.evaluate(() => navigator.mediaSession.playbackState))
     .toBe("playing");
+});
+
+test("Android uses native transport when its WebView has no web media API", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 369, height: 812 });
+  await setup(page, 0, false, "android");
+  await page.locator(".song-row").nth(0).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__snapshot?.playbackState))
+    .toBe("playing");
+  expect(await page.evaluate(() => navigator.mediaSession)).toBeUndefined();
+  await page.evaluate(() =>
+    (window as any).__nativeEvent({
+      event: "system-media-action",
+      id: 1,
+      payload: { action: "nexttrack" },
+    }),
+  );
+  await expect(page.locator("#now-name")).toHaveText("我的歌曲 2");
+  await page.evaluate(() =>
+    (window as any).__nativeEvent({
+      event: "system-media-action",
+      id: 1,
+      payload: { action: "pause" },
+    }),
+  );
+  await expect(page.locator("#toggle")).toHaveAttribute("aria-label", "播放");
+  await page.evaluate(() =>
+    (window as any).__nativeEvent({
+      event: "system-media-action",
+      id: 1,
+      payload: { action: "play" },
+    }),
+  );
+  await expect(page.locator("#toggle")).toHaveAttribute("aria-label", "暂停");
+  const reads = await page.evaluate(() =>
+    (window as any).__calls
+      .filter((c: any) => c.cmd === "song_url")
+      .map((c: any) => c.args.id),
+  );
+  expect(reads).toEqual([1, 2]);
 });

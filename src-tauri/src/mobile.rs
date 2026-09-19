@@ -120,11 +120,18 @@ pub async fn share_login_qr(window: tauri::WebviewWindow, data_url: String) -> R
     }
 }
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 #[tauri::command]
 pub async fn share_login_qr(data_url: String) -> Result<(), String> {
     let _ = qr_png(&data_url)?;
     Err("此平台请使用系统浏览器的图片分享功能".into())
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn share_login_qr(data_url: String) -> Result<(), String> {
+    qr_png(&data_url)?;
+    crate::android_platform::share_qr(data_url).await
 }
 
 #[cfg(test)]
