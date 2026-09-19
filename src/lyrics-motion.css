@@ -1,0 +1,38 @@
+/* Keep glyph geometry stable as focus passes between lines. Only compositor
+   properties animate; no font-size/weight changes or per-line blur filters. */
+#lyrics p[data-line] {
+  opacity: 0.32;
+  transform-origin: left center;
+  transform: translateX(0) scale(1);
+  transition:
+    opacity 320ms ease,
+    transform 480ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+#lyrics p[data-line].near {
+  opacity: 0.56;
+}
+#lyrics p[data-line].current {
+  opacity: 1;
+  transform: translateX(2px) scale(1);
+}
+@media (hover: hover) {
+  #lyrics p[data-line]:hover {
+    opacity: 0.85;
+  }
+  #lyrics p[data-line].current:hover {
+    opacity: 1;
+  }
+}
+/* The sheet supplies its own entrance/exit. Dimming the underlying full-screen
+   app left a faded frame after closing, especially on iOS. */
+.mobile-device body.lyrics-open #app {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  #lyrics p[data-line] {
+    transition: none;
+  }
+  #lyrics p[data-line].current {
+    transform: none;
+  }
+}

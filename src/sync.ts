@@ -1,3 +1,4 @@
+import { animateContent, openDialog, closeDialog } from "./motion";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { platform } from "./platform";
 import {
@@ -44,6 +45,7 @@ export function setupSync(changed: () => void) {
   let timer = 0,
     editTimer = 0;
   function render() {
+    const previousStatus = q("#sync-status").textContent;
     q("#sync-status").textContent = running
       ? "正在处理歌单修改…"
       : status?.connected
@@ -53,6 +55,8 @@ export function setupSync(changed: () => void) {
             ? `已与同步文件夹交换 · ${new Date(status.lastExchange * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
             : "已连接文件夹，等待同步"
         : "未开启同步 · 歌单仍保存在本机";
+    if (dialog.open && q("#sync-status").textContent !== previousStatus)
+      animateContent(q("#sync-status"), { distance: 3, duration: 160 });
     q("#sync-folder").textContent = status?.folder
       ? `文件夹：${status.folder}${status.icloud ? "" : "（请确认位于 iCloud 云盘，本地文件夹不会跨设备同步）"}`
       : "";
@@ -134,9 +138,9 @@ export function setupSync(changed: () => void) {
   }
   button.onclick = () => {
     render();
-    dialog.showModal();
+    openDialog(dialog);
   };
-  q("#sync-close").onclick = () => dialog.close();
+  q("#sync-close").onclick = () => closeDialog(dialog);
   q("#sync-connect").onclick = async () => {
     if (running || choosing) return;
     choosing = true;

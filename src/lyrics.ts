@@ -1,5 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { mobileDevice } from "./platform";
+import "./lyrics-motion.css";
 export function setupLyrics(
   audio: HTMLAudioElement,
   seek: (index: number) => void,
@@ -12,17 +13,20 @@ export function setupLyrics(
     follow = document.querySelector<HTMLButtonElement>("#lyrics-follow")!;
   let index = -1,
     frame = 0,
-    manual = false,
-    resizing = false;
-  const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+    manual = false;
+  const motionPreference = matchMedia("(prefers-reduced-motion: reduce)");
+  const reduced = () => motionPreference.matches;
   function center(instant = false) {
     cancelAnimationFrame(frame);
     if (panel.hidden || manual) return;
     const line = box.querySelector<HTMLElement>(`[data-line="${index}"]`);
     if (!line) return;
-    const target = Math.max(
-        0,
-        line.offsetTop - (box.clientHeight - line.offsetHeight) / 2,
+    const target = Math.min(
+        Math.max(0, box.scrollHeight - box.clientHeight),
+        Math.max(
+          0,
+          line.offsetTop - (box.clientHeight - line.offsetHeight) / 2,
+        ),
       ),
       from = box.scrollTop;
     if (instant || reduced() || Math.abs(target - from) < 1) {
@@ -30,7 +34,7 @@ export function setupLyrics(
       return;
     }
     const started = performance.now(),
-      duration = 460;
+      duration = Math.min(540, Math.max(280, Math.abs(target - from) * 0.7));
     function tick(now: number) {
       const t = Math.min(1, (now - started) / duration);
       box.scrollTop = from + (target - from) * (1 - Math.pow(1 - t, 3));
@@ -53,67 +57,127 @@ export function setupLyrics(
     transition = 0,
     sheetAnimation: Animation | undefined;
   const app = document.querySelector<HTMLElement>("#app")!;
+  const nativeDesktop = isTauri() && !mobileDevice;
+  let nativeExpanded = false,
+    nativeResize = Promise.resolve(),
+    lockedLayout: { flex: string; margin: string } | undefined;
+
+  function resizeDesktop(open: boolean) {
+    if (!nativeDesktop) return Promise.resolve();
+    // Opening/closing can be reversed while the native window is resizing.
+    // Serialize those requests so the final window and the final sheet agree.
+    nativeResize = nativeResize
+      .catch(() => {})
+      .then(async () => {
+        if (nativeExpanded === open) return;
+        await invoke("set_lyrics_panel", { open });
+        nativeExpanded = open;
+      });
+    return nativeResize;
+  }
+  function lockPlayerWidth() {
+    if (!nativeDesktop || lockedLayout) return;
+    const bounds = app.getBoundingClientRect();
+    lockedLayout = { flex: app.style.flex, margin: app.style.margin };
+    app.style.flex = `0 0 ${bounds.width}px`;
+    // Auto margins would recenter the player in the newly-expanded window
+    // for one frame before the lyrics pane becomes visible.
+    app.style.margin = `0 0 0 ${bounds.left}px`;
+  }
+  function releasePlayerWidth() {
+    if (!lockedLayout) return;
+    app.style.flex = lockedLayout.flex;
+    app.style.margin = lockedLayout.margin;
+    lockedLayout = undefined;
+  }
+  function visibility(open: boolean) {
+    panel.hidden = box.hidden = !open;
+    document.body.classList.toggle("lyrics-open", open);
+    if (mobileDevice) app.inert = open;
+  }
+  function clearPanelMotion() {
+    sheetAnimation?.cancel();
+    sheetAnimation = undefined;
+    panel.style.removeProperty("opacity");
+    panel.style.removeProperty("transform");
+  }
   async function setOpen(open: boolean) {
-    if ((!mobileDevice && resizing) || open === opened) return;
+    if (open === opened) return;
     const serial = ++transition;
     opened = open;
-    const previousOpacity = getComputedStyle(panel).opacity;
-    const previousTransform = getComputedStyle(panel).transform;
     const wasVisible = !panel.hidden;
+    const previous = getComputedStyle(panel);
+    const from = {
+      opacity: wasVisible ? previous.opacity : "0",
+      transform:
+        wasVisible && previous.transform !== "none"
+          ? previous.transform
+          : mobileDevice && !wasVisible
+            ? "translateY(48px)"
+            : "translateY(0px)",
+    };
+    // Preserve the currently painted frame before cancelling a reversed motion.
+    // Otherwise cancellation briefly paints the fully-open panel on WebKit.
     sheetAnimation?.cancel();
-    resizing = true;
-    if (!mobileDevice) toggle.disabled = close.disabled = true;
+    sheetAnimation = undefined;
+    if (wasVisible) {
+      panel.style.opacity = from.opacity;
+      panel.style.transform = from.transform;
+    }
+    lockPlayerWidth();
+    toggle.setAttribute("aria-expanded", String(open));
+    toggle.setAttribute("aria-label", open ? "隐藏歌词" : "显示歌词");
     try {
-      if (isTauri() && !mobileDevice)
-        await invoke("set_lyrics_panel", { open });
       if (open) {
-        panel.hidden = box.hidden = false;
-        document.body.classList.add("lyrics-open");
-        if (mobileDevice) {
-          app.inert = true;
-          close.focus({ preventScroll: true });
-        }
-        requestAnimationFrame(() => center(true));
+        await resizeDesktop(true);
+        if (serial !== transition) return;
+        visibility(true);
+        if (mobileDevice) close.focus({ preventScroll: true });
+        center(true);
       }
-      toggle.setAttribute("aria-expanded", String(open));
-      toggle.setAttribute("aria-label", open ? "隐藏歌词" : "显示歌词");
-      if (mobileDevice && !reduced()) {
-        const resting = { opacity: 1, transform: "translateY(0)" };
-        const outside = { opacity: 0, transform: "translateY(36px)" };
-        sheetAnimation = panel.animate(
-          [
-            wasVisible
-              ? { opacity: previousOpacity, transform: previousTransform }
-              : outside,
-            open ? resting : outside,
-          ],
-          {
-            duration: open ? 300 : 220,
-            easing: "cubic-bezier(0.22, 1, 0.36, 1)",
-            fill: "both",
-          },
-        );
-        await sheetAnimation.finished.catch(() => {});
+      const destination = {
+        opacity: open ? "1" : "0",
+        transform:
+          !open && mobileDevice ? "translateY(48px)" : "translateY(0px)",
+      };
+      if (!panel.hidden && !reduced()) {
+        const animation = panel.animate([from, destination], {
+          duration: open ? (mobileDevice ? 360 : 240) : 200,
+          easing: open
+            ? "cubic-bezier(0.22, 1, 0.36, 1)"
+            : "cubic-bezier(0.4, 0, 1, 1)",
+          fill: "both",
+        });
+        sheetAnimation = animation;
+        await animation.finished.catch(() => {});
       }
       if (serial !== transition) return;
-      sheetAnimation?.cancel();
-      sheetAnimation = undefined;
       if (!open) {
-        panel.hidden = box.hidden = true;
-        document.body.classList.remove("lyrics-open");
-        app.inert = false;
+        // Fade the pane away before shrinking the native window. Keep the
+        // player's width fixed until the native resize has finished.
+        visibility(false);
+        await resizeDesktop(false);
+        if (serial !== transition) return;
         if (mobileDevice) toggle.focus({ preventScroll: true });
       }
+      clearPanelMotion();
     } catch (e) {
-      opened = !panel.hidden;
+      if (serial !== transition) return;
+      opened = nativeDesktop ? nativeExpanded : wasVisible;
+      visibility(opened);
+      toggle.setAttribute("aria-expanded", String(opened));
+      toggle.setAttribute("aria-label", opened ? "隐藏歌词" : "显示歌词");
+      clearPanelMotion();
       onError(`无法调整歌词窗口：${String(e)}`);
     } finally {
-      if (serial === transition) {
-        resizing = false;
-        toggle.disabled = close.disabled = false;
-      }
+      if (serial === transition) releasePlayerWidth();
     }
   }
+  motionPreference.addEventListener("change", () => {
+    if (!reduced()) return;
+    sheetAnimation?.finish();
+    center(true);
+  });
   toggle.onclick = () => void setOpen(!opened);
   close.onclick = () => void setOpen(false);
   panel.addEventListener("keydown", (event) => {

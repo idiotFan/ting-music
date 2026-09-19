@@ -154,6 +154,7 @@ svg {
   min-width: 0;
 }
 .now-cover {
+  position: relative;
   width: 72px;
   height: 72px;
   flex-shrink: 0;
@@ -166,6 +167,8 @@ svg {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  position: absolute;
+  inset: 0;
 }
 .now-cover svg {
   width: 30px;
@@ -335,6 +338,7 @@ input[type="range"] {
   max-width: 106px;
 }
 nav {
+  position: relative;
   display: flex;
   padding: 0 16px;
   border-bottom: 1px solid var(--line);
@@ -354,7 +358,17 @@ nav button.active {
   color: var(--accent);
   font-weight: 600;
 }
-nav button.active:after {
+nav button {
+  z-index: 1;
+}
+.nav-indicator {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+.nav-indicator::after {
   content: "";
   position: absolute;
   bottom: -1px;
@@ -362,6 +376,12 @@ nav button.active:after {
   background: var(--accent);
   left: 18%;
   right: 18%;
+  border-radius: 2px;
+}
+.nav-indicator.ready {
+  transition:
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 260ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 nav button span {
   font-size: 11px;
@@ -587,6 +607,18 @@ main {
   background: var(--tint);
   border-radius: 6px;
 }
+.playlist-art {
+  grid-row: 1 / 3;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--tint);
+}
+.playlist-art > .fallback-cover {
+  width: 100%;
+  height: 100%;
+}
 .playlist-card strong {
   font-size: 15px;
   font-weight: 500;
@@ -641,11 +673,16 @@ main {
   font-size: 13px;
   line-height: 1.6;
   opacity: 0;
+  translate: 0 6px;
+  transition:
+    opacity 180ms ease,
+    translate 220ms cubic-bezier(0.22, 1, 0.36, 1);
   pointer-events: none;
   z-index: 20;
 }
 #toast.visible {
   opacity: 1;
+  translate: 0 0;
 }
 #account-dialog {
   width: 420px;
@@ -1531,7 +1568,13 @@ button.brand:active {
   gap: 2px;
 }
 .mobile-device nav button.active {
+  background: transparent;
+}
+.mobile-device .nav-indicator::after {
+  inset: 3px 0 5px;
+  height: auto;
   background: var(--tint);
+  border-radius: 10px;
 }
 .mobile-device nav button.active::after {
   display: none;
@@ -1872,15 +1915,61 @@ button.brand:active {
   line-height: 1.6;
 }
 
-/* The mobile lyrics sheet animates independently of the lyric scroll position. */
-.mobile-device #app {
-  transition: opacity 260ms ease;
+/* Small state changes share a quiet, bounded transition. */
+button,
+.song-row,
+.song-title {
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    opacity 160ms ease;
 }
-.mobile-device body.lyrics-open #app {
-  opacity: 0.82;
+.icon-button > svg,
+.play-toggle > svg {
+  transition:
+    scale 160ms ease,
+    fill 180ms ease;
+}
+.icon-button:active:not(:disabled) > svg,
+.play-toggle:active > svg {
+  scale: 0.9;
+}
+.is-favorite > svg {
+  scale: 1.08;
+}
+#lyrics[aria-busy="true"] {
+  opacity: 0.55;
+}
+#lyrics {
+  transition: opacity 180ms ease;
+}
+.library .section-top {
+  position: relative;
+}
+.library .section-top::after {
+  content: "";
+  position: absolute;
+  bottom: -3px;
+  left: 0;
+  width: 32px;
+  height: 2px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+.library.is-loading .section-top::after {
+  opacity: 0.6;
 }
 @media (prefers-reduced-motion: reduce) {
-  .mobile-device #app {
+  button,
+  .song-row,
+  .song-title,
+  .icon-button > svg,
+  .play-toggle > svg,
+  .nav-indicator.ready,
+  #toast,
+  #lyrics,
+  .library .section-top::after {
     transition: none;
   }
 }

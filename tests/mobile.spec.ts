@@ -352,8 +352,9 @@ for (const device of [
       "#search-source",
     ]) {
       const box = await page.locator(selector).first().boundingBox();
-      expect(box!.height).toBeGreaterThanOrEqual(44);
-      expect(box!.width).toBeGreaterThanOrEqual(44);
+      // Translation may introduce subpixel floating-point error in the rect.
+      expect(Math.round(box!.height * 100) / 100).toBeGreaterThanOrEqual(44);
+      expect(Math.round(box!.width * 100) / 100).toBeGreaterThanOrEqual(44);
     }
     await page.locator("#account-button").tap();
     await expect(page.locator(".account-note")).toContainText(device.notice);

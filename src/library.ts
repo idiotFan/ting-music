@@ -1,3 +1,4 @@
+import { animateContent, openDialog, closeDialog } from "./motion";
 import { songKey, uniqueSongs, formatTime } from "./model.mjs";
 import { changes, type Batch } from "./library-sync-model";
 export type Source = "netease" | "qq";
@@ -372,7 +373,7 @@ export function setupLibrary(o: Options) {
   const close = () => {
     if (!working) {
       generation++;
-      dialog.close();
+      closeDialog(dialog);
     }
   };
   dialog.addEventListener("cancel", (e) => {
@@ -382,13 +383,19 @@ export function setupLibrary(o: Options) {
   function screen(title: string, body: string) {
     generation++;
     working = false;
-    dialog.innerHTML = `<button class="dialog-close icon-button" id="library-close" aria-label="关闭歌单操作">×</button><h2 id="library-title">${esc(title)}</h2>${body}<p id="library-error" role="alert" hidden></p>`;
+    const changingScreen = dialog.open && dialog.dataset.motion !== "closing";
+    dialog.innerHTML = `<button class="dialog-close icon-button" id="library-close" aria-label="关闭歌单操作">×</button><div id="library-screen"><h2 id="library-title" tabindex="-1">${esc(title)}</h2>${body}<p id="library-error" role="alert" hidden></p></div>`;
     q("#library-close").onclick = close;
-    if (!dialog.open) dialog.showModal();
+    openDialog(dialog);
+    if (changingScreen) {
+      animateContent(q("#library-screen"));
+      q("#library-title").focus({ preventScroll: true });
+    }
   }
   function error(e: unknown) {
     q("#library-error").hidden = false;
     q("#library-error").textContent = String(e);
+    animateContent(q("#library-error"), { distance: 3, duration: 160 });
   }
   async function write(fn: () => Promise<void>, message: string, p?: Playlist) {
     if (working) return;
@@ -527,7 +534,16 @@ export function setupLibrary(o: Options) {
         candidates = [];
         chosen = undefined;
         q<HTMLButtonElement>("#match-confirm").disabled = true;
-        q("#match-results").textContent = "正在查找…";
+        const results = q("#match-results");
+        results.setAttribute("aria-busy", "true");
+        // Keep the old results in place while looking up a replacement. Disable
+        // them immediately so an old platform ID can never be confirmed.
+        results
+          .querySelectorAll<HTMLButtonElement>("button")
+          .forEach((button) => {
+            button.disabled = true;
+          });
+        if (!results.childElementCount) results.textContent = "正在查找…";
       }
       q<HTMLButtonElement>("#match-more").disabled = true;
       try {
@@ -551,6 +567,8 @@ export function setupLibrary(o: Options) {
               )
               .join("")
           : '<p class="summary">未找到对应歌曲。可修改关键词，或保留在本机混合歌单中。</p>';
+        q("#match-results").removeAttribute("aria-busy");
+        animateContent(q("#match-results"), { distance: 5 });
         chosen = undefined;
         q<HTMLButtonElement>("#match-confirm").disabled = true;
         q("#match-more").hidden = offset >= total || !data.songs.length;
@@ -569,6 +587,7 @@ export function setupLibrary(o: Options) {
         );
       } catch (e) {
         if (token === generation && serial === request) {
+          q("#match-results").removeAttribute("aria-busy");
           error(e);
           q<HTMLButtonElement>("#match-more").disabled = false;
         }
@@ -594,7 +613,7 @@ export function setupLibrary(o: Options) {
     const targets: Playlist[] = [...internalPlaylists()];
     const errors: string[] = [];
     let targetSource: string = song.source || "netease";
-    function render() {
+    function render(animate = false) {
       dialog
         .querySelectorAll<HTMLElement>("[data-target-filter]")
         .forEach((b) =>
@@ -603,7 +622,7 @@ export function setupLibrary(o: Options) {
             String(b.dataset.targetFilter === targetSource),
           ),
         );
-      q("#playlist-targets").innerHTML = targets
+      const markup = targets
         .map((p, i) => ({ p, i }))
         .filter(({ p }) =>
           targetSource === "internal"
@@ -615,6 +634,10 @@ export function setupLibrary(o: Options) {
             `<button class="playlist-target" data-target="${i}"><strong>${esc(p.name)}</strong><span>${playlistLabel(p)}</span></button>`,
         )
         .join("");
+      const list = q("#playlist-targets");
+      if (list.innerHTML === markup) return;
+      list.innerHTML = markup;
+      if (animate) animateContent(list, { distance: 5 });
       dialog.querySelectorAll<HTMLButtonElement>("[data-target]").forEach(
         (b) =>
           (b.onclick = () => {
@@ -631,8 +654,9 @@ export function setupLibrary(o: Options) {
     dialog.querySelectorAll<HTMLButtonElement>("[data-target-filter]").forEach(
       (b) =>
         (b.onclick = () => {
+          if (targetSource === b.dataset.targetFilter) return;
           targetSource = b.dataset.targetFilter!;
-          render();
+          render(true);
         }),
     );
     render();

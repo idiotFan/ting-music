@@ -104,7 +104,7 @@ jobs:
           npm run tauri -- build -- --locked
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: Ting-0.9.5-build-90504-${{ runner.os }}
+          name: Ting-0.9.6-build-90601-${{ runner.os }}
           path: |
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/deb/*.deb

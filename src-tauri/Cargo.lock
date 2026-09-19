@@ -3973,7 +3973,7 @@ dependencies = [
 
 [[package]]
 name = "ting-music"
-version = "0.9.5"
+version = "0.9.6"
 dependencies = [
  "aes",
  "base64 0.22.1",

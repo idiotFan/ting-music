@@ -1,0 +1,65 @@
+/* A reversible opacity transition keeps the backdrop continuous when a
+   closing dialog reopens. Older WebViews without @starting-style show the
+   first backdrop immediately, while retaining safe close/reopen behavior. */
+dialog[data-motion]::backdrop {
+  opacity: 1;
+  transition: opacity 150ms ease-out;
+}
+dialog[data-motion="closing"] {
+  pointer-events: none;
+}
+dialog[data-motion="closing"]::backdrop {
+  opacity: 0;
+}
+@starting-style {
+  dialog[data-motion="open"]::backdrop {
+    opacity: 0;
+  }
+}
+
+/* Color interpolation is limited to theme surfaces, never layout or every node. */
+html.theme-changing,
+.theme-changing body,
+.theme-changing #app,
+.theme-changing main,
+.theme-changing .app-header,
+.theme-changing .topbar,
+.theme-changing .now-panel,
+.theme-changing .player,
+.theme-changing nav,
+.theme-changing dialog,
+.theme-changing .theme-choice,
+.theme-changing input,
+.theme-changing select {
+  transition-property: background-color, border-color, color;
+  transition-duration: 240ms;
+  transition-timing-function: ease-out;
+}
+/* This class exists only during one synchronous light/dark style commit.
+   Suppress inherited and control-specific color transitions together; WAAPI
+   sheet motion is unaffected, and normal transitions resume before painting. */
+html.theme-contrast-switch,
+.theme-contrast-switch * {
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  dialog[data-motion]::backdrop {
+    transition: none;
+  }
+  html.theme-changing,
+  .theme-changing body,
+  .theme-changing #app,
+  .theme-changing main,
+  .theme-changing .app-header,
+  .theme-changing .topbar,
+  .theme-changing .now-panel,
+  .theme-changing .player,
+  .theme-changing nav,
+  .theme-changing dialog,
+  .theme-changing .theme-choice,
+  .theme-changing input,
+  .theme-changing select {
+    transition: none;
+  }
+}

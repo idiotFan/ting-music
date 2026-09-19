@@ -46,6 +46,8 @@ import { makeLoginQr, verifyOriginalQr, qrPngForSharing } from "./qr";
 import { mountPhoneLogin, type PhoneLoginResult } from "./phone-login";
 import { setupMobileViewport } from "./mobile-viewport";
 import { setupPageScale } from "./page-scale";
+import { animateContent, openDialog, closeDialog } from "./motion";
+import { createCover } from "./cover";
 import { setupSync } from "./sync";
 import { systemMediaBackend } from "./system-media";
 import { createMediaSession } from "./media-session.mjs";
@@ -449,6 +451,33 @@ function coverMarkup(song: Song, cls = "") {
     ? `<img class="${cls}" src="${esc(song.cover)}" alt="${esc(song.album || song.name)} 封面" loading="lazy" referrerpolicy="no-referrer"/>`
     : `<span class="fallback-cover ${cls}">${icon("Music2")}</span>`;
 }
+const updateCover = createCover($("#now-cover"), () => {
+  const fallback = document.createElement("span");
+  fallback.className = "fallback-cover";
+  fallback.innerHTML = icon("Music2");
+  return fallback;
+});
+function renderState(container: HTMLElement, markup: string) {
+  if (container.dataset.state === markup) return;
+  container.dataset.state = markup;
+  container.innerHTML = markup;
+  animateContent(container, { distance: 4 });
+}
+const navIndicator = document.createElement("span");
+navIndicator.className = "nav-indicator";
+navIndicator.setAttribute("aria-hidden", "true");
+$("nav").append(navIndicator);
+function updateNavIndicator() {
+  const active = document.querySelector<HTMLElement>("nav button.active");
+  if (!active) return;
+  const button = active.getBoundingClientRect();
+  const nav = $("nav").getBoundingClientRect();
+  navIndicator.style.width = `${button.width}px`;
+  navIndicator.style.transform = `translateX(${button.left - nav.left}px)`;
+}
+new ResizeObserver(updateNavIndicator).observe($("nav"));
+updateNavIndicator();
+requestAnimationFrame(() => navIndicator.classList.add("ready"));
 function syncRows() {
   $("#fav-count").textContent = String(favorites.length);
   $("#queue-count").textContent =
@@ -496,6 +525,11 @@ function selectSong(id: string) {
 function renderSongs() {
   const songs = list(),
     grid = view === "playlists";
+  const loading =
+    (busy && view === "discover") ||
+    (libraryBusy && (view === "playlist" || grid));
+  $(".library").setAttribute("aria-busy", String(loading));
+  $(".library").classList.toggle("is-loading", loading);
   $("#playlist-grid").hidden = !grid;
   $("#playlist-filters").hidden = !grid;
   $("#songs").hidden = grid;
@@ -535,7 +569,10 @@ function renderSongs() {
     ((busy && view === "discover") || (libraryBusy && view === "playlist")) &&
     !songs.length
   ) {
-    container.innerHTML = '<div class="empty-state"><p>正在加载音乐…</p></div>';
+    renderState(
+      container,
+      '<div class="empty-state"><p>正在加载音乐…</p></div>',
+    );
     return;
   }
   const empty: Record<View, [string, string]> = {
@@ -553,13 +590,18 @@ function renderSongs() {
     playlist: ["歌单暂时没有歌曲", "可以返回我的歌单选择其他歌单。"],
   };
   if (!songs.length) {
-    container.innerHTML = `<div class="empty-state">${icon(view === "local" ? "FolderOpen" : "Music2")}<h3>${empty[view][0]}</h3><p>${empty[view][1]}</p>${view === "local" ? '<button id="empty-import" class="primary">导入本地音乐</button>' : ""}</div>`;
+    renderState(
+      container,
+      `<div class="empty-state">${icon(view === "local" ? "FolderOpen" : "Music2")}<h3>${empty[view][0]}</h3><p>${empty[view][1]}</p>${view === "local" ? '<button id="empty-import" class="primary">导入本地音乐</button>' : ""}</div>`,
+    );
     syncRows();
     return;
   }
   container
     .querySelectorAll(".empty-state,.skeleton")
     .forEach((n) => n.remove());
+  delete container.dataset.state;
+  let contentChanged = false;
   const existing = new Map(
     Array.from(container.querySelectorAll<HTMLElement>(".song-row")).map(
       (row) => [row.dataset.song!, row],
@@ -567,12 +609,16 @@ function renderSongs() {
   );
   const wanted = new Set(songs.map((s) => songKey(s)));
   existing.forEach((row, id) => {
-    if (!wanted.has(id)) row.remove();
+    if (!wanted.has(id)) {
+      row.remove();
+      contentChanged = true;
+    }
   });
   songs.forEach((song, i) => {
     let row = existing.get(songKey(song));
     const signature = JSON.stringify([song, view === "queue"]);
     if (!row || row.dataset.signature !== signature) {
+      contentChanged = true;
       const next = document.createElement("div");
       next.className = "song-row";
       next.dataset.song = songKey(song);
@@ -585,10 +631,13 @@ function renderSongs() {
       if (row) row.replaceWith(next);
       row = next;
     }
-    if (container.children[i] !== row)
+    if (container.children[i] !== row) {
+      contentChanged = true;
       container.insertBefore(row, container.children[i] ?? null);
+    }
   });
   syncRows();
+  if (contentChanged) animateContent(container, { distance: 5 });
 }
 let playlistsLoaded = false;
 const viewScroll = new Map<View, number>();
@@ -601,11 +650,14 @@ function setView(next: View) {
     libraryBusy = false;
   }
   view = next;
-  $("#play-all").innerHTML = icon("Play") + "播放全部";
   document
     .querySelectorAll("[data-view]")
     .forEach((el) =>
-      el.classList.toggle("active", (el as HTMLElement).dataset.view === view),
+      el.classList.toggle(
+        "active",
+        (el as HTMLElement).dataset.view ===
+          (view === "playlist" ? "playlists" : view),
+      ),
     );
   $("#search-form").hidden = view !== "discover";
   $("#import-top").hidden = view !== "local";
@@ -622,10 +674,16 @@ function setView(next: View) {
     local: "本地音乐",
     queue: "播放队列",
   };
-  $("#section-title").innerHTML =
-    `${esc(titles[view])}<span id="result-count"></span>`;
+  const heading = $("#section-title");
+  if (heading.firstChild?.nodeValue !== titles[view]) {
+    heading.firstChild!.nodeValue = titles[view];
+  }
   renderSongs();
-  if (changed) $(".main-scroll").scrollTop = viewScroll.get(next) || 0;
+  if (changed) {
+    $(".main-scroll").scrollTop = viewScroll.get(next) || 0;
+    animateContent($(".library"), { distance: 10, duration: 260 });
+    updateNavIndicator();
+  }
 }
 async function search(term: string, append = false) {
   term = term.trim();
@@ -634,7 +692,8 @@ async function search(term: string, append = false) {
   query = term;
   if (!append) {
     offset = 0;
-    results = [];
+    // Old results stay visible, but cannot paginate a failed replacement query.
+    total = 0;
   }
   busy = true;
   setView("discover");
@@ -662,7 +721,9 @@ async function search(term: string, append = false) {
     if (serial !== searchSerial) return;
     $("#error").textContent = String(e);
     $("#error").hidden = view !== "discover";
-    $("#search-summary").textContent = "暂时无法获取搜索结果";
+    $("#search-summary").textContent = results.length
+      ? "暂时无法获取搜索结果，保留上次结果"
+      : "暂时无法获取搜索结果";
   } finally {
     if (serial === searchSerial) {
       busy = false;
@@ -710,18 +771,28 @@ function updateTransport() {
   if ($("#toggle").dataset.playing !== String(playing)) {
     $("#toggle").innerHTML = icon(playing ? "Pause" : "Play");
     $("#toggle").dataset.playing = String(playing);
+    animateContent($("#toggle svg"), { distance: 2, duration: 160 });
   }
   $("#toggle").setAttribute("aria-label", playing ? "暂停" : "播放");
   document.body.classList.toggle("playing", playing);
 }
 function updateNow(song: Song) {
-  $("#now-cover").innerHTML = coverMarkup(song);
+  updateCover(song.cover || "", `${song.album || song.name} 封面`);
   $("#now-name").textContent = song.name;
   $("#lyrics-title").textContent = song.name;
   $("#lyrics-artist").textContent = `${sourceName(song)} · ${song.artist}`;
   $("#now-name").title = song.name;
   $("#now-artist").textContent = `${sourceName(song)} · ${song.artist}`;
+  animateContent($(".now-heading"), { distance: 4 });
   updateFavorite();
+}
+function renderLyrics(markup: string) {
+  const box = $("#lyrics");
+  box.innerHTML = markup;
+  box.inert = false;
+  box.setAttribute("aria-busy", "false");
+  lyricFollower.reset();
+  if (!box.hidden) animateContent(box, { distance: 6, duration: 280 });
 }
 let preparingPlayback = false;
 async function play(
@@ -754,7 +825,6 @@ async function play(
   pendingSeek = resumeAt;
   if (!sameSong) lyrics = [];
   activeLine = -1;
-  lyricFollower.reset();
   trialStart = 0;
   if (replaceQueue) {
     queueFillSerial++;
@@ -774,8 +844,13 @@ async function play(
   if (!sameSong) updateNow(song);
   $("#quality").toggleAttribute("disabled", !!song.localUrl);
   $("#track-tag").textContent = "正在准备播放…";
-  if (!sameSong)
-    $("#lyrics").innerHTML = '<p class="lyric-placeholder">正在寻找歌词…</p>';
+  if (!sameSong) {
+    const box = $("#lyrics");
+    box.inert = true;
+    box.setAttribute("aria-busy", "true");
+    if (!box.querySelector("[data-line]"))
+      box.innerHTML = '<p class="lyric-placeholder">正在寻找歌词…</p>';
+  }
   ($("#seek") as HTMLInputElement).disabled = true;
   $("#elapsed").textContent = $("#duration").textContent = "0:00";
   ($("#seek") as HTMLInputElement).value = "0";
@@ -803,19 +878,21 @@ async function play(
     audio.load();
     const playPromise = resumeAfterLoad ? audio.play() : Promise.resolve();
     if (song.localUrl)
-      $("#lyrics").innerHTML =
-        '<p class="lyric-placeholder">本地音乐<br>享受没有文字的片刻。</p>';
+      renderLyrics(
+        '<p class="lyric-placeholder">本地音乐<br>享受没有文字的片刻。</p>',
+      );
     else if (!sameSong || !lyrics.length)
       void cloud<string>("song_lyric", { id: song.id }, song.source)
         .then((text) => {
-          if (songKey(current) !== songKey(song)) return;
+          if (serial !== playSerial) return;
           lyrics = parseLyrics(text);
-          $("#lyrics").innerHTML = lyrics.length
-            ? lyrics
-                .map((l, i) => `<p data-line="${i}">${esc(l.text)}</p>`)
-                .join("")
-            : '<p class="lyric-placeholder">暂无歌词，让旋律说话。</p>';
-          lyricFollower.reset();
+          renderLyrics(
+            lyrics.length
+              ? lyrics
+                  .map((l, i) => `<p data-line="${i}">${esc(l.text)}</p>`)
+                  .join("")
+              : '<p class="lyric-placeholder">暂无歌词，让旋律说话。</p>',
+          );
           lyricFollower.sync(
             lyricIndex(lyrics, audio.currentTime + trialStart),
             true,
@@ -823,9 +900,10 @@ async function play(
           );
         })
         .catch(() => {
-          if (songKey(current) === songKey(song))
-            $("#lyrics").innerHTML =
-              '<p class="lyric-placeholder">歌词暂不可用<br>音乐依然继续。</p>';
+          if (serial === playSerial)
+            renderLyrics(
+              '<p class="lyric-placeholder">歌词暂不可用<br>音乐依然继续。</p>',
+            );
         });
     await playPromise;
     if (serial !== playSerial) return;
@@ -848,13 +926,16 @@ async function play(
     systemMedia.clear();
     $("#track-tag").textContent = "播放未成功";
     if (!audio.getAttribute("src") && !lyrics.length)
-      $("#lyrics").innerHTML =
-        '<p class="lyric-placeholder">可以换一首歌，<br>或导入本地音频。</p>';
+      renderLyrics(
+        '<p class="lyric-placeholder">可以换一首歌，<br>或导入本地音频。</p>',
+      );
     toast(e instanceof Error ? e.message : String(e));
   } finally {
     if (serial === playSerial) {
       preparingPlayback = false;
       updateTransport();
+      if (!$("#lyrics").inert)
+        lyricFollower.sync(lyricIndex(lyrics, audio.currentTime + trialStart));
     }
   }
 }
@@ -882,7 +963,11 @@ function renderPlaybackMode() {
     repeat: "Repeat1",
   };
   syncAudioLoop();
-  $("#repeat").innerHTML = icon(icons[playbackMode]);
+  if ($("#repeat").dataset.mode !== playbackMode) {
+    $("#repeat").innerHTML = icon(icons[playbackMode]);
+    $("#repeat").dataset.mode = playbackMode;
+    animateContent($("#repeat svg"), { distance: 2, duration: 160 });
+  }
   $("#repeat").setAttribute("aria-label", `播放模式：${names[playbackMode]}`);
   $("#repeat").title = `${names[playbackMode]} · 点击切换`;
   $("#repeat").classList.toggle("active", playbackMode !== "sequence");
@@ -954,11 +1039,13 @@ document.addEventListener("click", (e) => {
   }
   const filter = el.closest<HTMLElement>("[data-playlist-filter]");
   if (filter) {
+    if (playlistFilter === filter.dataset.playlistFilter) return;
     playlistFilter = filter.dataset.playlistFilter as PlaylistFilter;
     try {
       localStorage.setItem("ting.playlist-filter", playlistFilter);
     } catch {}
     renderSongs();
+    animateContent($("#playlist-grid"), { distance: 6 });
     $(".main-scroll").scrollTop = 0;
     return;
   }
@@ -1119,12 +1206,11 @@ $("#repeat").onclick = () => {
 $("#volume").oninput = () => {
   audio.volume = Number(($("#volume") as HTMLInputElement).value);
   audio.muted = false;
-  $("#mute").innerHTML = icon(audio.volume ? "Volume2" : "VolumeX");
+  updateVolume();
 };
 $("#mute").onclick = () => {
   audio.muted = !audio.muted;
-  $("#mute").setAttribute("aria-label", audio.muted ? "取消静音" : "静音");
-  $("#mute").innerHTML = icon(audio.muted ? "VolumeX" : "Volume2");
+  updateVolume();
 };
 $("#seek").oninput = () => {
   if (Number.isFinite(audio.duration))
@@ -1146,13 +1232,21 @@ audio.addEventListener("playing", () => {
   }
   if (view === "playlists") renderSongs();
 });
-audio.addEventListener("volumechange", () => {
+function updateVolume() {
   ($("#volume") as HTMLInputElement).value = String(audio.volume);
   $("#mute").setAttribute("aria-label", audio.muted ? "取消静音" : "静音");
-  $("#mute").innerHTML = icon(
-    audio.muted || !audio.volume ? "VolumeX" : "Volume2",
-  );
-});
+  const button = $("#mute");
+  const glyph = audio.muted || !audio.volume ? "VolumeX" : "Volume2";
+  if (button.dataset.icon !== glyph) {
+    button.dataset.icon = glyph;
+    button.innerHTML = icon(glyph);
+    animateContent(button.querySelector("svg")!, {
+      distance: 2,
+      duration: 160,
+    });
+  }
+}
+audio.addEventListener("volumechange", updateVolume);
 let mediaErrorShown = "degraded" in mediaBackend && mediaBackend.degraded;
 if (mediaErrorShown) toast("系统媒体控制暂不可用，可继续使用应用内播放按钮");
 window.addEventListener("system-media-error", () => {
@@ -1190,13 +1284,18 @@ audio.addEventListener("timeupdate", () => {
   ($("#seek") as HTMLInputElement).value = String(audio.currentTime);
   const index = lyricIndex(lyrics, audio.currentTime + trialStart);
   activeLine = index;
-  lyricFollower.sync(index, audio.seeking);
+  if (!preparingPlayback && !$("#lyrics").inert)
+    lyricFollower.sync(index, audio.seeking);
 });
-audio.addEventListener("seeked", () =>
-  lyricFollower.resume(
-    lyricIndex(lyrics, audio.currentTime + trialStart),
-    true,
-  ),
+audio.addEventListener(
+  "seeked",
+  () =>
+    !preparingPlayback &&
+    !$("#lyrics").inert &&
+    lyricFollower.resume(
+      lyricIndex(lyrics, audio.currentTime + trialStart),
+      true,
+    ),
 );
 audio.addEventListener("ended", () => {
   skip(1, true);
@@ -1290,7 +1389,10 @@ function renderPlaylists() {
     (playlistFilter === "netease" && !profile) ||
     (playlistFilter === "qq" && !qqProfile)
   ) {
-    box.innerHTML = `<div class="empty-state">${icon("Library")}<h3>登录${sourceName({ source: playlistFilter as Source })}</h3><p>读取你创建和收藏的歌单。</p><button id="playlist-login" class="primary">登录账号</button></div>`;
+    renderState(
+      box,
+      `<div class="empty-state">${icon("Library")}<h3>登录${sourceName({ source: playlistFilter as Source })}</h3><p>读取你创建和收藏的歌单。</p><button id="playlist-login" class="primary">登录账号</button></div>`,
+    );
     return;
   }
   if (
@@ -1298,16 +1400,72 @@ function renderPlaylists() {
     !items.length &&
     !["internal", "recent"].includes(playlistFilter)
   ) {
-    box.innerHTML = '<div class="empty-state"><p>正在加载你的歌单…</p></div>';
+    renderState(box, '<div class="empty-state"><p>正在加载你的歌单…</p></div>');
     return;
   }
-  box.innerHTML = items.length
-    ? `<div class="playlist-cards">${items.map((p) => `<button class="playlist-card" data-playlist="${playlistKey(p)}">${p.cover ? `<img src="${esc(p.cover)}" alt="${esc(p.name)}" loading="lazy" referrerpolicy="no-referrer"/>` : '<span class="fallback-cover">♪</span>'}<strong>${esc(p.name)}</strong><span>${playlistLabel(p)} · ${p.trackCount} 首 · ${p.owned ? "我创建的" : "我收藏的"}</span><small>${esc(p.creator)}</small></button>`).join("")}</div>`
-    : playlistFilter === "recent"
-      ? '<div class="empty-state"><h3>最近听过的歌单</h3><p>播放歌单后会自动排到这里。<br>切换上方平台，浏览你的全部歌单。</p></div>'
-      : playlistFilter === "internal"
-        ? '<div class="empty-state"><h3>跨平台收藏在一起</h3><p>点击右上角「＋ 新建」，创建本机混合歌单。</p></div>'
-        : '<div class="empty-state"><h3>还没有读取到歌单</h3><button id="playlist-retry" class="outline">重新加载</button></div>';
+  if (!items.length) {
+    renderState(
+      box,
+      playlistFilter === "recent"
+        ? '<div class="empty-state"><h3>最近听过的歌单</h3><p>播放歌单后会自动排到这里。<br>切换上方平台，浏览你的全部歌单。</p></div>'
+        : playlistFilter === "internal"
+          ? '<div class="empty-state"><h3>跨平台收藏在一起</h3><p>点击右上角「＋ 新建」，创建本机混合歌单。</p></div>'
+          : '<div class="empty-state"><h3>还没有读取到歌单</h3><button id="playlist-retry" class="outline">重新加载</button></div>',
+    );
+    return;
+  }
+  delete box.dataset.state;
+  let cards = box.querySelector<HTMLElement>(".playlist-cards");
+  if (!cards) {
+    cards = document.createElement("div");
+    cards.className = "playlist-cards";
+    box.replaceChildren(cards);
+  }
+  const existing = new Map(
+    Array.from(cards.querySelectorAll<HTMLElement>(".playlist-card")).map(
+      (card) => [card.dataset.playlist!, card],
+    ),
+  );
+  const wanted = new Set(items.map(playlistKey));
+  let changed = false;
+  existing.forEach((card, key) => {
+    if (!wanted.has(key)) {
+      card.remove();
+      changed = true;
+    }
+  });
+  items.forEach((item, i) => {
+    const key = playlistKey(item);
+    let card = existing.get(key);
+    if (!card) {
+      card = document.createElement("button");
+      card.className = "playlist-card";
+      card.dataset.playlist = key;
+      card.innerHTML =
+        '<span class="playlist-art"><span class="fallback-cover">♪</span></span><strong></strong><span class="playlist-meta"></span><small></small>';
+      changed = true;
+    }
+    const name = card.querySelector("strong")!;
+    if (name.textContent !== item.name) name.textContent = item.name;
+    const details = `${playlistLabel(item)} · ${item.trackCount} 首 · ${item.owned ? "我创建的" : "我收藏的"}`;
+    const meta = card.querySelector(".playlist-meta")!;
+    if (meta.textContent !== details) meta.textContent = details;
+    const creator = card.querySelector("small")!;
+    if (creator.textContent !== item.creator)
+      creator.textContent = item.creator;
+    const art = card.querySelector<HTMLElement>(".playlist-art")!;
+    if (art.dataset.cover !== (item.cover || "")) {
+      art.dataset.cover = item.cover || "";
+      art.innerHTML = item.cover
+        ? `<img src="${esc(item.cover)}" alt="${esc(item.name)}" loading="lazy" referrerpolicy="no-referrer"/>`
+        : '<span class="fallback-cover">♪</span>';
+    }
+    if (cards!.children[i] !== card) {
+      cards!.insertBefore(card, cards!.children[i] ?? null);
+      changed = true;
+    }
+  });
+  if (changed) animateContent(cards, { distance: 5 });
 }
 async function loadPlaylists(append = false) {
   setView("playlists");
@@ -1321,7 +1479,10 @@ async function loadPlaylists(append = false) {
     return;
   }
   if (!append) {
-    playlists = internalPlaylists();
+    playlists = [
+      ...internalPlaylists(),
+      ...playlists.filter((p) => !p.internal),
+    ];
     playlistsOffset = 0;
     qqPlaylistsOffset = 0;
     neteasePlaylistsMore = !!profile;
@@ -1350,7 +1511,13 @@ async function loadPlaylists(append = false) {
         const items = data.playlists.map((p) => ({ ...p, source }));
         playlists = [
           ...new Map(
-            [...playlists, ...items].map((p) => [playlistKey(p), p]),
+            [
+              ...playlists.filter(
+                (p) =>
+                  append || p.internal || (p.source || "netease") !== source,
+              ),
+              ...items,
+            ].map((p) => [playlistKey(p), p]),
           ).values(),
         ];
         if (source === "qq") {
@@ -1374,6 +1541,10 @@ async function loadPlaylists(append = false) {
   renderSongs();
 }
 async function loadPlaylist(item: Playlist, append = false) {
+  const refreshing =
+    view === "playlist" &&
+    selectedPlaylist &&
+    playlistKey(selectedPlaylist) === playlistKey(item);
   selectedPlaylist = item;
   if (item.internal) {
     librarySerial++;
@@ -1381,16 +1552,16 @@ async function loadPlaylist(item: Playlist, append = false) {
     playlistSongs = internalSongs(item);
     playlistTotal = playlistOffset = playlistSongs.length;
     setView("playlist");
-    if (!append) $(".main-scroll").scrollTop = 0;
+    if (!append && !refreshing) $(".main-scroll").scrollTop = 0;
     return;
   }
   if (!append) {
-    playlistSongs = [];
+    if (!refreshing) playlistSongs = [];
     playlistOffset = 0;
     playlistTotal = item.trackCount;
   }
   setView("playlist");
-  if (!append) $(".main-scroll").scrollTop = 0;
+  if (!append && !refreshing) $(".main-scroll").scrollTop = 0;
   const serial = ++librarySerial;
   libraryBusy = true;
   renderSongs();
@@ -1463,7 +1634,7 @@ function completeLogin(source: Source, data: PhoneLoginResult) {
 }
 async function openAccount() {
   const dialog = $("#account-dialog") as HTMLDialogElement;
-  if (!dialog.open) dialog.showModal();
+  openDialog(dialog);
   renderAccount();
   $("#share-login-qr").hidden = true;
   $("#netease-login-method").hidden = true;
@@ -1499,6 +1670,7 @@ async function openAccount() {
     "两个平台独立登录，退出当前账号不影响另一个。";
   $("#account-content").innerHTML =
     `<div class="account-profile"><span class="profile-initial">${esc(connected.nickname.slice(0, 1))}</span><h3>${esc(connected.nickname)}</h3><p>UID ${esc(String(connected.userId))}</p></div>`;
+  animateContent($("#account-content"), { distance: 5 });
   $("#account-status").textContent = credentialNotice;
   $("#refresh-qr").hidden = true;
   $("#logout").hidden = false;
@@ -1538,6 +1710,7 @@ async function startLogin() {
         ($("#account-dialog") as HTMLDialogElement).open,
       (data) => completeLogin(source, data),
     );
+    animateContent($("#account-content"), { distance: 5 });
     return;
   }
   document
@@ -1563,6 +1736,14 @@ async function startLogin() {
       source === "qq"
         ? await verifyOriginalQr(data.image!, maxSize)
         : { src: await makeLoginQr(data.url!, maxSize), payload: data.url! };
+    // QR pixels must be aligned after the enclosing entrance has settled.
+    // Aligning against a moving/scaled dialog leaves a permanent subpixel offset.
+    await Promise.allSettled(
+      [
+        ...$("#account-dialog").getAnimations(),
+        ...$("#account-content").getAnimations(),
+      ].map((animation) => animation.finished),
+    );
     if (serial !== loginSerial) return;
     $("#account-content").innerHTML =
       `<img id="login-qr" src="${qr.src}" alt="${name}登录二维码"/>`;
@@ -1634,7 +1815,7 @@ function closeAccount(cancel = true) {
   loginSerial++;
   clearPhoneLogin();
   clearTimeout(loginTimer);
-  ($("#account-dialog") as HTMLDialogElement).close();
+  closeDialog($("#account-dialog") as HTMLDialogElement);
   const pending = qrSource;
   qrSource = undefined;
   if (cancel && pending && isTauri())

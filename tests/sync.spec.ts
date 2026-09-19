@@ -344,6 +344,11 @@ test("sync settings fit a narrow phone and opening them does not log out either 
   await page.setViewportSize({ width: 320, height: 568 });
   await setup(page);
   await page.locator("#sync-button").tap();
+  await page.locator("#sync-dialog").evaluate(async (dialog) => {
+    await Promise.allSettled(
+      dialog.getAnimations().map((animation) => animation.finished),
+    );
+  });
   const box = (await page.locator("#sync-dialog").boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(320);

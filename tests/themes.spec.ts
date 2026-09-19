@@ -49,6 +49,13 @@ test("all eleven palettes cover the entire compact UI, preserve selection style 
     await page.locator(`[data-theme-choice="${id}"]`).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", id);
     await page.locator("#theme-close").click();
+    await expect(page.locator("#theme-dialog")).toBeHidden();
+    await expect(page.locator("html")).not.toHaveClass(/theme-changing/);
+    await page.evaluate(async () => {
+      await Promise.allSettled(
+        document.getAnimations().map((animation) => animation.finished),
+      );
+    });
     const info = await page.evaluate(() => {
       const root = getComputedStyle(document.documentElement),
         row = getComputedStyle(document.querySelector(".song-row.selected")!),
@@ -105,4 +112,85 @@ test("all eleven palettes cover the entire compact UI, preserve selection style 
       .locator(".brand")
       .evaluate((el) => el.getBoundingClientRect().left),
   ).toBeGreaterThanOrEqual(88);
+});
+
+test("switching between light and dark themes keeps text readable throughout", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.locator("#theme-button").click();
+  await page.locator("#theme-dialog").evaluate(async (dialog) => {
+    await Promise.allSettled(
+      dialog.getAnimations().map((animation) => animation.finished),
+    );
+  });
+  const samples = await page.evaluate(async () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 1;
+    const context = canvas.getContext("2d")!;
+    function luminance(color: string) {
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      const [r, g, b] = Array.from(context.getImageData(0, 0, 1, 1).data)
+        .slice(0, 3)
+        .map((channel) => {
+          const value = channel / 255;
+          return value <= 0.04045
+            ? value / 12.92
+            : ((value + 0.055) / 1.055) ** 2.4;
+        });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    }
+    function contrast(ink: string, background: string) {
+      const a = luminance(ink),
+        b = luminance(background);
+      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    }
+    const samples: number[] = [];
+    function sample() {
+      const root = getComputedStyle(document.documentElement);
+      const main = getComputedStyle(document.querySelector("main")!);
+      const dialog = getComputedStyle(document.querySelector("#theme-dialog")!);
+      const heading = getComputedStyle(document.querySelector("#theme-title")!);
+      const subtitle = getComputedStyle(
+        document.querySelector("#theme-dialog .summary")!,
+      );
+      const choice = getComputedStyle(document.querySelector(".theme-choice")!);
+      samples.push(
+        contrast(root.color, main.backgroundColor),
+        contrast(heading.color, dialog.backgroundColor),
+        contrast(subtitle.color, dialog.backgroundColor),
+        contrast(choice.color, dialog.backgroundColor),
+      );
+    }
+    // Interrupt an in-progress light-to-light transition, then reverse dark/light
+    // repeatedly without waiting for the swatch feedback to finish.
+    document
+      .querySelector<HTMLButtonElement>('[data-theme-choice="mist"]')!
+      .click();
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+    for (const theme of [
+      "midnight",
+      "sage",
+      "forest",
+      "porcelain",
+      "graphite",
+      "rose",
+    ]) {
+      document
+        .querySelector<HTMLButtonElement>(`[data-theme-choice="${theme}"]`)!
+        .click();
+      sample();
+      for (let frame = 0; frame < 8; frame++) {
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => resolve()),
+        );
+        sample();
+      }
+    }
+    return samples;
+  });
+  expect(Math.min(...samples)).toBeGreaterThan(4.5);
 });

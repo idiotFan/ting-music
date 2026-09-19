@@ -1,3 +1,4 @@
+import { animateContent, openDialog, closeDialog } from "./motion";
 import { readSetting } from "./settings";
 export const themes = [
   {
@@ -151,20 +152,49 @@ export function setupThemes() {
         ),
       );
   dialog.querySelector<HTMLButtonElement>("#theme-close")!.onclick = () =>
-    dialog.close();
+    closeDialog(dialog);
+  let colorTimer = 0;
   dialog.addEventListener("click", (e) => {
     const b = (e.target as HTMLElement).closest<HTMLElement>(
       "[data-theme-choice]",
     );
-    if (!b) return;
-    apply(b.dataset.themeChoice!);
-    update();
+    if (!b || b.dataset.themeChoice === selected) return;
+    const root = document.documentElement;
+    clearTimeout(colorTimer);
+    const previous = themes.find((theme) => theme.id === selected)!;
+    const next = themes.find((theme) => theme.id === b.dataset.themeChoice)!;
+    if (!!previous.dark === !!next.dark) {
+      root.classList.add("theme-changing");
+      // Establish transition properties before changing the theme variables.
+      void getComputedStyle(root).backgroundColor;
+      apply(next.id);
+      update();
+      colorTimer = window.setTimeout(
+        () => root.classList.remove("theme-changing"),
+        280,
+      );
+    } else {
+      // Interpolating light ink against a dark-to-light surface passes through
+      // unreadable middle colors. Commit both sides of that change together,
+      // including the ordinary button/row color transitions in the main UI.
+      root.classList.remove("theme-changing");
+      root.classList.add("theme-contrast-switch");
+      apply(next.id);
+      update();
+      void root.offsetWidth;
+      root.classList.remove("theme-contrast-switch");
+      // Keep feedback on the decorative swatch; text remains fully opaque.
+      animateContent(b.querySelector<HTMLElement>(".theme-preview")!, {
+        distance: 0,
+        duration: 180,
+      });
+    }
     try {
       localStorage.setItem("ting.theme", selected);
     } catch {}
   });
   document.querySelector<HTMLButtonElement>("#theme-button")!.onclick = () => {
     update();
-    dialog.showModal();
+    openDialog(dialog);
   };
 }
