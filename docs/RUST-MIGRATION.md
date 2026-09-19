@@ -16,6 +16,17 @@ Native tests cover credentials/aliases, quality ordering, trusted origins, membe
 
 Read-only live tests are explicitly opt-in. The saved-member test loads the local Keychain in memory and never prints credentials, profile data or signed URLs. Cloud playlist writes and completion of a fresh QR login are not performed by regression tests.
 
+## Android build
+
+On macOS, install JDK 21, Android command-line tools, SDK Platform / Build Tools 36 and an NDK. Set `JAVA_HOME`, `ANDROID_HOME` and `NDK_HOME`, and install the Rust Android targets. The local Android toolchain was verified with NDK r30 and an ARM64 debug APK; this is not a claim that every Android feature has passed device testing.
+
+```sh
+npm run tauri -- android init --ci --skip-targets-install
+npm run tauri -- android build --debug --target aarch64 --apk --ci -- --locked
+```
+
+Use the npm entry point when initializing: it lets Tauri generate a valid Gradle callback for the project's CLI wrapper. The wrapper runs `prepare-android.mjs` after initialization and before Android builds to copy Ting's checked-in bright green icons, including adaptive and round icons. A regenerated Android project must not retain Tauri's template launcher icon. The generated project and debug signing key remain outside Git. Routine platform builds keep the existing app version.
+
 ## iOS build
 
 Requires full Xcode, CocoaPods, XcodeGen, Rust iOS targets and an Apple development identity. Xcode 27 internalizes C exports in both Tauri and its SwiftRs dependency. The local `src-tauri/compat/swift-rs` Cargo patch extends the upstream 1.0.8 build helper to handle the bundled SwiftRs object; see its TING-PATCH.md. It needs rustup’s `llvm-tools` component. No global Cargo registry is modified.

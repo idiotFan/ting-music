@@ -4,6 +4,15 @@ import { resolve, delimiter, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 process.chdir(resolve(dirname(fileURLToPath(import.meta.url)), ".."));
 const env = { ...process.env };
+const androidHelp = process.argv.includes('--help') || process.argv.includes('-h');
+function prepareAndroid() {
+  const result = spawnSync(process.execPath, ['scripts/prepare-android.mjs'], { stdio: 'inherit' });
+  if (result.error) throw result.error;
+  if (result.status !== 0) process.exit(result.status ?? 1);
+}
+if (!androidHelp && process.argv[2] === 'android' && ['dev', 'build'].includes(process.argv[3])) {
+  prepareAndroid();
+}
 if (["dev", "build", "bundle"].includes(process.argv[2]) ||
     (["ios", "android"].includes(process.argv[2]) && ["dev", "build"].includes(process.argv[3]))) {
   const check = spawnSync(process.execPath, ["scripts/preflight.mjs"], { stdio: "inherit" });
@@ -21,7 +30,10 @@ const child = spawn(process.execPath, [resolve("node_modules/@tauri-apps/cli/tau
   stdio: "inherit",
   env,
 });
-child.on("exit", (code) => process.exit(code ?? 1));
+child.on("exit", (code) => {
+  if (code === 0 && !androidHelp && process.argv[2] === 'android' && process.argv[3] === 'init') prepareAndroid();
+  process.exit(code ?? 1);
+});
 child.on("error", (error) => { console.error(error.message); process.exit(1); });
 for (const signal of ["SIGINT", "SIGTERM"])
   process.on(signal, () => child.kill(signal));
