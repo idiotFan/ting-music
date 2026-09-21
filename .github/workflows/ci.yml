@@ -123,8 +123,6 @@ jobs:
     name: Android arm64 debug APK
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    env:
-      NDK_HOME: ${{ env.ANDROID_NDK_LATEST_HOME }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -135,6 +133,7 @@ jobs:
           cache: npm
       - name: Prepare
         run: |
+          echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
           npm ci
           rustup toolchain install stable --profile minimal
           rustup default stable
