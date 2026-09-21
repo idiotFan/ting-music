@@ -12,6 +12,11 @@ use tauri::Manager;
 
 #[derive(Default)]
 pub struct Downloads(Arc<AtomicBool>);
+impl Downloads {
+    pub(crate) fn busy(&self) -> bool {
+        self.0.load(Ordering::Acquire)
+    }
+}
 pub(crate) struct Guard(Arc<AtomicBool>);
 #[cfg(test)]
 impl Guard {

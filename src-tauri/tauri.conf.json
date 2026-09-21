@@ -53,5 +53,16 @@
       "minimumSystemVersion": "15.0",
       "bundleVersion": "90701"
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI4NjcxNzA3MDlCMjU3QTUKUldTbFY3SUpCeGRuS0tzR1ZtWVZ1SWltTHR1WnFLWTFQdVV0ck41Z1pYQjMrb2ZINVJmb0NQTm8K",
+      "endpoints": [
+        "https://github.com/idiotFan/ting-music/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

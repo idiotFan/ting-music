@@ -42,6 +42,7 @@ import "./style.css";
 import { readSetting, writeSetting } from "./settings";
 import { PlaybackQueue } from "./playback-queue.mjs";
 import { setupThemes } from "./themes";
+import { setupUpdater } from "./updater";
 import { setupLyrics } from "./lyrics";
 import { makeLoginQr, verifyOriginalQr, qrPngForSharing } from "./qr";
 import { mountPhoneLogin, type PhoneLoginResult } from "./phone-login";
@@ -372,6 +373,7 @@ const lyricFollower = setupLyrics(
   toast,
 );
 setupThemes();
+if (!mobileDevice) setupUpdater(toast);
 const accountKey = (source: Source) =>
   String((source === "qq" ? qqProfile : profile)?.userId || "");
 const library = setupLibrary({

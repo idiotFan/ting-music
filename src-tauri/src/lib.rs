@@ -15,6 +15,7 @@ mod system_media;
 #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "android")))]
 #[path = "system_media_web.rs"]
 mod system_media;
+mod updater;
 use netease::{
     Api, Playback, PlaylistPage, PlaylistTracks, Profile, QrLogin, QrStatus, SearchResult,
 };
@@ -162,6 +163,10 @@ pub fn run() {
     let builder = builder
         .plugin(android_credentials::init())
         .plugin(android_platform::init());
+    #[cfg(desktop)]
+    let builder = builder
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updater::Updates::default());
     builder
         .manage(LyricsWindow::default())
         .manage(system_media::State::default())
@@ -183,6 +188,8 @@ pub fn run() {
             }
             app.manage(qq::Qq::new());
             app.manage(Api::persistent().map_err(std::io::Error::other)?);
+            #[cfg(desktop)]
+            updater::start(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -209,7 +216,9 @@ pub fn run() {
             playlist_tracks,
             playlist_edit,
             download::download_song,
-            download::open_download_folder
+            download::open_download_folder,
+            updater::update_ready,
+            updater::update_install
         ])
         .run(tauri::generate_context!())
         .expect("Ting could not start");

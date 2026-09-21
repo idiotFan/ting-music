@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { resolve, delimiter, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 process.chdir(resolve(dirname(fileURLToPath(import.meta.url)), ".."));
@@ -25,8 +26,21 @@ if (existsSync(`${local}/cargo/bin/cargo`)) {
   env.RUSTUP_HOME = `${local}/rustup`;
   env.PATH = `${local}/cargo/bin${delimiter}${env.PATH}`;
 }
+// Signed updater packages are only produced when the private key is present,
+// so forks and pull requests without the secret still build a normal app.
+const args = process.argv.slice(2);
+if (args[0] === "build") {
+  // The CLI signs with TAURI_SIGNING_PRIVATE_KEY only; accept a key file too.
+  const keyFile = env.TAURI_SIGNING_PRIVATE_KEY_PATH || resolve(homedir(), ".tauri/ting-music-updater.key");
+  if (!env.TAURI_SIGNING_PRIVATE_KEY && existsSync(keyFile))
+    env.TAURI_SIGNING_PRIVATE_KEY = readFileSync(keyFile, "utf8").trim();
+  if (env.TAURI_SIGNING_PRIVATE_KEY) {
+    env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ??= "";
+    args.splice(1, 0, "--config", "src-tauri/tauri.updater.conf.json");
+  }
+}
 // Run the JS entry directly: Windows cannot spawn the extensionless .bin shim.
-const child = spawn(process.execPath, [resolve("node_modules/@tauri-apps/cli/tauri.js"), ...process.argv.slice(2)], {
+const child = spawn(process.execPath, [resolve("node_modules/@tauri-apps/cli/tauri.js"), ...args], {
   stdio: "inherit",
   env,
 });

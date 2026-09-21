@@ -27,6 +27,7 @@
   --z-nav: 1;
   --z-sheet: 5;
   --z-panel: 20;
+  --z-notice: 25;
   --z-toast: 30;
 }
 * {
@@ -711,6 +712,28 @@ main {
 #toast.visible {
   opacity: 1;
   translate: 0 0;
+}
+#update-notice {
+  position: fixed;
+  bottom: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  padding: 8px 8px 8px 14px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 16%, transparent);
+  font-size: 13px;
+  z-index: var(--z-notice);
+}
+#update-notice .primary {
+  padding: 6px 10px;
 }
 #account-dialog {
   width: 420px;
