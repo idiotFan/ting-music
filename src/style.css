@@ -1868,8 +1868,8 @@ button.brand:active {
 @media (orientation: landscape) and (min-width: 500px) and (min-height: 501px) {
   .mobile-device #app {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 360px;
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) clamp(360px, 36vw, 520px);
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
   }
   .mobile-device .app-header {
     grid-column: 1 / -1;
@@ -1877,26 +1877,25 @@ button.brand:active {
   }
   .mobile-device main {
     grid-column: 1;
-    grid-row: 2;
+    grid-row: 2 / 4;
     border-right: 1px solid var(--line);
   }
+  /* The playback column owns every pixel above the controls, so the cover
+     can grow into it instead of leaving the middle empty. */
   .mobile-device .now-panel {
     grid-column: 2;
     grid-row: 2;
-    align-self: start;
-    padding: 16px 16px 0;
+    container: now-playing / size;
+    padding: 16px 16px 8px;
   }
   .mobile-device .player {
     grid-column: 2;
-    grid-row: 2;
-    align-self: end;
-    max-height: calc(100% - 96px);
-    overflow-y: auto;
+    grid-row: 3;
     padding: 0 16px 16px;
   }
   .mobile-device nav {
     grid-column: 1 / -1;
-    grid-row: 3;
+    grid-row: 4;
   }
   .mobile-device #toast {
     bottom: calc(72px + env(safe-area-inset-bottom));
@@ -1922,8 +1921,8 @@ button.brand:active {
 @media (min-width: 900px) and (orientation: landscape) {
   html:not(.mobile-device) #app {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 360px;
-    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) clamp(360px, 36vw, 520px);
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
     max-width: none;
   }
   html:not(.mobile-device) .app-header {
@@ -1937,20 +1936,55 @@ button.brand:active {
   }
   html:not(.mobile-device) main {
     grid-column: 1;
-    grid-row: 3;
+    grid-row: 3 / 5;
     border-right: 1px solid var(--line);
   }
   html:not(.mobile-device) .now-panel {
     grid-column: 2;
     grid-row: 2 / 4;
-    align-self: start;
+    container: now-playing / size;
+    padding: 20px 24px 8px;
   }
   html:not(.mobile-device) .player {
     grid-column: 2;
-    grid-row: 2 / 4;
-    align-self: end;
-    max-height: calc(100% - 100px);
-    overflow-y: auto;
+    grid-row: 4;
+    padding: 8px 24px 20px;
+  }
+}
+
+/* In a playback column the artwork leads: it fills the width (or whatever
+   height the window leaves) with the title and actions beneath it, and the
+   group sits centred above the controls. Short columns keep the compact row. */
+@container now-playing (min-height: 280px) {
+  /* :root lifts these above the compact .mobile-device sizes. */
+  :root .now-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-content: center;
+    align-items: center;
+    gap: 18px 4px;
+    height: 100%;
+    max-width: none;
+    margin: 0;
+  }
+  :root .now-cover {
+    grid-column: 1 / -1;
+    justify-self: center;
+    width: min(100cqw, 100cqh - 112px, 440px);
+    height: auto;
+    aspect-ratio: 1;
+    border-radius: 14px;
+    box-shadow: 0 14px 36px color-mix(in srgb, var(--ink) 14%, transparent);
+  }
+  :root .now-cover svg {
+    width: 26%;
+    height: 26%;
+  }
+  :root .now-heading h3 {
+    font-size: 22px;
+  }
+  :root .now-heading p {
+    font-size: 14px;
   }
 }
 
@@ -1965,13 +1999,12 @@ button.brand:active {
   html:not(.mobile-device) body.lyrics-open main {
     border-right: 0;
   }
-  html:not(.mobile-device) body.lyrics-open .now-panel,
-  html:not(.mobile-device) body.lyrics-open .player {
-    align-self: auto;
+  html:not(.mobile-device) body.lyrics-open .now-panel {
+    container: none;
+    padding: 12px 20px 0;
   }
   html:not(.mobile-device) body.lyrics-open .player {
-    max-height: none;
-    overflow-y: visible;
+    padding: 12px 20px 14px;
   }
 }
 

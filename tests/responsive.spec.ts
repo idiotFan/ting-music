@@ -123,3 +123,34 @@ test("desktop lyrics pane below 1240px restores the stacked player", async ({
   await page.locator("#lyrics-close").click();
   await expect(page.locator("#lyrics-panel")).toBeHidden();
 });
+
+test("the playback column is filled by the artwork instead of an empty middle", async ({
+  page,
+}) => {
+  for (const [width, height] of [
+    [900, 720],
+    [1100, 620],
+    [1400, 900],
+  ]) {
+    await page.setViewportSize({ width, height });
+    await desktopFixture(page);
+    const { now, player } = await boxes(page);
+    const cover = (await page.locator("#now-cover").boundingBox())!;
+    const heading = (await page.locator(".now-heading").boundingBox())!;
+    expect(Math.abs(cover.width - cover.height)).toBeLessThanOrEqual(1);
+    // Artwork leads the column; the title sits beneath it, not beside it.
+    expect(cover.width).toBeGreaterThanOrEqual(now.width * 0.55);
+    expect(heading.y).toBeGreaterThanOrEqual(cover.y + cover.height);
+    expect(cover.y).toBeGreaterThanOrEqual(now.y);
+    expect(heading.y + heading.height).toBeLessThanOrEqual(player.y);
+    // No dead zone: artwork and title use most of the height above the controls.
+    const used = heading.y + heading.height - cover.y;
+    expect(used).toBeGreaterThanOrEqual(now.height * 0.7);
+  }
+  // The narrow window keeps the compact row with the title beside the cover.
+  await page.setViewportSize({ width: 480, height: 720 });
+  const cover = (await page.locator("#now-cover").boundingBox())!;
+  const heading = (await page.locator(".now-heading").boundingBox())!;
+  expect(cover.width).toBe(72);
+  expect(heading.x).toBeGreaterThanOrEqual(cover.x + cover.width);
+});
