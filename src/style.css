@@ -19,6 +19,15 @@
   --hover: color-mix(in srgb, var(--accent) 8%, var(--surface));
   --selected: color-mix(in srgb, var(--accent) 4.5%, var(--surface));
   --accent-hover: color-mix(in srgb, var(--accent) 86%, var(--ink));
+  /* Match the override rules that previously masked these (account dialog). */
+  --text-title: 21px;
+  --text-secondary: 12px;
+  --text-caption: 10px;
+  /* Stacking order, lowest to highest. */
+  --z-nav: 1;
+  --z-sheet: 5;
+  --z-panel: 20;
+  --z-toast: 30;
 }
 * {
   box-sizing: border-box;
@@ -359,7 +368,7 @@ nav button.active {
   font-weight: 600;
 }
 nav button {
-  z-index: 1;
+  z-index: var(--z-nav);
 }
 .nav-indicator {
   position: absolute;
@@ -443,6 +452,25 @@ main {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 8px;
+}
+#back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: -8px;
+  padding-left: 4px;
+}
+#back-button svg {
+  width: 14px;
+  height: 14px;
+}
+.library.back-swipe-settle {
+  transition: transform 0.2s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .library.back-swipe-settle {
+    transition: none;
+  }
 }
 .section-top h2 {
   font-size: 14px;
@@ -678,7 +706,7 @@ main {
     opacity 180ms ease,
     translate 220ms cubic-bezier(0.22, 1, 0.36, 1);
   pointer-events: none;
-  z-index: 20;
+  z-index: var(--z-toast);
 }
 #toast.visible {
   opacity: 1;
@@ -1015,7 +1043,7 @@ main {
 #match-confirm {
   margin-top: 10px;
 }
-@media (max-width: 420px) {
+@media (max-width: 430px) {
   .song-row {
     grid-template-columns: minmax(0, 1fr) 84px;
   }
@@ -1266,6 +1294,8 @@ body.lyrics-open #app {
     transparent
   );
 }
+/* Layout lives here; motion (opacity/transform/transition) lives in
+   lyrics-motion.css, which loads later and wins those properties. */
 #lyrics p[data-line] {
   font-size: 21px;
   line-height: 1.65;
@@ -1273,23 +1303,8 @@ body.lyrics-open #app {
   margin: 0 0 24px;
   font-weight: 400;
   color: var(--ink);
-  opacity: 0.28;
-  transform: translateX(0);
-  transition:
-    opacity 350ms ease,
-    transform 460ms cubic-bezier(0.2, 0.8, 0.2, 1);
   cursor: pointer;
   overflow-wrap: anywhere;
-}
-#lyrics p[data-line].near {
-  opacity: 0.52;
-}
-#lyrics p[data-line].current {
-  opacity: 1;
-  transform: translateX(3px);
-}
-#lyrics p[data-line]:hover {
-  opacity: 0.85;
 }
 #lyrics .lyric-placeholder {
   font-size: 14px;
@@ -1306,16 +1321,11 @@ body.lyrics-open #app {
   background: var(--surface);
   box-shadow: 0 3px 12px #0000000c;
 }
-@media (prefers-reduced-motion: reduce) {
-  #lyrics p[data-line] {
-    transition: none;
-  }
-}
 @media (max-width: 719px) {
   body.lyrics-open #lyrics-panel {
     position: fixed;
     inset: 0 0 0 auto;
-    z-index: 5;
+    z-index: var(--z-sheet);
     max-width: 85vw;
     box-shadow: -8px 0 24px #00000018;
   }
@@ -1637,7 +1647,7 @@ button.brand:active {
 .mobile-device body.lyrics-open #lyrics-panel {
   max-width: none;
   position: fixed;
-  z-index: 20;
+  z-index: var(--z-panel);
   inset: var(--mobile-viewport-top, 0px) 0 auto;
   width: 100%;
   height: var(--mobile-viewport-height, 100dvh);
@@ -1792,6 +1802,9 @@ button.brand:active {
       100% - env(safe-area-inset-left) - env(safe-area-inset-right)
     );
   }
+  .mobile-device #app:has(#search:focus) main {
+    grid-column: 1 / -1;
+  }
 }
 
 /* A small landscape phone needs a narrower player beside its list. */
@@ -1827,6 +1840,49 @@ button.brand:active {
   }
 }
 
+/* Tall landscape screens (tablets) keep the two-column split with roomier
+   spacing instead of falling back to the portrait stack. */
+@media (orientation: landscape) and (min-width: 500px) and (min-height: 501px) {
+  .mobile-device #app {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+  .mobile-device .app-header {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+  .mobile-device main {
+    grid-column: 1;
+    grid-row: 2;
+    border-right: 1px solid var(--line);
+  }
+  .mobile-device .now-panel {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: start;
+    padding: 16px 16px 0;
+  }
+  .mobile-device .player {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: end;
+    max-height: calc(100% - 96px);
+    overflow-y: auto;
+    padding: 0 16px 16px;
+  }
+  .mobile-device nav {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+  .mobile-device #toast {
+    bottom: calc(72px + env(safe-area-inset-bottom));
+  }
+  .mobile-device #app:has(#search:focus) main {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (min-width: 700px) and (min-height: 501px) {
   .mobile-device .player {
     grid-template-columns: minmax(220px, 420px) 100px;
@@ -1838,17 +1894,69 @@ button.brand:active {
   }
 }
 
+/* A wide desktop window splits browsing (left) from playback (right). The
+   pure media-query switch never rebuilds the DOM or resets scroll. */
+@media (min-width: 900px) and (orientation: landscape) {
+  html:not(.mobile-device) #app {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    max-width: none;
+  }
+  html:not(.mobile-device) .app-header {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+  html:not(.mobile-device) nav {
+    grid-column: 1;
+    grid-row: 2;
+    border-right: 1px solid var(--line);
+  }
+  html:not(.mobile-device) main {
+    grid-column: 1;
+    grid-row: 3;
+    border-right: 1px solid var(--line);
+  }
+  html:not(.mobile-device) .now-panel {
+    grid-column: 2;
+    grid-row: 2 / 4;
+    align-self: start;
+  }
+  html:not(.mobile-device) .player {
+    grid-column: 2;
+    grid-row: 2 / 4;
+    align-self: end;
+    max-height: calc(100% - 100px);
+    overflow-y: auto;
+  }
+}
+
+/* The lyrics pane takes 320px on the right; below 1240px the remaining
+   window is too narrow for two columns, so the player stacks again. */
+@media (min-width: 900px) and (max-width: 1239px) and (orientation: landscape) {
+  html:not(.mobile-device) body.lyrics-open #app {
+    display: flex;
+    flex-direction: column;
+  }
+  html:not(.mobile-device) body.lyrics-open nav,
+  html:not(.mobile-device) body.lyrics-open main {
+    border-right: 0;
+  }
+  html:not(.mobile-device) body.lyrics-open .now-panel,
+  html:not(.mobile-device) body.lyrics-open .player {
+    align-self: auto;
+  }
+  html:not(.mobile-device) body.lyrics-open .player {
+    max-height: none;
+    overflow-y: visible;
+  }
+}
+
 /* A focused search needs the space occupied by the on-screen keyboard. */
 .mobile-device #app:has(#search:focus) .now-panel,
 .mobile-device #app:has(#search:focus) .player {
   display: none;
 }
-@media (orientation: landscape) and (min-width: 500px) and (max-height: 500px) {
-  .mobile-device #app:has(#search:focus) main {
-    grid-column: 1 / -1;
-  }
-}
-
 /* The same phone form is available as an optional desktop login method. */
 #phone-login-form {
   text-align: left;

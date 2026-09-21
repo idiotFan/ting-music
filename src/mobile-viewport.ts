@@ -6,6 +6,7 @@ export function setupMobileViewport(mobile: boolean): () => void {
   const root = document.documentElement;
   let frame = 0;
   let keyboardOpen = false;
+  let lastInnerWidth = 0;
   const set = (name: string, value: number) => {
     const pixels = `${Math.round(value * 100) / 100}px`;
     if (root.style.getPropertyValue(name) !== pixels)
@@ -26,8 +27,15 @@ export function setupMobileViewport(mobile: boolean): () => void {
       focused.matches(
         'input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]), textarea, [contenteditable="true"]',
       );
+    // Rotation swaps the viewport's width mid-gesture; the keyboard never
+    // changes the width, so skip one round of keyboard detection on rotation
+    // instead of mistaking the transient height jump for a keyboard.
+    const rotated =
+      lastInnerWidth > 0 && Math.abs(innerWidth - lastInnerWidth) > 100;
+    lastInnerWidth = innerWidth;
     // Keep the state during the keyboard's closing animation after input blur.
-    keyboardOpen = layoutHeight - height > 80 && (editing || keyboardOpen);
+    keyboardOpen =
+      !rotated && layoutHeight - height > 80 && (editing || keyboardOpen);
     set("--mobile-viewport-height", height);
     set("--mobile-viewport-top", top);
     set("--mobile-keyboard-inset", inset);

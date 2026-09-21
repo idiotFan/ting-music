@@ -275,7 +275,7 @@ export function rememberPlaylist(p: Playlist, account: string) {
           playlistKey(r.playlist) === playlistKey(p)
         ),
     ),
-  ];
+  ].slice(0, 100);
   localStorage.setItem("ting.playlist-recent", JSON.stringify(next));
   recents = next;
 }
@@ -341,7 +341,7 @@ function move(songs: Song[], song: Song, action: string): Song[] {
   next.splice(to, 0, ...next.splice(from, 1));
   return next;
 }
-const esc = (v: string) =>
+export const esc = (v: string) =>
   v.replace(
     /[&<>"']/g,
     (c) =>

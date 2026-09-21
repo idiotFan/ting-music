@@ -174,6 +174,36 @@ test("pinch zoom does not resize or shift the app and unchanged events do not mu
   await context.close();
 });
 
+test("rotation skips one round of keyboard detection instead of sticking the keyboard class", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    viewport: { width: 852, height: 393 },
+    isMobile: true,
+    hasTouch: true,
+    userAgent: phone.userAgent,
+  });
+  const page = await context.newPage();
+  await setup(page);
+  await page.locator("#search").focus();
+  // Rotating to portrait makes the layout viewport taller while the mocked
+  // visual viewport still reports the stale landscape height for one frame.
+  await page.setViewportSize({ width: 393, height: 852 });
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  await expect(page.locator("html")).not.toHaveClass(/keyboard-open/);
+  // The next viewport event re-evaluates normally: no keyboard, full height.
+  await viewportChange(page, { height: 852, offsetTop: 0 });
+  await expect(page.locator("html")).not.toHaveClass(/keyboard-open/);
+  expect(await cssValue(page, "--mobile-viewport-height")).toBe("852px");
+  expect(await cssValue(page, "--mobile-keyboard-inset")).toBe("0px");
+  await context.close();
+});
+
 test("desktop windows ignore the mobile viewport adapter", async ({
   browser,
 }) => {

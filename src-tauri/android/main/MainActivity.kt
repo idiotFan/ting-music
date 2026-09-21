@@ -37,6 +37,13 @@ class MainActivity : TauriActivity() {
                         document.querySelector('#lyrics-close')?.click();
                         return true;
                       }
+                      // Playlist detail: use the in-page back button so scroll
+                      // restore and request invalidation follow setView.
+                      const back = document.querySelector('#back-button');
+                      if (back && back.offsetParent !== null) {
+                        back.click();
+                        return true;
+                      }
                       return false;
                     })()
                 """.trimIndent()) { handled ->

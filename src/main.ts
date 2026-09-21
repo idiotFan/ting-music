@@ -25,6 +25,7 @@ import {
   ListOrdered,
   Check,
   LoaderCircle,
+  ChevronLeft,
   ChevronRight,
   Ellipsis,
   Palette,
@@ -45,6 +46,7 @@ import { setupLyrics } from "./lyrics";
 import { makeLoginQr, verifyOriginalQr, qrPngForSharing } from "./qr";
 import { mountPhoneLogin, type PhoneLoginResult } from "./phone-login";
 import { setupMobileViewport } from "./mobile-viewport";
+import { setupBackGesture } from "./back-gesture";
 import { setupPageScale } from "./page-scale";
 import { animateContent, openDialog, closeDialog } from "./motion";
 import { createCover } from "./cover";
@@ -73,6 +75,7 @@ import {
   rememberPlaylist,
   recentPlaylists,
   sortPlaylists,
+  esc,
   type Source,
   type Song,
   type Playlist,
@@ -110,8 +113,7 @@ let profile: Profile | null = null,
   playlists: Playlist[] = [],
   playlistSongs: Song[] = [],
   selectedPlaylist: Playlist | undefined;
-let playlistsMore = false,
-  playlistsOffset = 0,
+let playlistsOffset = 0,
   playlistOffset = 0,
   playlistTotal = 0,
   librarySerial = 0,
@@ -196,6 +198,7 @@ const iconSet = {
   ListOrdered,
   Check,
   LoaderCircle,
+  ChevronLeft,
   ChevronRight,
   Ellipsis,
   Palette,
@@ -213,14 +216,6 @@ const icon = (name: string) => {
   }
   return iconCache.get(name)!;
 };
-const esc = (v: string) =>
-  v.replace(
-    /[&<>"']/g,
-    (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-        c
-      ]!,
-  );
 function restore(key: string): Song[] {
   try {
     const data = JSON.parse(localStorage.getItem(key) || "[]");
@@ -247,6 +242,7 @@ let favorites = favoriteSongs(),
   results: Song[] = [];
 const playbackQueue = new PlaybackQueue(restore("ting.queue"));
 let view: View = "discover",
+  playlistReturnView: View = "playlists",
   current: Song | undefined,
   selectedSongId: string | undefined,
   query = "ChiliChill",
@@ -330,7 +326,7 @@ $("#app").innerHTML = `
     "",
   )}</select></div><div id="download-info" hidden><span id="download-status" role="status"></span><button id="download-folder" class="quiet">打开文件夹</button></div></section>
 <nav aria-label="音乐导航"><button data-view="discover" class="active">搜索</button><button data-view="playlists">歌单</button><button data-view="favorites">收藏<span id="fav-count">0</span></button><button data-view="local">本地</button><button data-view="queue">队列<span id="queue-count">0</span></button></nav>
-<main><div class="topbar"><form id="search-form" role="search"><label class="sr-only" for="search">搜索歌曲或歌手</label>${icon("Search")}<input id="search" placeholder="搜索歌曲、歌手…" maxlength="100" autocomplete="off"/><select id="search-source" aria-label="搜索平台"><option value="netease">网易云</option><option value="qq">QQ音乐</option></select><button class="search-submit" aria-label="搜索" type="submit">搜索</button></form><button id="import-top" class="quiet" hidden>${icon("Plus")}导入</button></div><div class="main-scroll"><section class="library"><div class="section-top"><h2 id="section-title">搜索结果<span id="result-count"></span></h2><button id="refresh-playlists" class="quiet" hidden>刷新</button><button id="new-playlist" class="outline" hidden>＋ 新建</button><button id="manage-playlist" class="quiet" hidden>管理</button><button id="play-all" class="outline">${icon("Play")}播放全部</button></div><div id="discover-tools"><p id="search-summary" class="summary"></p></div><div id="error" role="alert" hidden></div><div id="playlist-filters" role="group" aria-label="歌单分类" hidden>${[
+<main><div class="topbar"><form id="search-form" role="search"><label class="sr-only" for="search">搜索歌曲或歌手</label>${icon("Search")}<input id="search" placeholder="搜索歌曲、歌手…" maxlength="100" autocomplete="off"/><select id="search-source" aria-label="搜索平台"><option value="netease">网易云</option><option value="qq">QQ音乐</option></select><button class="search-submit" aria-label="搜索" type="submit">搜索</button></form><button id="import-top" class="quiet" hidden>${icon("Plus")}导入</button></div><div class="main-scroll"><section class="library"><div class="section-top"><button id="back-button" class="quiet" aria-label="返回歌单列表" hidden>${icon("ChevronLeft")}歌单</button><h2 id="section-title">搜索结果<span id="result-count"></span></h2><button id="refresh-playlists" class="quiet" hidden>刷新</button><button id="new-playlist" class="outline" hidden>＋ 新建</button><button id="manage-playlist" class="quiet" hidden>管理</button><button id="play-all" class="outline">${icon("Play")}播放全部</button></div><div id="discover-tools"><p id="search-summary" class="summary"></p></div><div id="error" role="alert" hidden></div><div id="playlist-filters" role="group" aria-label="歌单分类" hidden>${[
   ["recent", "最近"],
   ["netease", "网易云"],
   ["qq", "QQ音乐"],
@@ -587,12 +583,12 @@ function renderSongs() {
       `${mobileDevice ? "轻点" : "双击"}一首歌开始播放，或点击歌曲旁的加号。`,
     ],
     playlists: ["我的歌单", "登录后读取你的歌单"],
-    playlist: ["歌单暂时没有歌曲", "可以返回我的歌单选择其他歌单。"],
+    playlist: ["歌单暂时没有歌曲", "选择其他歌单，或稍后再来看看。"],
   };
   if (!songs.length) {
     renderState(
       container,
-      `<div class="empty-state">${icon(view === "local" ? "FolderOpen" : "Music2")}<h3>${empty[view][0]}</h3><p>${empty[view][1]}</p>${view === "local" ? '<button id="empty-import" class="primary">导入本地音乐</button>' : ""}</div>`,
+      `<div class="empty-state">${icon(view === "local" ? "FolderOpen" : "Music2")}<h3>${empty[view][0]}</h3><p>${empty[view][1]}</p>${view === "local" ? '<button id="empty-import" class="primary">导入本地音乐</button>' : ""}${view === "playlist" ? '<button id="empty-back" class="outline">返回我的歌单</button>' : ""}</div>`,
     );
     syncRows();
     return;
@@ -661,6 +657,7 @@ function setView(next: View) {
     );
   $("#search-form").hidden = view !== "discover";
   $("#import-top").hidden = view !== "local";
+  $("#back-button").hidden = view !== "playlist";
   $(".topbar").hidden = view !== "discover" && view !== "local";
   $("#discover-tools").hidden = view !== "discover";
   $("#error").hidden = true;
@@ -684,6 +681,14 @@ function setView(next: View) {
     animateContent($(".library"), { distance: 10, duration: 260 });
     updateNavIndicator();
   }
+}
+// Back navigation always routes through setView so scroll restore, serial
+// invalidation and nav highlighting behave exactly like a nav tap.
+function goBack() {
+  if (view !== "playlist") return;
+  // The recorded origin can become unreachable (logout cleared it); the
+  // playlist list is the safe fallback for any stale detail view.
+  setView(playlistReturnView === "playlist" ? "playlists" : playlistReturnView);
 }
 async function search(term: string, append = false) {
   term = term.trim();
@@ -821,11 +826,6 @@ async function play(
   audio.load();
   updateTransport();
   const sameSong = songKey(current) === songKey(song);
-  current = song;
-  pendingSeek = resumeAt;
-  if (!sameSong) lyrics = [];
-  activeLine = -1;
-  trialStart = 0;
   if (replaceQueue) {
     queueFillSerial++;
     queueExpected = 0;
@@ -836,6 +836,11 @@ async function play(
     preparingPlayback = false;
     return;
   }
+  current = song;
+  pendingSeek = resumeAt;
+  if (!sameSong) lyrics = [];
+  activeLine = -1;
+  trialStart = 0;
   syncAudioLoop();
   systemMedia.select(song);
   save();
@@ -1119,6 +1124,10 @@ document.addEventListener("click", (e) => {
       }
     }
   }
+  if (el.closest("#empty-back")) {
+    goBack();
+    return;
+  }
   if (el.closest("#empty-import"))
     ($("#file-input") as HTMLInputElement).click();
 });
@@ -1142,7 +1151,6 @@ document.addEventListener("keydown", (e) => {
     $("#search").focus();
     return;
   }
-  if ($("#account-dialog").hasAttribute("open")) return;
   const target = e.target as HTMLElement;
   if (
     e.key === "Enter" &&
@@ -1158,11 +1166,20 @@ document.addEventListener("keydown", (e) => {
     }
     return;
   }
+  // The lyrics panel owns Escape while open; only the detail view goes back.
+  // Text fields keep Escape for themselves, but a focused button must not
+  // swallow it: opening a playlist leaves focus on its card.
   if (
-    (e.target as HTMLElement).matches("input,textarea,button,select") ||
-    $("#account-dialog").hasAttribute("open")
-  )
+    e.key === "Escape" &&
+    view === "playlist" &&
+    $("#lyrics-panel").hidden &&
+    !(e.target as HTMLElement).matches("input,textarea,select")
+  ) {
+    e.preventDefault();
+    goBack();
     return;
+  }
+  if ((e.target as HTMLElement).matches("input,textarea,button,select")) return;
   if (e.code === "Space") {
     e.preventDefault();
     toggle();
@@ -1178,6 +1195,7 @@ $("#file-input").onchange = () => {
   ($("#file-input") as HTMLInputElement).value = "";
 };
 $("#play-all").onclick = () => void playAll();
+$("#back-button").onclick = goBack;
 $("#refresh-playlists").onclick = () => void loadPlaylists();
 $("#more").onclick = () => {
   if (view === "playlists") void loadPlaylists(true);
@@ -1212,10 +1230,28 @@ $("#mute").onclick = () => {
   audio.muted = !audio.muted;
   updateVolume();
 };
-$("#seek").oninput = () => {
+let seekDragging = false;
+const seekSlider = $("#seek") as HTMLInputElement;
+seekSlider.addEventListener("pointerdown", () => {
+  seekDragging = true;
+});
+seekSlider.oninput = () => {
+  // Keyboard input arrives without a pointerdown; mark the drag either way.
+  seekDragging = true;
   if (Number.isFinite(audio.duration))
-    audio.currentTime = Number(($("#seek") as HTMLInputElement).value);
+    audio.currentTime = Number(seekSlider.value);
 };
+const finishSeek = () => {
+  if (!seekDragging) return;
+  seekDragging = false;
+  // Commit the final position once so the thumb and audio agree.
+  if (Number.isFinite(audio.duration))
+    audio.currentTime = Number(seekSlider.value);
+};
+seekSlider.addEventListener("change", finishSeek);
+seekSlider.addEventListener("pointerup", finishSeek);
+seekSlider.addEventListener("pointercancel", finishSeek);
+seekSlider.addEventListener("lostpointercapture", finishSeek);
 audio.addEventListener("playing", () => {
   const pending = playlistToRemember;
   if (!pending || pending.serial !== playSerial) return;
@@ -1281,7 +1317,8 @@ audio.addEventListener("timeupdate", () => {
   const elapsed = formatTime(audio.currentTime);
   if ($("#elapsed").textContent !== elapsed)
     $("#elapsed").textContent = elapsed;
-  ($("#seek") as HTMLInputElement).value = String(audio.currentTime);
+  if (!seekDragging)
+    ($("#seek") as HTMLInputElement).value = String(audio.currentTime);
   const index = lyricIndex(lyrics, audio.currentTime + trialStart);
   activeLine = index;
   if (!preparingPlayback && !$("#lyrics").inert)
@@ -1307,6 +1344,8 @@ audio.addEventListener("error", () => {
   }
 });
 window.addEventListener("offline", () => toast("网络已断开，本地音乐仍可播放"));
+// iOS has no system back control; the left-edge swipe mirrors the back button.
+if (mobileDevice) setupBackGesture(() => view === "playlist", goBack);
 renderSongs();
 void initialize();
 
@@ -1472,7 +1511,6 @@ async function loadPlaylists(append = false) {
   const serial = ++librarySerial;
   if (!profile && !qqProfile) {
     playlists = internalPlaylists();
-    playlistsMore = false;
     neteasePlaylistsMore = qqPlaylistsMore = false;
     playlistsLoaded = true;
     renderSongs();
@@ -1533,7 +1571,6 @@ async function loadPlaylists(append = false) {
     }),
   );
   if (serial !== librarySerial) return;
-  playlistsMore = neteasePlaylistsMore || qqPlaylistsMore;
   libraryBusy = false;
   playlistsLoaded = !errors.length;
   $("#error").textContent = errors.join("；");
@@ -1545,6 +1582,9 @@ async function loadPlaylist(item: Playlist, append = false) {
     view === "playlist" &&
     selectedPlaylist &&
     playlistKey(selectedPlaylist) === playlistKey(item);
+  // A fresh open remembers where the detail view was entered from; opening
+  // another playlist from a detail view keeps the original return target.
+  if (!append && !refreshing && view !== "playlist") playlistReturnView = view;
   selectedPlaylist = item;
   if (item.internal) {
     librarySerial++;

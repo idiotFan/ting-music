@@ -60,7 +60,6 @@ export function mountPhoneLogin(
   send.onclick = async () => {
     if (send.disabled) return;
     busy = true;
-    nextSendAt = Date.now() + 60_000;
     update();
     status.textContent = "正在发送验证码…";
     try {
@@ -68,6 +67,8 @@ export function mountPhoneLogin(
         phone: phone.value,
         country: country.value,
       });
+      // Only a successful send starts the cooldown; failures stay resendable.
+      nextSendAt = Date.now() + 60_000;
       if (active()) {
         status.textContent = "验证码已发送，请查看手机短信";
       }

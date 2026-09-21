@@ -53,6 +53,13 @@ jobs:
           /tmp/ting-folder-sync-test
       - name: Build native app
         run: npm run tauri -- build -- --locked
+      - name: Upload macOS app artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Ting-0.9.7-build-90701-macOS
+          path: src-tauri/target/release/bundle/macos/*.app
+          if-no-files-found: error
+          retention-days: 14
       - name: Frontend dependency audit
         run: npm audit --audit-level=high
       - name: Upload browser diagnostics on failure
@@ -104,11 +111,41 @@ jobs:
           npm run tauri -- build -- --locked
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: Ting-0.9.6-build-90601-${{ runner.os }}
+          name: Ting-0.9.7-build-90701-${{ runner.os }}
           path: |
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+          retention-days: 14
+
+  android:
+    name: Android arm64 debug APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      NDK_HOME: ${{ env.ANDROID_NDK_LATEST_HOME }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Prepare
+        run: |
+          npm ci
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-linux-android
+          npm run tauri -- android init
+      - name: Build debug APK
+        run: CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 npm run tauri -- android build --debug --target aarch64 --apk --ci -- --locked
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Ting-0.9.7-build-90701-Android
+          path: src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
           if-no-files-found: error
           retention-days: 14
 

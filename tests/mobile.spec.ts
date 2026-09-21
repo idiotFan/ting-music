@@ -410,6 +410,8 @@ for (const size of [
   { width: 568, height: 320 },
   { width: 852, height: 393 },
   { width: 820, height: 1180 },
+  { width: 1180, height: 820 },
+  { width: 1280, height: 800 },
 ]) {
   test(`mobile browsing and playback remain separate at ${size.width}×${size.height}`, async ({
     browser,
@@ -431,7 +433,9 @@ for (const size of [
     ).toBeLessThanOrEqual(size.width);
     expect(nav.y + nav.height).toBe(size.height);
     expect(main.height).toBeGreaterThan(200);
-    if (size.width > size.height && size.height <= 500) {
+    // Every landscape form — compact phones and tall tablets alike — keeps
+    // browsing (left) beside playback (right); portrait stacks them.
+    if (size.width > size.height) {
       expect(main.x + main.width).toBeLessThanOrEqual(now.x);
       expect(main.x + main.width).toBeLessThanOrEqual(player.x);
     } else {

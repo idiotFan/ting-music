@@ -17,9 +17,15 @@ export function parseLyrics(text) {
   return result.sort((a, b) => a.time - b.time);
 }
 export function lyricIndex(lines, time) {
-  let index = -1;
-  for (let i = 0; i < lines.length && lines[i].time <= time; i++) index = i;
-  return index;
+  // Binary search: index of the last line at or before `time` (-1 if none).
+  let lo = 0,
+    hi = lines.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (lines[mid].time <= time) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo - 1;
 }
 export function songKey(song) {
   return song
