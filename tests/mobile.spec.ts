@@ -130,6 +130,16 @@ test("iPhone layout keeps controls in viewport and lyrics use a dismissible full
   await page.locator("#lyrics-toggle").tap();
   const panel = page.locator("#lyrics-panel");
   await expect(panel).toBeVisible();
+  // The sheet pushes in from the right edge; measure it where it comes to rest.
+  await expect
+    .poll(() =>
+      panel.evaluate((element: HTMLElement) =>
+        element
+          .getAnimations()
+          .every((animation) => animation.playState !== "running"),
+      ),
+    )
+    .toBe(true);
   const box = await panel.boundingBox();
   expect(box?.x).toBe(0);
   expect(box?.width).toBe(393);

@@ -2,10 +2,14 @@
 // back gesture, so the playlist detail view mirrors its back button here.
 // Android reaches the same button through MainActivity's back-key bridge.
 
+import { MOTION, animateOut } from "./motion";
+
 const EDGE_WIDTH = 24; // px from the left viewport edge that can start a swipe
 const ACTIVATION = 10; // px of horizontal travel before owning the touch
 const DOMINANCE = 2; // horizontal must outweigh vertical by this factor
 const COMMIT = 72; // px of travel that triggers the navigation
+const RELEASE = 48; // px the committed content keeps travelling on its own
+const RELEASE_LIMIT = 0.32; // share of the viewport that travel may not exceed
 
 type Phase = "watching" | "dragging" | "cancelled";
 
@@ -13,11 +17,14 @@ export function setupBackGesture(active: () => boolean, back: () => void) {
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
   let phase: Phase | null = null;
   let identifier = -1;
+  let settleTimer = 0;
+  let committing = false;
   let startX = 0,
     startY = 0;
 
   const sheet = () => document.querySelector<HTMLElement>(".library");
   const blocked = () =>
+    committing ||
     !active() ||
     !!document.querySelector("dialog[open]") ||
     !document.querySelector<HTMLElement>("#lyrics-panel")?.hidden;
@@ -35,14 +42,50 @@ export function setupBackGesture(active: () => boolean, back: () => void) {
     if (el) el.style.transform = dx > 0 ? `translateX(${dx}px)` : "";
   }
 
-  function settle() {
+  // Below the threshold the promise is withdrawn: the page returns to rest.
+  function cancelSwipe() {
     const el = sheet();
     phase = null;
     identifier = -1;
     if (!el || !el.style.transform) return;
+    // Back-to-back gestures used to leave the class behind, which made the
+    // next drag transition instead of tracking the finger.
+    window.clearTimeout(settleTimer);
     el.classList.add("back-swipe-settle");
     el.style.transform = "";
-    window.setTimeout(() => el.classList.remove("back-swipe-settle"), 220);
+    settleTimer = window.setTimeout(
+      () => el.classList.remove("back-swipe-settle"),
+      220,
+    );
+  }
+
+  // Past the threshold the finger's promise is kept: this page finishes its
+  // exit to the right, and only then does the previous layer come in.
+  function commitSwipe(dx: number) {
+    const el = sheet();
+    phase = null;
+    identifier = -1;
+    if (!el || reduced.matches) {
+      el?.style.removeProperty("transform");
+      back();
+      return;
+    }
+    window.clearTimeout(settleTimer);
+    // The settle transition and the exit animation would otherwise drive the
+    // same property at once.
+    el.classList.remove("back-swipe-settle");
+    committing = true;
+    const target = Math.min(dx + RELEASE, window.innerWidth * RELEASE_LIMIT);
+    void animateOut(
+      el,
+      { transform: `translate3d(${target}px, 0, 0)`, opacity: 0 },
+      { duration: MOTION.t2, easing: MOTION.exit },
+    ).then(() => {
+      el.style.removeProperty("transform");
+      el.style.removeProperty("opacity");
+      committing = false;
+      back();
+    });
   }
 
   document.addEventListener(
@@ -92,8 +135,8 @@ export function setupBackGesture(active: () => boolean, back: () => void) {
     const threshold = Math.min(COMMIT, window.innerWidth / 4);
     const triggered =
       phase === "dragging" && commit && !blocked() && dx > threshold;
-    settle();
-    if (triggered) back();
+    if (triggered) commitSwipe(dx);
+    else cancelSwipe();
   };
   document.addEventListener("touchend", finish(true), { passive: true });
   document.addEventListener("touchcancel", finish(false), { passive: true });

@@ -615,6 +615,22 @@ test("creating a mixed playlist during background queue fill preserves playback 
   await expect(page.locator("#now-name")).toHaveText("后台歌曲 1");
 });
 
+// The panel now arrives along X, so its resting geometry is only meaningful
+// once the entrance has landed.
+async function lyricsSettled(page: any) {
+  await expect
+    .poll(() =>
+      page
+        .locator("#lyrics-panel")
+        .evaluate((panel: HTMLElement) =>
+          panel
+            .getAnimations()
+            .every((animation) => animation.playState !== "running"),
+        ),
+    )
+    .toBe(true);
+}
+
 test("lyrics expand to the right without squeezing the player, follow smoothly, seek and collapse", async ({
   page,
 }) => {
@@ -643,6 +659,7 @@ test("lyrics expand to the right without squeezing the player, follow smoothly, 
   expect(after!.width).toBe(before!.width);
   expect(after!.height).toBe(before!.height);
   expect(page.viewportSize()!.width).toBe(720);
+  await lyricsSettled(page);
   expect((await page.locator("#lyrics-panel").boundingBox())!.x).toBe(400);
   await page.locator("#seek").fill("10.2");
   await expect(page.locator("#lyrics .current")).toHaveAttribute(

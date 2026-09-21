@@ -389,9 +389,8 @@ nav button {
   border-radius: 2px;
 }
 .nav-indicator.ready {
-  transition:
-    transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
-    width 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  /* Width is set instantly; only the slide is a story worth telling. */
+  transition: transform var(--t-3) var(--e-move);
 }
 nav button span {
   font-size: 11px;
@@ -440,7 +439,7 @@ main {
   border-radius: 4px;
 }
 .main-scroll {
-  overflow: auto;
+  overflow: hidden auto;
   min-height: 0;
   flex: 1;
   padding: 14px 20px 20px;
@@ -1112,15 +1111,6 @@ main {
 .song-row.playing .song-title {
   color: var(--ink);
 }
-.song-row.playing .song-info small::before {
-  content: "";
-  display: inline-block;
-  width: 4px;
-  height: 4px;
-  margin: 0 5px 2px 0;
-  border-radius: 50%;
-  background: var(--accent);
-}
 .source-badge {
   border-color: var(--line);
   color: var(--muted);
@@ -1245,6 +1235,16 @@ main {
 }
 
 /* Lyrics occupy a separate, full-height right pane. */
+
+/* #app and the lyrics pane are each exactly one viewport tall, so the document
+   is never meant to scroll; this keeps a panel sliding in from the right from
+   briefly widening the page. Both sides are required: while the root's own
+   overflow is `visible`, the body's value is propagated to the viewport and
+   the body itself goes on behaving as `visible`, clipping nothing. */
+html,
+body {
+  overflow: hidden;
+}
 body {
   display: flex;
 }
@@ -1265,8 +1265,12 @@ body.lyrics-open #app {
   display: flex;
   flex-direction: column;
   position: relative;
+  overflow: hidden;
   background: var(--bg);
   border-left: 1px solid var(--line);
+  /* How far the panel sits off to the right before it arrives. In normal flow
+     the travel must stay bounded; a fixed drawer clears its own width. */
+  --lyrics-enter: 28px;
 }
 .lyrics-header {
   display: flex;
@@ -1351,6 +1355,7 @@ body.lyrics-open #app {
     z-index: var(--z-sheet);
     max-width: 85vw;
     box-shadow: -8px 0 24px #00000018;
+    --lyrics-enter: 100%;
   }
 }
 
@@ -1670,6 +1675,7 @@ button.brand:active {
 .mobile-device body.lyrics-open #lyrics-panel {
   max-width: none;
   position: fixed;
+  --lyrics-enter: 100%;
   z-index: var(--z-panel);
   inset: var(--mobile-viewport-top, 0px) 0 auto;
   width: 100%;
@@ -2081,12 +2087,28 @@ button.brand:active {
 
 /* Small state changes share a quiet, bounded transition. */
 button,
-.song-row,
 .song-title {
   transition:
     background-color 160ms ease,
     color 160ms ease,
     opacity 160ms ease;
+}
+/* A row lands on press within a frame and releases slowly, so a tap reads as
+   an answer rather than a fade. Rows never take a transform: text would blur. */
+.song-row {
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--t-2) var(--e-exit),
+    color 160ms ease,
+    opacity 160ms ease;
+}
+.song-row:active {
+  background: var(--hover);
+  transition-duration: 0s;
+}
+/* A tap leaves :hover behind on touch devices; only the press should read. */
+.mobile-device .song-row:hover:not(:active):not(.selected) {
+  background: none;
 }
 .icon-button > svg,
 .play-toggle > svg {
@@ -2094,9 +2116,19 @@ button,
     scale 160ms ease,
     fill 180ms ease;
 }
-.icon-button:active:not(:disabled) > svg,
-.play-toggle:active > svg {
-  scale: 0.9;
+.icon-button,
+.play-toggle {
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    opacity 160ms ease,
+    transform var(--t-1) var(--e-enter);
+}
+/* Pressing scales the button, leaving `scale` on the glyph to the favorite
+   state; the two used to fight over one property. */
+.icon-button:active:not(:disabled),
+.play-toggle:active {
+  transform: scale(0.94);
 }
 .is-favorite > svg {
   scale: 1.08;
@@ -2128,6 +2160,8 @@ button,
   button,
   .song-row,
   .song-title,
+  .icon-button,
+  .play-toggle,
   .icon-button > svg,
   .play-toggle > svg,
   .nav-indicator.ready,

@@ -1,0 +1,196 @@
+/* Playback is a fact, not an intention: everything here is driven by
+   body[data-playback], which src/playback-state.ts derives from the media
+   events alone. The breathing cover lives in src/playback-motion.ts; the badge
+   below is its static counterpart and carries the whole meaning on its own. */
+:root {
+  --now-pulse: 1.022;
+  --now-dot: 20px;
+  --now-dot-inset: 5px;
+}
+
+#now-cover::after {
+  content: "";
+  position: absolute;
+  right: var(--now-dot-inset);
+  bottom: var(--now-dot-inset);
+  width: var(--now-dot);
+  height: var(--now-dot);
+  border-radius: 32%;
+  background: var(--muted);
+  /* A ring keeps the plate legible on top of any artwork. */
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--surface) 78%, transparent);
+  opacity: 0;
+  transform: scale(0.7);
+  pointer-events: none;
+  transition:
+    opacity var(--t-2) var(--e-exit),
+    transform var(--t-2) var(--e-exit),
+    background-color var(--t-2) linear;
+}
+body[data-playback="playing"] #now-cover::after {
+  opacity: 1;
+  transform: scale(1);
+  background: var(--accent);
+}
+body[data-playback="paused"] #now-cover::after {
+  opacity: 1;
+  transform: scale(0.9);
+  background: var(--muted);
+}
+/* Buffering moves a different property on a much shorter period, so it can
+   never be mistaken for the cover's slow breath. */
+body[data-playback="loading"] #now-cover::after {
+  opacity: 1;
+  transform: scale(1);
+  background: var(--accent);
+  animation: now-wait var(--now-wait-period, 1400ms) var(--e-breath) infinite;
+}
+body[data-playback="error"] #now-cover::after {
+  opacity: 1;
+  transform: scale(1);
+  background: var(--error);
+}
+
+@keyframes now-wait {
+  0%,
+  100% {
+    opacity: 0.28;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Three bars are the glanceable half of the badge: they dance only while
+   audio is really playing, rest level when paused, hold still while buffering
+   (the plate blinks instead) and flatten on failure. Bars move on scaleY alone,
+   so they stay on the compositor beside the cover's breath. */
+.now-eq {
+  position: absolute;
+  right: var(--now-dot-inset);
+  bottom: var(--now-dot-inset);
+  width: var(--now-dot);
+  height: var(--now-dot);
+  /* Above the ::after plate, which paints after every real child. */
+  z-index: 2;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  /* Percent padding would resolve against the cover, not this badge. */
+  gap: calc(var(--now-dot) * 0.09);
+  padding: calc(var(--now-dot) * 0.26) calc(var(--now-dot) * 0.24);
+  box-sizing: border-box;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--t-2) var(--e-exit);
+}
+#now-cover::after {
+  z-index: 1;
+}
+.now-eq i {
+  flex: 1;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--on-accent);
+  transform-origin: 50% 100%;
+  transform: scaleY(0.34);
+  transition: transform var(--t-3, 240ms) var(--e-enter, ease-out);
+}
+body:is(
+    [data-playback="playing"],
+    [data-playback="paused"],
+    [data-playback="loading"],
+    [data-playback="error"]
+  )
+  .now-eq {
+  opacity: 1;
+}
+body[data-playback="playing"] .now-eq i {
+  animation: now-eq 980ms var(--e-breath) infinite alternate;
+}
+body[data-playback="playing"] .now-eq i:nth-child(2) {
+  animation-duration: 760ms;
+  animation-delay: -420ms;
+}
+body[data-playback="playing"] .now-eq i:nth-child(3) {
+  animation-duration: 1180ms;
+  animation-delay: -260ms;
+}
+body[data-playback="loading"] .now-eq i {
+  transform: scaleY(0.55);
+}
+body[data-playback="error"] .now-eq i {
+  transform: scaleY(0.16);
+}
+@keyframes now-eq {
+  from {
+    transform: scaleY(0.22);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+/* A playback column shows the artwork large, so the same relative travel would
+   shout; the badge grows with it instead. Matches the block in style.css. */
+@container now-playing (min-height: 280px) {
+  :root .now-cover {
+    --now-pulse: 1.012;
+    --now-dot: 34px;
+    --now-dot-inset: 14px;
+  }
+}
+@media (max-width: 430px) {
+  :root {
+    --now-dot: 18px;
+    --now-dot-inset: 3px;
+  }
+}
+
+/* The current row speaks the same language as the player, at every width.
+   syncRows() keeps exactly one `.playing` row, so this is one animation. */
+.song-row.playing .song-info small::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin: 0 5px 2px 0;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: background-color var(--t-2) linear;
+}
+body[data-playback="playing"] .song-row.playing .song-info small::before {
+  background: var(--accent);
+  animation: now-wait var(--now-pulse-period, 4400ms) var(--e-breath) infinite;
+}
+body[data-playback="loading"] .song-row.playing .song-info small::before {
+  background: var(--accent);
+  animation: now-wait var(--now-wait-period, 1400ms) var(--e-breath) infinite;
+}
+body[data-playback="error"] .song-row.playing .song-info small::before {
+  background: var(--error);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #now-cover::after,
+  .now-eq,
+  .now-eq i,
+  .song-row.playing .song-info small::before {
+    animation: none !important;
+    transition: none;
+  }
+  /* Still readable as "playing": a stepped, unequal silhouette. */
+  body[data-playback="playing"] .now-eq i {
+    transform: scaleY(0.6);
+  }
+  body[data-playback="playing"] .now-eq i:nth-child(2) {
+    transform: scaleY(1);
+  }
+  body[data-playback="playing"] .now-eq i:nth-child(3) {
+    transform: scaleY(0.78);
+  }
+  /* Four states must stay tellable apart from colour and size alone. */
+  body[data-playback="loading"] #now-cover::after {
+    opacity: 0.55;
+  }
+}

@@ -724,3 +724,685 @@ test("changing quality for the current song preserves lyric nodes and scroll whi
     "true",
   );
 });
+
+// The first keyframe of the library's entrance is the whole spatial claim:
+// which side the page comes from, how far, how long and how hidden it starts.
+async function libraryEntrance(page: Page, click: () => Promise<void>) {
+  const before = await page.evaluate(
+    () => document.querySelector(".library")!.getAnimations().length,
+  );
+  await click();
+  return page.evaluate((before) => {
+    const library = document.querySelector(".library")!;
+    const animation = library
+      .getAnimations()
+      .find((candidate) => candidate.effect instanceof KeyframeEffect);
+    const effect = animation?.effect as KeyframeEffect | undefined;
+    const frames = effect?.getKeyframes() ?? [];
+    const start = String(frames[0]?.transform ?? "");
+    return {
+      started: library.getAnimations().length > 0 || before > 0,
+      offset: Number(/(-?[\d.]+)px/.exec(start)?.[1] ?? NaN),
+      opacity: String(frames[0]?.opacity ?? ""),
+      duration: Number(effect?.getTiming().duration ?? NaN),
+    };
+  }, before);
+}
+
+test("视图切换按导航顺序讲方向，层级推入与退出的幅度和时长不同", async ({
+  page,
+}) => {
+  await fixture(page);
+  const forward = await libraryEntrance(page, () =>
+    page.locator('[data-view="queue"]').click(),
+  );
+  // Later tab: the page arrives from the right, fully hidden until it lands.
+  expect(forward).toMatchObject({ offset: 16, opacity: "0", duration: 240 });
+  await expectResting(page, ".library");
+
+  const backward = await libraryEntrance(page, () =>
+    page.locator('[data-view="discover"]').click(),
+  );
+  expect(backward).toMatchObject({ offset: -16, duration: 240 });
+  await expectResting(page, ".library");
+
+  await page.locator('[data-view="playlists"]').click();
+  await expect(page.locator(".playlist-card")).toHaveCount(3);
+  await expectResting(page, ".library");
+  const push = await libraryEntrance(page, () =>
+    page.locator('[data-playlist="netease:1"]').click(),
+  );
+  // One layer deeper: same direction as a forward tab, but heavier and slower.
+  expect(push).toMatchObject({ offset: 28, duration: 300 });
+  await expect(page.locator("#back-button")).toBeVisible();
+  // The back entrance trails the content, so it reads as a consequence.
+  expect(
+    await page.locator("#back-button").evaluate((element) => {
+      const effect = element.getAnimations()[0]?.effect as
+        KeyframeEffect | undefined;
+      const timing = effect?.getTiming();
+      return {
+        delay: timing?.delay ?? null,
+        duration: timing?.duration ?? null,
+      };
+    }),
+  ).toEqual({ delay: 80, duration: 240 });
+  await expectResting(page, ".library");
+
+  const pop = await libraryEntrance(page, () =>
+    page.locator("#back-button").click(),
+  );
+  expect(pop).toMatchObject({ offset: -28, duration: 240 });
+  await expect(page.locator("#section-title")).toContainText("我的歌单");
+  await expectResting(page, ".library");
+});
+
+test("横向视图切换不产生水平溢出", async ({ page }) => {
+  await fixture(page);
+  const overflow = () =>
+    page
+      .locator(".main-scroll")
+      .evaluate((element) => element.scrollWidth - element.clientWidth);
+  for (const view of ["playlists", "favorites", "local", "queue", "discover"]) {
+    // Sampled while the entrance is still travelling, not only once at rest.
+    expect(
+      await page.evaluate((view) => {
+        document
+          .querySelector<HTMLButtonElement>(`[data-view="${view}"]`)!
+          .click();
+        const element = document.querySelector<HTMLElement>(".main-scroll")!;
+        return element.scrollWidth - element.clientWidth;
+      }, view),
+    ).toBeLessThanOrEqual(1);
+    await page.waitForTimeout(100);
+    expect(await overflow()).toBeLessThanOrEqual(1);
+    await expectResting(page, ".main-scroll");
+    expect(await overflow()).toBeLessThanOrEqual(1);
+  }
+});
+
+test("快速反复切换视图后库停在正确终态", async ({ page }) => {
+  await fixture(page);
+  await page.evaluate(() => {
+    for (const view of [
+      "queue",
+      "discover",
+      "queue",
+      "local",
+      "discover",
+      "favorites",
+    ])
+      document
+        .querySelector<HTMLButtonElement>(`[data-view="${view}"]`)!
+        .click();
+  });
+  await expectResting(page, ".library");
+  expect(
+    await page.locator(".library").evaluate((element) => ({
+      transform: getComputedStyle(element).transform,
+      opacity: getComputedStyle(element).opacity,
+      inline: element.getAttribute("style") || "",
+    })),
+  ).toEqual({ transform: "none", opacity: "1", inline: "" });
+  await expect(page.locator('[data-view="favorites"]')).toHaveClass(/active/);
+  await expect(page.locator(".song-row")).toHaveCount(1);
+  await page.locator(".song-title").click();
+  await expect(page.locator(".song-title")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+});
+
+test("加载更多只让新增的行入场，已读的行一帧不动", async ({ page }) => {
+  await fixture(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    const original = w.__TAURI_INTERNALS__.invoke;
+    w.__motionReleaseMore = undefined;
+    w.__TAURI_INTERNALS__.invoke = async (command: string, args: any = {}) => {
+      if (command !== "search_songs") return original(command, args);
+      const offset = args.offset || 0;
+      if (offset)
+        await new Promise<void>((resolve) => {
+          w.__motionReleaseMore = resolve;
+        });
+      return {
+        songs: Array.from({ length: 20 }, (_, index) => ({
+          id: offset + index + 1,
+          name: `分页歌曲 ${offset + index + 1}`,
+          artist: "分页歌手",
+          album: "分页专辑",
+          cover: "",
+          duration: 20000,
+          fee: 0,
+        })),
+        total: 40,
+      };
+    };
+  });
+  await page.locator("#search").fill("分页搜索");
+  await page.locator("#search").press("Enter");
+  await expect(page.locator(".song-row")).toHaveCount(20);
+  await expectResting(page, "#songs");
+  // Read to the bottom first: rows that arrive far below the fold must not
+  // animate at all, and the ones that do are the ones being looked at.
+  await page
+    .locator(".main-scroll")
+    .evaluate((element) => (element.scrollTop = element.scrollHeight));
+  await page.locator("#more").click();
+  await expect
+    .poll(() => page.evaluate(() => typeof (window as any).__motionReleaseMore))
+    .toBe("function");
+  const rows = await page.evaluate(async () => {
+    const before = new Set(
+      [...document.querySelectorAll<HTMLElement>(".song-row")].map(
+        (row) => row.dataset.song!,
+      ),
+    );
+    (window as any).__motionReleaseMore();
+    while (document.querySelectorAll(".song-row").length !== 40)
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => resolve()),
+      );
+    return [...document.querySelectorAll<HTMLElement>(".song-row")].map(
+      (row) => ({
+        existed: before.has(row.dataset.song!),
+        animations: row.getAnimations().length,
+      }),
+    );
+  });
+  expect(rows).toHaveLength(40);
+  expect(
+    rows.filter((row) => row.existed).every((row) => !row.animations),
+  ).toBe(true);
+  const animated = rows.filter((row) => row.animations > 0);
+  expect(animated.length).toBeGreaterThan(0);
+  expect(animated.length).toBeLessThanOrEqual(8);
+  await expectResting(page, "#songs");
+});
+
+test("切换视图时列表行不再各自入场", async ({ page }) => {
+  await fixture(page);
+  // The first render staggers its rows in; wait for that before measuring.
+  await expectResting(page, "#songs");
+  const animations = await page.evaluate(() => {
+    document
+      .querySelector<HTMLButtonElement>('[data-view="favorites"]')!
+      .click();
+    return {
+      rows: [...document.querySelectorAll(".song-row")].reduce(
+        (total, row) => total + row.getAnimations().length,
+        0,
+      ),
+      library: document.querySelector(".library")!.getAnimations().length,
+    };
+  });
+  // The library carries the whole transition; the rows inside it stay put.
+  expect(animations).toEqual({ rows: 0, library: 1 });
+  await expect(page.locator(".song-row")).toHaveCount(1);
+  await expectResting(page, "#songs");
+});
+
+test("减少动态效果时方向感退化为即时到位且功能不变", async ({ browser }) => {
+  const context = await browser.newContext({
+    reducedMotion: "reduce",
+    viewport: { width: 480, height: 720 },
+  });
+  const page = await context.newPage();
+  await fixture(page);
+  expect(
+    await page.evaluate(() => {
+      document.querySelector<HTMLButtonElement>('[data-view="queue"]')!.click();
+      return document.querySelector(".library")!.getAnimations().length;
+    }),
+  ).toBe(0);
+  await page.locator('[data-view="playlists"]').click();
+  await expect(page.locator(".playlist-card")).toHaveCount(3);
+  expect(
+    await page.evaluate(() =>
+      [...document.querySelectorAll(".playlist-card")].reduce(
+        (total, card) => total + card.getAnimations().length,
+        0,
+      ),
+    ),
+  ).toBe(0);
+  await page.locator('[data-playlist="netease:1"]').click();
+  await expect(page.locator("#section-title")).toContainText("动画歌单 1");
+  await expect(page.locator("#back-button")).toBeVisible();
+  expect(
+    await page
+      .locator("#back-button")
+      .evaluate((el) => el.getAnimations().length),
+  ).toBe(0);
+  await expect(page.locator(".library")).toHaveCSS("opacity", "1");
+  await page.locator("#back-button").click();
+  await expect(page.locator("#section-title")).toContainText("我的歌单");
+  await expect(page.locator("#back-button")).toBeHidden();
+  await context.close();
+});
+
+test("切换视图途中开启减少动态效果会立即就位", async ({ page }) => {
+  await fixture(page);
+  await page.evaluate(() =>
+    document.querySelector<HTMLButtonElement>('[data-view="queue"]')!.click(),
+  );
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expectResting(page, ".library");
+  expect(
+    await page
+      .locator(".library")
+      .evaluate((element) => getComputedStyle(element).transform),
+  ).toBe("none");
+  await expect(page.locator('[data-view="queue"]')).toHaveClass(/active/);
+  await page.locator('[data-view="favorites"]').click();
+  await expect(page.locator(".song-row")).toHaveCount(1);
+  await expectResting(page, ".library");
+});
+
+// Playback feedback is driven by the media element itself, so the tests watch
+// body[data-playback] rather than the transport button, which stays optimistic.
+const playbackState = (page: Page) => page.locator("body");
+
+test("播放状态以真实音频事件为准，播放按钮保持意图态", async ({ page }) => {
+  await fixture(page);
+  await page.route("https://motion.test/broken.wav", (route) =>
+    route.abort("failed"),
+  );
+  await page.evaluate(() => {
+    const w = window as any;
+    const original = w.__TAURI_INTERNALS__.invoke;
+    w.__TAURI_INTERNALS__.invoke = async (command: string, args: any = {}) => {
+      if (command !== "song_url") return original(command, args);
+      if (w.__holdUrl)
+        await new Promise<void>((resolve) => {
+          w.__finishUrl = resolve;
+        });
+      const response = await original(command, args);
+      return w.__breakUrl
+        ? { ...response, url: "https://motion.test/broken.wav" }
+        : response;
+    };
+    w.__holdUrl = true;
+  });
+  await page.locator(".song-row").first().dblclick();
+  // Intent flips at once; the cover keeps waiting for a real `playing` event.
+  await expect(page.locator("#toggle")).toHaveAttribute("aria-label", "暂停");
+  await expect(playbackState(page)).toHaveAttribute("data-playback", "loading");
+  await page.evaluate(() => {
+    const w = window as any;
+    w.__holdUrl = false;
+    w.__finishUrl();
+  });
+  await expect(playbackState(page)).toHaveAttribute("data-playback", "playing");
+
+  await page.locator("#toggle").click();
+  await expect(playbackState(page)).toHaveAttribute("data-playback", "paused");
+  await expect(page.locator("#toggle")).toHaveAttribute("aria-label", "播放");
+
+  await page.evaluate(() => {
+    (window as any).__breakUrl = true;
+  });
+  await page.locator("#next").click();
+  await expect(playbackState(page)).toHaveAttribute("data-playback", "error");
+  await expect(page.locator("#track-tag")).toHaveText(/失败|未成功/);
+  // A failure is a still red badge, never a beat that suggests progress.
+  expect(
+    await page
+      .locator("#now-cover")
+      .evaluate(
+        (element) => getComputedStyle(element, "::after").animationName,
+      ),
+  ).toBe("none");
+});
+
+test("均衡器徽标只在真实播放时跳动，暂停即放平", async ({ page }) => {
+  await fixture(page);
+  const bars = () =>
+    page.locator("#now-cover .now-eq i").evaluateAll((items) =>
+      items.map((item) => ({
+        animation: getComputedStyle(item).animationName,
+        running: item
+          .getAnimations()
+          .some((animation) => animation.playState === "running"),
+      })),
+    );
+  // Idle: the badge exists but stays invisible and still.
+  await expect(page.locator("#now-cover .now-eq")).toHaveCSS("opacity", "0");
+  expect((await bars()).every((bar) => bar.animation === "none")).toBe(true);
+
+  await page.locator(".song-row").first().dblclick();
+  await expect(playbackState(page)).toHaveAttribute("data-playback", "playing");
+  await expect(page.locator("#now-cover .now-eq")).toHaveCSS("opacity", "1");
+  const playing = await bars();
+  expect(playing).toHaveLength(3);
+  expect(playing.every((bar) => bar.animation === "now-eq")).toBe(true);
+  expect(playing.every((bar) => bar.running)).toBe(true);
+  // Replacing the artwork must never evict the badge from the cover.
+  await page.locator("#next").click();
+  await expect(page.locator("#now-name")).toHaveText("动画歌曲 2");
+  await expect(playbackState(page)).toHaveAttribute("data-playback", "playing");
+  await expect(page.locator("#now-cover .now-eq")).toHaveCount(1);
+  await expect(page.locator("#now-cover .now-eq i")).toHaveCount(3);
+
+  await page.locator("#toggle").click();
+  await expect(playbackState(page)).toHaveAttribute("data-playback", "paused");
+  expect((await bars()).every((bar) => bar.animation === "none")).toBe(true);
+  await expect(page.locator("#now-cover .now-eq")).toHaveCSS("opacity", "1");
+});
+
+test("暂停后封面的呼吸平滑收束回原位", async ({ page }) => {
+  await fixture(page);
+  await page.locator(".song-row").first().dblclick();
+  await expect(playbackState(page)).toHaveAttribute("data-playback", "playing");
+  // Exactly one continuous effect, and it lives on the compositor.
+  expect(
+    await page
+      .locator("#now-cover")
+      .evaluate(
+        (element) =>
+          element
+            .getAnimations()
+            .filter(
+              (animation) =>
+                animation.effect?.getTiming().iterations === Infinity,
+            ).length,
+      ),
+  ).toBe(1);
+  await page.waitForTimeout(1000);
+  await page.locator("#toggle").click();
+  await expect(playbackState(page)).toHaveAttribute("data-playback", "paused");
+  // Settling takes --t-5; the resting state is identity, never a frozen frame.
+  await expect
+    .poll(
+      () =>
+        page
+          .locator("#now-cover")
+          .evaluate((element) => getComputedStyle(element).transform),
+      { timeout: 2000 },
+    )
+    .toBe("none");
+  expect(
+    await page
+      .locator("#now-cover")
+      .evaluate((element) => element.getAnimations().length),
+  ).toBe(0);
+});
+
+test("减少动态效果时播放状态仍然一眼可辨", async ({ browser }) => {
+  const context = await browser.newContext({
+    reducedMotion: "reduce",
+    viewport: { width: 480, height: 720 },
+  });
+  const page = await context.newPage();
+  await fixture(page);
+  await page.locator(".song-row").first().dblclick();
+  await expect(playbackState(page)).toHaveAttribute("data-playback", "playing");
+  expect(
+    await page
+      .locator("#now-cover")
+      .evaluate((element) => element.getAnimations({ subtree: true }).length),
+  ).toBe(0);
+  // The badge alone still tells the four states apart, by colour and size.
+  const playing = await page.locator("#now-cover").evaluate((element) => {
+    const style = getComputedStyle(element, "::after");
+    return {
+      opacity: style.opacity,
+      animation: style.animationName,
+      background: style.backgroundColor,
+    };
+  });
+  expect(playing.opacity).toBe("1");
+  expect(playing.animation).toBe("none");
+  await page.locator("#toggle").click();
+  await expect(playbackState(page)).toHaveAttribute("data-playback", "paused");
+  const paused = await page
+    .locator("#now-cover")
+    .evaluate(
+      (element) => getComputedStyle(element, "::after").backgroundColor,
+    );
+  expect(paused).not.toBe(playing.background);
+  await expect(page.locator("#now-cover")).toHaveCSS("transform", "none");
+  await context.close();
+});
+
+test("当前播放行在窄窗口和宽窗口都带播放状态点", async ({ page }) => {
+  await fixture(page);
+  await page.locator(".song-row").first().dblclick();
+  await expect(playbackState(page)).toHaveAttribute("data-playback", "playing");
+  for (const width of [1280, 393]) {
+    await page.setViewportSize({ width, height: 800 });
+    expect(
+      await page
+        .locator(".song-row.playing .song-info small")
+        .first()
+        .evaluate((element) => {
+          const style = getComputedStyle(element, "::before");
+          return {
+            width: style.width,
+            height: style.height,
+            animation: style.animationName,
+          };
+        }),
+    ).toEqual({ width: "5px", height: "5px", animation: "now-wait" });
+  }
+  // One row carries the marker, so the whole table animates a single element.
+  expect(
+    await page.evaluate(
+      () =>
+        document.querySelectorAll(".song-row.playing .song-info small").length,
+    ),
+  ).toBe(1);
+});
+
+test("切歌带方向：下一首从右侧来，上一首从左侧来", async ({ page }) => {
+  await fixture(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.__coverEntrances = [];
+    const original = Element.prototype.animate;
+    Element.prototype.animate = function (frames: any, options?: any) {
+      // Only the incoming artwork layer; the container carries the breath.
+      if ((this as Element).parentElement?.id === "now-cover")
+        w.__coverEntrances.push(String(frames?.[0]?.transform ?? ""));
+      return original.call(this as any, frames, options);
+    };
+  });
+  await page.locator(".song-row").first().dblclick();
+  await expect(page.locator("#now-name")).toHaveText("动画歌曲 1");
+  await expectResting(page, ".now-heading");
+
+  const forward = await page.evaluate(() => {
+    document.querySelector<HTMLButtonElement>("#next")!.click();
+    const effect = document
+      .querySelector(".now-heading")!
+      .getAnimations()
+      .find((animation) => animation.effect instanceof KeyframeEffect)
+      ?.effect as KeyframeEffect | undefined;
+    return String(effect?.getKeyframes()[0]?.transform ?? "");
+  });
+  expect(forward).toContain("translate3d(8px");
+  await expect(page.locator("#now-name")).toHaveText("动画歌曲 2");
+  await expectResting(page, ".now-heading");
+
+  const backward = await page.evaluate(() => {
+    document.querySelector<HTMLButtonElement>("#previous")!.click();
+    const effect = document
+      .querySelector(".now-heading")!
+      .getAnimations()
+      .find((animation) => animation.effect instanceof KeyframeEffect)
+      ?.effect as KeyframeEffect | undefined;
+    return String(effect?.getKeyframes()[0]?.transform ?? "");
+  });
+  expect(backward).toContain("translate3d(-8px");
+  await expect(page.locator("#now-name")).toHaveText("动画歌曲 1");
+  await expectResting(page, ".now-heading");
+
+  // The artwork tells the same story, clipped by its own frame.
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__coverEntrances))
+    .toEqual(
+      expect.arrayContaining([
+        "translate3d(6%, 0, 0)",
+        "translate3d(-6%, 0, 0)",
+      ]),
+    );
+  await expectResting(page, "#now-cover");
+});
+
+test("歌词面板沿横轴进出，快速反复开关后不留残影", async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 800 });
+  await fixture(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.__panelFrames = [];
+    const original = Element.prototype.animate;
+    Element.prototype.animate = function (frames: any, options?: any) {
+      if ((this as Element).id === "lyrics-panel")
+        w.__panelFrames.push([
+          String(frames?.[0]?.transform ?? ""),
+          String(frames?.[1]?.transform ?? ""),
+        ]);
+      return original.call(this as any, frames, options);
+    };
+  });
+  await page.locator("#lyrics-toggle").click();
+  await expect(page.locator("#lyrics-panel")).toBeVisible();
+  // A pane in normal flow travels a bounded distance, and arrives from the
+  // same edge it is anchored to.
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__panelFrames[0]))
+    .toEqual(["translate3d(28px, 0, 0)", "none"]);
+  await expectResting(page, "#lyrics-panel");
+
+  await page.evaluate(() => {
+    document.querySelector<HTMLButtonElement>("#lyrics-close")!.click();
+    document.querySelector<HTMLButtonElement>("#lyrics-toggle")!.click();
+  });
+  await expectResting(page, "#lyrics-panel");
+  await expect(page.locator("#lyrics-panel")).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - innerWidth,
+    ),
+  ).toBeLessThanOrEqual(0);
+
+  await page.locator("#lyrics-close").click();
+  await expect(page.locator("#lyrics-panel")).toBeHidden();
+  expect(
+    await page
+      .locator("#lyrics-panel")
+      .evaluate((element) => element.getAttribute("style") || ""),
+  ).toBe("");
+});
+
+test("弹窗按所处平台选择进出方向与时长", async ({ browser }) => {
+  const read = (page: Page, selector: string, trigger: string) =>
+    page.evaluate(
+      ({ selector, trigger }) => {
+        document.querySelector<HTMLButtonElement>(trigger)!.click();
+        const effect = document
+          .querySelector(selector)!
+          .getAnimations()
+          .find((animation) => animation.effect instanceof KeyframeEffect)
+          ?.effect as KeyframeEffect | undefined;
+        const frames = effect?.getKeyframes() ?? [];
+        return {
+          first: String(frames[0]?.transform ?? ""),
+          last: String(frames[frames.length - 1]?.transform ?? ""),
+          duration: Number(effect?.getTiming().duration ?? NaN),
+        };
+      },
+      { selector, trigger },
+    );
+
+  const phone = await browser.newContext({
+    viewport: { width: 393, height: 852 },
+    isMobile: true,
+    hasTouch: true,
+    userAgent:
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile",
+  });
+  const mobile = await phone.newPage();
+  await fixture(mobile);
+  // A sheet anchored to the bottom edge clears its own height, never a nudge,
+  // and it must not overshoot past zero and reveal the page beneath it.
+  const opening = await read(mobile, "#theme-dialog", "#theme-button");
+  expect(opening.first).toContain("100%");
+  expect(opening.last).toBe("none");
+  expect(opening.duration).toBe(300);
+  await expectResting(mobile, "#theme-dialog");
+  const closing = await read(mobile, "#theme-dialog", "#theme-close");
+  expect(closing.last).toContain("100%");
+  expect(closing.duration).toBe(180);
+  await expect(mobile.locator("#theme-dialog")).toBeHidden();
+  await phone.close();
+
+  const desktop = await browser.newContext({
+    viewport: { width: 900, height: 700 },
+  });
+  const page = await desktop.newPage();
+  await fixture(page);
+  // On a desktop surface the dialog floats up: scale leads, offset supports.
+  const floated = await read(page, "#theme-dialog", "#theme-button");
+  expect(floated.first).toContain("scale(0.965)");
+  expect(floated.first).toContain("10px");
+  expect(floated.duration).toBe(300);
+  await expectResting(page, "#theme-dialog");
+  await desktop.close();
+});
+
+test("两栏布局的大封面换用更小的呼吸幅度，改变窗口宽度不丢相位", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await fixture(page);
+  await page.locator(".song-row").first().dblclick();
+  await expect(playbackState(page)).toHaveAttribute("data-playback", "playing");
+  const column = await page.locator("#now-cover").evaluate((element) => ({
+    pulse: getComputedStyle(element).getPropertyValue("--now-pulse").trim(),
+    dot: getComputedStyle(element, "::after").width,
+    width: element.clientWidth,
+  }));
+  // A column-sized cover would shout at the compact amplitude, so the
+  // stylesheet halves it and grows the badge to match. The exact size follows
+  // the column (36vw here), so only its scale class is asserted.
+  expect(column.pulse).toBe("1.012");
+  expect(column.dot).toBe("34px");
+  expect(column.width).toBeGreaterThan(300);
+  expect(column.width).toBeLessThanOrEqual(440);
+  await expect
+    .poll(() => page.locator("#now-cover").evaluate(breathingScale))
+    .toContain("1.012");
+
+  await page.waitForTimeout(800);
+  const before = await page.locator("#now-cover").evaluate(breathingTime);
+  await page.setViewportSize({ width: 760, height: 800 });
+  await expect
+    .poll(() => page.locator("#now-cover").evaluate(breathingScale))
+    .toContain("1.022");
+  // Rebuilding for the new amplitude keeps the phase; it does not restart.
+  expect(
+    await page.locator("#now-cover").evaluate(breathingTime),
+  ).toBeGreaterThanOrEqual(before);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - innerWidth,
+    ),
+  ).toBeLessThanOrEqual(0);
+});
+
+// Both run inside the page, so neither may reach for module scope.
+function breathingScale(element: Element) {
+  const effect = element
+    .getAnimations()
+    .find((animation) => animation.effect?.getTiming().iterations === Infinity)
+    ?.effect as KeyframeEffect | undefined;
+  return String(effect?.getKeyframes()[1]?.transform ?? "");
+}
+
+function breathingTime(element: Element) {
+  const animation = element
+    .getAnimations()
+    .find((candidate) => candidate.effect?.getTiming().iterations === Infinity);
+  return Number(animation?.currentTime ?? -1);
+}

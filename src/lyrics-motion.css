@@ -1,19 +1,27 @@
 /* Keep glyph geometry stable as focus passes between lines. Only compositor
-   properties animate; no font-size/weight changes or per-line blur filters. */
+   properties animate; no font-size/weight changes or per-line blur filters.
+   Four depths and a beat: a line arrives quickly and leaves with a tail, so
+   the sung line reads as the one the music is on. */
 #lyrics p[data-line] {
-  opacity: 0.32;
+  opacity: 0.3;
   transform-origin: left center;
   transform: translateX(0) scale(1);
   transition:
-    opacity 320ms ease,
-    transform 480ms cubic-bezier(0.22, 1, 0.36, 1);
+    opacity 400ms var(--e-exit),
+    transform var(--t-3) var(--e-enter);
+}
+#lyrics p[data-line].past {
+  opacity: 0.2;
 }
 #lyrics p[data-line].near {
-  opacity: 0.56;
+  opacity: 0.5;
 }
 #lyrics p[data-line].current {
   opacity: 1;
-  transform: translateX(2px) scale(1);
+  transform: translate3d(6px, 0, 0) scale(1);
+  transition:
+    opacity var(--t-2) var(--e-enter),
+    transform var(--t-3) var(--e-enter);
 }
 @media (hover: hover) {
   #lyrics p[data-line]:hover {
@@ -29,7 +37,9 @@
   opacity: 1;
 }
 @media (prefers-reduced-motion: reduce) {
-  #lyrics p[data-line] {
+  /* The depth tiers stay; only their travel and easing go away. */
+  #lyrics p[data-line],
+  #lyrics p[data-line].current {
     transition: none;
   }
   #lyrics p[data-line].current {

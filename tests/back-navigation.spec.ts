@@ -110,6 +110,18 @@ function swipe(
           true,
         );
       fire("touchend", to.x, to.y, false);
+      // Report what the release started, so a committed swipe can be checked
+      // without racing its own 180ms exit.
+      const library = document.querySelector<HTMLElement>(".library")!;
+      const effect = library.getAnimations()[0]?.effect as
+        KeyframeEffect | undefined;
+      const frames = effect?.getKeyframes() ?? [];
+      const last = frames[frames.length - 1];
+      return {
+        exit: String(last?.transform ?? ""),
+        exitOpacity: String(last?.opacity ?? ""),
+        settling: library.classList.contains("back-swipe-settle"),
+      };
     },
     { from, to },
   );
@@ -239,5 +251,65 @@ test("#back-button exists and is visible exactly in the playlist detail view", a
   expect(
     await page.locator("#back-button").evaluate((el) => el.offsetParent),
   ).not.toBeNull();
+  await context.close();
+});
+
+test("提交的返回手势把当前页送走，随后上一层补位且不残留内联样式", async ({
+  browser,
+}) => {
+  const context = await browser.newContext(phone);
+  const page = await context.newPage();
+  await setup(page);
+  await openPlaylist(page);
+  const released = await swipe(page, { x: 8, y: 400 }, { x: 160, y: 402 });
+  // The finger's promise is kept: the page keeps going right and fades out
+  // instead of snapping back to where the drag started.
+  expect(Number(/(-?[\d.]+)px/.exec(released.exit)?.[1])).toBeGreaterThan(0);
+  expect(released.exitOpacity).toBe("0");
+  expect(released.settling).toBe(false);
+  await expect(page.locator("#section-title")).toContainText("我的歌单");
+  await expect(page.locator(".playlist-card")).toHaveCount(24);
+  await expect(page.locator("#back-button")).toBeHidden();
+  await expect
+    .poll(() =>
+      page.locator(".library").evaluate((element) => ({
+        transform: (element as HTMLElement).style.transform,
+        opacity: (element as HTMLElement).style.opacity,
+        settling: element.classList.contains("back-swipe-settle"),
+      })),
+    )
+    .toEqual({ transform: "", opacity: "", settling: false });
+  // The previous layer is usable straight away.
+  await page.locator('[data-playlist="netease:101"]').tap();
+  await expect(page.locator("#section-title")).toContainText("返回歌单 2");
+  await context.close();
+});
+
+test("连续快速的未提交手势不会让上一次的回弹过渡提前解除", async ({
+  browser,
+}) => {
+  const context = await browser.newContext(phone);
+  const page = await context.newPage();
+  await setup(page);
+  await openPlaylist(page);
+  const settling = () =>
+    page
+      .locator(".library")
+      .evaluate((element) => element.classList.contains("back-swipe-settle"));
+  await swipe(page, { x: 8, y: 400 }, { x: 48, y: 400 });
+  await page.waitForTimeout(150);
+  const second = await swipe(page, { x: 8, y: 400 }, { x: 48, y: 400 });
+  expect(second.settling).toBe(true);
+  // The first gesture's 220ms timer lands here; it must not strip the class
+  // out from under the second gesture's rebound.
+  await page.waitForTimeout(100);
+  expect(await settling()).toBe(true);
+  await expect.poll(settling).toBe(false);
+  await expect(page.locator("#section-title")).toContainText("返回歌单 15");
+  expect(
+    await page
+      .locator(".library")
+      .evaluate((element) => (element as HTMLElement).style.transform),
+  ).toBe("");
   await context.close();
 });

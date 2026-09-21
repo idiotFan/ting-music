@@ -49,8 +49,15 @@ import { mountPhoneLogin, type PhoneLoginResult } from "./phone-login";
 import { setupMobileViewport } from "./mobile-viewport";
 import { setupBackGesture } from "./back-gesture";
 import { setupPageScale } from "./page-scale";
-import { animateContent, openDialog, closeDialog } from "./motion";
+import {
+  MOTION,
+  animateArrival,
+  animateContent,
+  openDialog,
+  closeDialog,
+} from "./motion";
 import { createCover } from "./cover";
+import { setupPlaybackState } from "./playback-state";
 import { setupSync } from "./sync";
 import { systemMediaBackend } from "./system-media";
 import { createMediaSession } from "./media-session.mjs";
@@ -94,6 +101,29 @@ type Playback = {
 };
 type View =
   "discover" | "favorites" | "local" | "queue" | "playlists" | "playlist";
+// The nav renders these in order, so a tap that moves right must bring its
+// content in from the right. A playlist detail is one layer deeper instead.
+const NAV_ORDER: View[] = [
+  "discover",
+  "playlists",
+  "favorites",
+  "local",
+  "queue",
+];
+type Move = { direction: -1 | 1; distance: number; duration: number };
+function viewMove(previous: View, next: View): Move {
+  if (next === "playlist")
+    return { direction: 1, distance: MOTION.dPush, duration: MOTION.t4 };
+  if (previous === "playlist")
+    return { direction: -1, distance: MOTION.dPush, duration: MOTION.t3 };
+  const from = NAV_ORDER.indexOf(previous),
+    to = NAV_ORDER.indexOf(next);
+  return {
+    direction: from < 0 || to < 0 || to >= from ? 1 : -1,
+    distance: MOTION.dLateral,
+    duration: MOTION.t3,
+  };
+}
 type Profile = { userId: number; nickname: string; avatar: string };
 type PlaylistFilter = "recent" | Source | "internal";
 let playlistFilter = (readSetting("ting.playlist-filter") ||
@@ -265,9 +295,19 @@ let playlistToRemember:
 let lyrics: { time: number; text: string }[] = [],
   activeLine = -1,
   trialStart = 0;
+// Which way the queue moved into the current track: forwards, back, or a jump
+// picked from a list, which has no direction at all.
+let trackDirection: -1 | 0 | 1 = 0;
 const audio = new Audio();
 audio.preload = "metadata";
 audio.volume = 0.7;
+// The transport button stays optimistic; this is the fact behind it, taken
+// from the media events alone and published on body[data-playback].
+const playback = setupPlaybackState(
+  audio,
+  () => !!current,
+  () => preparingPlayback,
+);
 const mediaBackend = await systemMediaBackend();
 const systemMedia = createMediaSession(audio, {
   ...mediaBackend,
@@ -318,7 +358,7 @@ if (isTauri() && platform.mac)
   document.documentElement.classList.add("mac-window");
 $("#app").innerHTML = `
 <header class="app-header" data-tauri-drag-region><button type="button" class="brand" aria-label="听 首页"><span class="brand-mark">听</span><strong>Ting</strong></button><span class="app-caption" data-tauri-drag-region>音乐，简单一点。</span><button id="sync-button" class="icon-button" aria-label="iCloud 歌单同步" title="iCloud 歌单同步">${icon("Cloud")}</button><button id="theme-button" class="icon-button" aria-label="切换主题" title="主题配色">${icon("Palette")}</button><button id="account-button" class="account-button" aria-label="登录网易云"><span class="avatar">听</span><span id="account-name">登录</span></button></header>
-<section class="now-panel" aria-label="正在播放"><div class="now-card"><div id="now-cover" class="now-cover"><span class="fallback-cover">${icon("Music2")}</span></div><div class="now-heading"><h3 id="now-name">选一首喜欢的歌</h3><p id="now-artist">搜索音乐，或打开你的歌单</p><div class="track-tag" id="track-tag">等待播放</div></div><button id="download-current" class="icon-button" aria-label="下载当前歌曲最高可用音质" title="下载当前歌曲最高可用音质" disabled>${icon("Download")}</button><button id="now-fav" class="icon-button" aria-label="收藏当前歌曲" disabled>${icon("Heart")}</button></div></section>
+<section class="now-panel" aria-label="正在播放"><div class="now-card"><div id="now-cover" class="now-cover"><span class="fallback-cover">${icon("Music2")}</span><span class="now-eq" aria-hidden="true"><i></i><i></i><i></i></span></div><div class="now-heading"><h3 id="now-name">选一首喜欢的歌</h3><p id="now-artist">搜索音乐，或打开你的歌单</p><div class="track-tag" id="track-tag">等待播放</div></div><button id="download-current" class="icon-button" aria-label="下载当前歌曲最高可用音质" title="下载当前歌曲最高可用音质" disabled>${icon("Download")}</button><button id="now-fav" class="icon-button" aria-label="收藏当前歌曲" disabled>${icon("Heart")}</button></div></section>
 <section class="player" aria-label="播放控制"><div class="transport"><div class="timeline"><span id="elapsed">0:00</span><input id="seek" aria-label="播放进度" type="range" min="0" max="100" value="0" step="0.1" disabled/><span id="duration">0:00</span></div><div class="transport-buttons"><button id="repeat" class="icon-button mode-button" aria-label="播放模式：顺序播放" title="切换播放模式">${icon("ListOrdered")}</button><button id="previous" class="icon-button" aria-label="上一首">${icon("SkipBack")}</button><button id="toggle" class="play-toggle" aria-label="播放">${icon("Play")}</button><button id="next" class="icon-button" aria-label="下一首">${icon("SkipForward")}</button><button id="lyrics-toggle" class="icon-button lyrics-toggle" aria-label="显示歌词" aria-expanded="false" aria-controls="lyrics-panel">词</button></div></div><div class="player-options"><div class="volume"><button id="mute" class="icon-button" aria-label="静音">${icon("Volume2")}</button><input id="volume" aria-label="音量" type="range" min="0" max="1" value="0.7" step="0.01"/></div><span id="mode-label">顺序播放</span><select id="quality" aria-label="播放音质">${Object.entries(
   qualityNames,
 )
@@ -459,7 +499,9 @@ function renderState(container: HTMLElement, markup: string) {
   if (container.dataset.state === markup) return;
   container.dataset.state = markup;
   container.innerHTML = markup;
-  animateContent(container, { distance: 4 });
+  // An empty state or a loading placeholder is a label swapped inside one
+  // slot, not content arriving from somewhere: it has no direction.
+  animateContent(container, { distance: 0, duration: MOTION.t2, from: 0.35 });
 }
 const navIndicator = document.createElement("span");
 navIndicator.className = "nav-indicator";
@@ -475,7 +517,10 @@ function updateNavIndicator() {
 }
 new ResizeObserver(updateNavIndicator).observe($("nav"));
 updateNavIndicator();
-requestAnimationFrame(() => navIndicator.classList.add("ready"));
+const indicatorReady = () => navIndicator.classList.add("ready");
+if (document.fonts?.ready)
+  void document.fonts.ready.then(indicatorReady).catch(indicatorReady);
+else requestAnimationFrame(indicatorReady);
 function syncRows() {
   $("#fav-count").textContent = String(favorites.length);
   $("#queue-count").textContent =
@@ -486,7 +531,7 @@ function syncRows() {
     : `${playbackQueue.songs.length} 首`;
   const favoriteIds = new Set(favorites.map(songKey));
   const visibleSongs = new Map(list().map((song) => [songKey(song), song]));
-  document.querySelectorAll<HTMLElement>(".song-row").forEach((row, i) => {
+  document.querySelectorAll<HTMLElement>(".song-row").forEach((row) => {
     const id = row.dataset.song!,
       selected = id === songKey(current);
     row.classList.toggle("playing", selected);
@@ -494,9 +539,6 @@ function syncRows() {
     row
       .querySelector(".song-title")
       ?.setAttribute("aria-pressed", String(id === selectedSongId));
-    const number = row.querySelector<HTMLElement>(".row-number")!;
-    const text = selected ? "♫" : String(i + 1).padStart(2, "0");
-    if (number.textContent !== text) number.textContent = text;
     const fav = row.querySelector<HTMLButtonElement>("[data-favorite]")!;
     const liked = favoriteIds.has(id);
     fav.classList.toggle("is-favorite", liked);
@@ -520,7 +562,25 @@ function selectSong(id: string) {
       ?.setAttribute("aria-pressed", String(key === id));
   }
 }
+// Set by setView so a view transition never plays twice: once as the library
+// sliding in, once as every fresh row popping up inside it.
+let suppressRowStagger = false;
+// Must run after every DOM write of this render; it reads geometry once and
+// then only reads, so the batch costs a single forced layout.
+function visibleHead(rows: HTMLElement[]): HTMLElement[] {
+  const box = $(".main-scroll").getBoundingClientRect();
+  const picked: HTMLElement[] = [];
+  for (const row of rows) {
+    const rect = row.getBoundingClientRect();
+    if (rect.top > box.bottom + 40) break;
+    if (rect.bottom >= box.top - 40) picked.push(row);
+    if (picked.length >= MOTION.staggerMax) break;
+  }
+  return picked;
+}
 function renderSongs() {
+  const stagger = !suppressRowStagger;
+  suppressRowStagger = false;
   const songs = list(),
     grid = view === "playlists";
   const loading =
@@ -558,7 +618,7 @@ function renderSongs() {
           : true;
   $("#more").toggleAttribute("disabled", busy || libraryBusy);
   if (grid) {
-    renderPlaylists();
+    renderPlaylists(stagger);
     syncRows();
     return;
   }
@@ -599,7 +659,9 @@ function renderSongs() {
     .querySelectorAll(".empty-state,.skeleton")
     .forEach((n) => n.remove());
   delete container.dataset.state;
-  let contentChanged = false;
+  // Only rows created by this render arrive; a signature rewrite is an update
+  // of something already on screen, and retained rows must not move at all.
+  const fresh: HTMLElement[] = [];
   const existing = new Map(
     Array.from(container.querySelectorAll<HTMLElement>(".song-row")).map(
       (row) => [row.dataset.song!, row],
@@ -607,16 +669,12 @@ function renderSongs() {
   );
   const wanted = new Set(songs.map((s) => songKey(s)));
   existing.forEach((row, id) => {
-    if (!wanted.has(id)) {
-      row.remove();
-      contentChanged = true;
-    }
+    if (!wanted.has(id)) row.remove();
   });
   songs.forEach((song, i) => {
     let row = existing.get(songKey(song));
     const signature = JSON.stringify([song, view === "queue"]);
     if (!row || row.dataset.signature !== signature) {
-      contentChanged = true;
       const next = document.createElement("div");
       next.className = "song-row";
       next.dataset.song = songKey(song);
@@ -627,19 +685,19 @@ function renderSongs() {
       next.title = mobileDevice ? "轻点播放" : "单击选中，双击播放；回车播放";
       next.innerHTML = `<span class="row-number"></span><div class="song-info">${coverMarkup(song)}<div><button class="song-title" aria-label="${mobileDevice ? "播放" : "选中"} ${esc(song.name)}" aria-pressed="false">${esc(song.name)}</button>${song.localUrl ? "<em>本地</em>" : song.fee === 1 ? "<em>VIP</em>" : ""}<small><span class="source-badge" data-source="${song.source || "netease"}">${sourceName(song)}</span> ${esc(song.artist)}</small></div></div><span class="album">${esc(song.album)}</span><span class="song-duration">${song.duration ? formatTime(song.duration / 1000) : "—"}</span><div class="row-actions"><button class="icon-button favorite" data-favorite="${songKey(song)}" ${song.localUrl ? "disabled" : ""}>${icon("Heart")}</button><button class="icon-button" data-${view === "queue" ? "remove" : "enqueue"}="${songKey(song)}" aria-label="${view === "queue" ? "移出队列" : "加入队列"} ${esc(song.name)}">${icon(view === "queue" ? "X" : "Plus")}</button><button class="icon-button" data-song-menu="${songKey(song)}" aria-label="歌曲操作 ${esc(song.name)}" ${song.localUrl ? "disabled" : ""}>${icon("Ellipsis")}</button></div>`;
       if (row) row.replaceWith(next);
+      else fresh.push(next);
       row = next;
     }
-    if (container.children[i] !== row) {
-      contentChanged = true;
+    if (container.children[i] !== row)
       container.insertBefore(row, container.children[i] ?? null);
-    }
   });
   syncRows();
-  if (contentChanged) animateContent(container, { distance: 5 });
+  if (stagger && fresh.length) animateArrival(visibleHead(fresh));
 }
 let playlistsLoaded = false;
 const viewScroll = new Map<View, number>();
 function setView(next: View) {
+  const previous = view;
   const changed = view !== next;
   if (changed) {
     if (view === "playlists" && libraryBusy) playlistsLoaded = false;
@@ -677,10 +735,35 @@ function setView(next: View) {
   if (heading.firstChild?.nodeValue !== titles[view]) {
     heading.firstChild!.nodeValue = titles[view];
   }
+  // The library itself carries the transition; its rows must not each animate.
+  if (changed) suppressRowStagger = true;
   renderSongs();
   if (changed) {
-    $(".main-scroll").scrollTop = viewScroll.get(next) || 0;
-    animateContent($(".library"), { distance: 10, duration: 260 });
+    const restored = viewScroll.get(next) || 0;
+    $(".main-scroll").scrollTop = restored;
+    const move = viewMove(previous, next);
+    // A restored scroll position means the page was already here and is only
+    // being revealed again, so it arrives softer than genuinely new content.
+    animateContent($(".library"), {
+      axis: "x",
+      direction: move.direction,
+      distance: restored > 0 ? Math.round(move.distance * 0.6) : move.distance,
+      duration: restored > 0 ? MOTION.t3 : move.duration,
+      from: 0,
+      easing: MOTION.move,
+    });
+    // Entrance only: the hidden attribute alone owns the resting state, so a
+    // pop can never strand the button visible.
+    if (move.direction === 1 && next === "playlist")
+      animateContent($("#back-button"), {
+        axis: "x",
+        direction: -1,
+        distance: 8,
+        duration: MOTION.t3,
+        delay: 80,
+        from: 0,
+        easing: MOTION.enter,
+      });
     updateNavIndicator();
   }
 }
@@ -778,20 +861,39 @@ function updateTransport() {
   if ($("#toggle").dataset.playing !== String(playing)) {
     $("#toggle").innerHTML = icon(playing ? "Pause" : "Play");
     $("#toggle").dataset.playing = String(playing);
-    animateContent($("#toggle svg"), { distance: 2, duration: 160 });
+    animateContent($("#toggle svg"), {
+      distance: 0,
+      scaleFrom: 0.84,
+      duration: MOTION.t1,
+      from: 0,
+      easing: MOTION.enter,
+    });
   }
   $("#toggle").setAttribute("aria-label", playing ? "暂停" : "播放");
   document.body.classList.toggle("playing", playing);
+  playback.refresh();
 }
 function updateNow(song: Song) {
-  updateCover(song.cover || "", `${song.album || song.name} 封面`);
+  // Cover and title change together, in the direction the queue moved, so the
+  // pair reads as one object being replaced rather than two separate edits.
+  const dir = trackDirection;
+  trackDirection = 0;
+  updateCover(song.cover || "", `${song.album || song.name} 封面`, dir);
   $("#now-name").textContent = song.name;
   $("#lyrics-title").textContent = song.name;
   $("#lyrics-artist").textContent = `${sourceName(song)} · ${song.artist}`;
   $("#now-name").title = song.name;
   $("#now-artist").textContent = `${sourceName(song)} · ${song.artist}`;
-  animateContent($(".now-heading"), { distance: 4 });
+  animateContent($(".now-heading"), {
+    axis: "x",
+    direction: dir || 1,
+    distance: dir ? 8 : 0,
+    duration: MOTION.t3,
+    from: 0.35,
+    easing: MOTION.move,
+  });
   updateFavorite();
+  playback.refresh();
 }
 function renderLyrics(markup: string) {
   const box = $("#lyrics");
@@ -799,7 +901,10 @@ function renderLyrics(markup: string) {
   box.inert = false;
   box.setAttribute("aria-busy", "false");
   lyricFollower.reset();
-  if (!box.hidden) animateContent(box, { distance: 6, duration: 280 });
+  // Start from the same 0.55 that marks the pane busy, so the resolution of
+  // "loading lyrics" is actually visible instead of being swallowed.
+  if (!box.hidden)
+    animateContent(box, { distance: 0, duration: MOTION.t3, from: 0.55 });
 }
 let preparingPlayback = false;
 async function play(
@@ -947,6 +1052,7 @@ async function play(
   }
 }
 function skip(delta: number, automatic = false, shouldResume = true) {
+  trackDirection = delta > 0 ? 1 : -1;
   const next = playbackQueue.next(delta, playbackMode, automatic);
   if (next?.restart) audio.currentTime = 0;
   else if (next?.song)
@@ -973,7 +1079,13 @@ function renderPlaybackMode() {
   if ($("#repeat").dataset.mode !== playbackMode) {
     $("#repeat").innerHTML = icon(icons[playbackMode]);
     $("#repeat").dataset.mode = playbackMode;
-    animateContent($("#repeat svg"), { distance: 2, duration: 160 });
+    animateContent($("#repeat svg"), {
+      distance: 0,
+      scaleFrom: 0.84,
+      duration: MOTION.t1,
+      from: 0,
+      easing: MOTION.enter,
+    });
   }
   $("#repeat").setAttribute("aria-label", `播放模式：${names[playbackMode]}`);
   $("#repeat").title = `${names[playbackMode]} · 点击切换`;
@@ -1279,8 +1391,11 @@ function updateVolume() {
     button.dataset.icon = glyph;
     button.innerHTML = icon(glyph);
     animateContent(button.querySelector("svg")!, {
-      distance: 2,
-      duration: 160,
+      distance: 0,
+      scaleFrom: 0.84,
+      duration: MOTION.t1,
+      from: 0,
+      easing: MOTION.enter,
     });
   }
 }
@@ -1415,7 +1530,7 @@ function displayedPlaylists(): Playlist[] {
     accountKey,
   );
 }
-function renderPlaylists() {
+function renderPlaylists(stagger = true) {
   const box = $("#playlist-grid"),
     items = displayedPlaylists();
   document
@@ -1468,12 +1583,9 @@ function renderPlaylists() {
     ),
   );
   const wanted = new Set(items.map(playlistKey));
-  let changed = false;
+  const fresh: HTMLElement[] = [];
   existing.forEach((card, key) => {
-    if (!wanted.has(key)) {
-      card.remove();
-      changed = true;
-    }
+    if (!wanted.has(key)) card.remove();
   });
   items.forEach((item, i) => {
     const key = playlistKey(item);
@@ -1484,7 +1596,7 @@ function renderPlaylists() {
       card.dataset.playlist = key;
       card.innerHTML =
         '<span class="playlist-art"><span class="fallback-cover">♪</span></span><strong></strong><span class="playlist-meta"></span><small></small>';
-      changed = true;
+      fresh.push(card);
     }
     const name = card.querySelector("strong")!;
     if (name.textContent !== item.name) name.textContent = item.name;
@@ -1501,12 +1613,10 @@ function renderPlaylists() {
         ? `<img src="${esc(item.cover)}" alt="${esc(item.name)}" loading="lazy" referrerpolicy="no-referrer"/>`
         : '<span class="fallback-cover">♪</span>';
     }
-    if (cards!.children[i] !== card) {
+    if (cards!.children[i] !== card)
       cards!.insertBefore(card, cards!.children[i] ?? null);
-      changed = true;
-    }
   });
-  if (changed) animateContent(cards, { distance: 5 });
+  if (stagger && fresh.length) animateArrival(visibleHead(fresh));
 }
 async function loadPlaylists(append = false) {
   setView("playlists");
@@ -2013,11 +2123,14 @@ $("#quality").onchange = () => {
 };
 
 function playAll() {
+  trackDirection = 0;
   if (list().length) playSelection(list()[0]);
 }
 
 // Start the selected track immediately; pagination belongs to the queue, not the visible page.
 function playSelection(song: Song) {
+  // Picking from a list is a jump, not a step, so the cover simply dissolves.
+  trackDirection = 0;
   const item = view === "playlist" ? selectedPlaylist : undefined;
   const startOffset = playlistOffset,
     expected = playlistTotal;

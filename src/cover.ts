@@ -7,28 +7,35 @@ export function createCover(
   let generation = 0;
   let pending: (() => void) | undefined;
   let finishFade: (() => void) | undefined;
-  let queued: HTMLElement | undefined;
+  let queued: { node: HTMLElement; direction: -1 | 0 | 1 } | undefined;
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
   reduced.addEventListener("change", () => {
     if (reduced.matches) finishFade?.();
   });
-  function swap(next: HTMLElement) {
+  function swap(next: HTMLElement, direction: -1 | 0 | 1) {
     // Finish the visible blend naturally. Keep only the newest decoded image
     // waiting behind it, so quick cached changes cannot snap the middle cover.
     if (finishFade) {
-      queued = next;
+      queued = { node: next, direction };
       return;
     }
-    const previous = container.firstElementChild;
+    // The playback badge is a permanent child, never a cover layer.
+    const previous = container.querySelector(":scope > :not(.now-eq)");
     container.append(next);
     if (!previous || reduced.matches || typeof next.animate !== "function") {
       previous?.remove();
       return;
     }
-    const animation = next.animate([{ opacity: 0 }, { opacity: 1 }], {
-      duration: 240,
-      easing: "ease-out",
-    });
+    // Skipping forwards or back brings the new artwork in from that side, so
+    // the cover and the title tell one story. The frame clips the travel.
+    const shift = direction ? `${direction * 6}%` : "0%";
+    const animation = next.animate(
+      [
+        { opacity: 0, transform: `translate3d(${shift}, 0, 0)` },
+        { opacity: 1, transform: "none" },
+      ],
+      { duration: 240, easing: "ease-out" },
+    );
     const finish = () => {
       animation.onfinish = null;
       animation.cancel();
@@ -36,12 +43,12 @@ export function createCover(
       if (finishFade === finish) finishFade = undefined;
       const nextReady = queued;
       queued = undefined;
-      if (nextReady) swap(nextReady);
+      if (nextReady) swap(nextReady.node, nextReady.direction);
     };
     finishFade = finish;
     animation.onfinish = finish;
   }
-  return (src: string, alt: string) => {
+  return (src: string, alt: string, direction: -1 | 0 | 1 = 0) => {
     if (src === requested) {
       container.querySelectorAll("img").forEach((image) => (image.alt = alt));
       return;
@@ -52,7 +59,7 @@ export function createCover(
     pending?.();
     pending = undefined;
     if (!src) {
-      swap(fallback());
+      swap(fallback(), direction);
       return;
     }
     const image = new Image();
@@ -79,7 +86,7 @@ export function createCover(
       if (serial !== generation) return;
       pending = undefined;
       if (!loaded) requested = undefined;
-      swap(loaded ? image : fallback());
+      swap(loaded ? image : fallback(), direction);
     };
     pending = () => {
       settled = true;

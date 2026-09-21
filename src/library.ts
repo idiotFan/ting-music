@@ -1,4 +1,4 @@
-import { animateContent, openDialog, closeDialog } from "./motion";
+import { MOTION, animateContent, openDialog, closeDialog } from "./motion";
 import { songKey, uniqueSongs, formatTime } from "./model.mjs";
 import { changes, type Batch } from "./library-sync-model";
 export type Source = "netease" | "qq";
@@ -388,7 +388,16 @@ export function setupLibrary(o: Options) {
     q("#library-close").onclick = close;
     openDialog(dialog);
     if (changingScreen) {
-      animateContent(q("#library-screen"));
+      // Every step of the wizard goes deeper, never back, so the new screen
+      // always comes from the right; the dialog itself owns the vertical axis.
+      animateContent(q("#library-screen"), {
+        axis: "x",
+        direction: 1,
+        distance: MOTION.dLateral,
+        duration: MOTION.t3,
+        from: 0,
+        easing: MOTION.move,
+      });
       q("#library-title").focus({ preventScroll: true });
     }
   }

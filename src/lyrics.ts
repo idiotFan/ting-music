@@ -1,5 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { mobileDevice } from "./platform";
+import { MOTION } from "./motion";
 import "./lyrics-motion.css";
 export function setupLyrics(
   audio: HTMLAudioElement,
@@ -101,6 +102,12 @@ export function setupLyrics(
     panel.style.removeProperty("opacity");
     panel.style.removeProperty("transform");
   }
+  // The panel is anchored to the right edge at every width, so it arrives and
+  // leaves on the X axis. How far it travels is a layout fact: a fixed drawer
+  // clears its own width, while the desktop column only slides a hand's width
+  // into the space the native window just made.
+  const offset = () =>
+    getComputedStyle(panel).getPropertyValue("--lyrics-enter").trim() || "28px";
   async function setOpen(open: boolean) {
     if (open === opened) return;
     const serial = ++transition;
@@ -112,9 +119,7 @@ export function setupLyrics(
       transform:
         wasVisible && previous.transform !== "none"
           ? previous.transform
-          : mobileDevice && !wasVisible
-            ? "translateY(48px)"
-            : "translateY(0px)",
+          : "none",
     };
     // Preserve the currently painted frame before cancelling a reversed motion.
     // Otherwise cancellation briefly paints the fully-open panel on WebKit.
@@ -135,17 +140,18 @@ export function setupLyrics(
         if (mobileDevice) close.focus({ preventScroll: true });
         center(true);
       }
+      // Read the travel once the open state is settled: the drawer only knows
+      // how wide it is after `lyrics-open` has applied.
+      const hidden = `translate3d(${offset()}, 0, 0)`;
+      if (!wasVisible) from.transform = hidden;
       const destination = {
         opacity: open ? "1" : "0",
-        transform:
-          !open && mobileDevice ? "translateY(48px)" : "translateY(0px)",
+        transform: open ? "none" : hidden,
       };
       if (!panel.hidden && !reduced()) {
         const animation = panel.animate([from, destination], {
-          duration: open ? (mobileDevice ? 360 : 240) : 200,
-          easing: open
-            ? "cubic-bezier(0.22, 1, 0.36, 1)"
-            : "cubic-bezier(0.4, 0, 1, 1)",
+          duration: open ? MOTION.t4 : MOTION.t2,
+          easing: open ? MOTION.enter : MOTION.exit,
           fill: "both",
         });
         sheetAnimation = animation;
@@ -160,17 +166,20 @@ export function setupLyrics(
         if (serial !== transition) return;
         if (mobileDevice) toggle.focus({ preventScroll: true });
       }
-      clearPanelMotion();
     } catch (e) {
       if (serial !== transition) return;
       opened = nativeDesktop ? nativeExpanded : wasVisible;
       visibility(opened);
       toggle.setAttribute("aria-expanded", String(opened));
       toggle.setAttribute("aria-label", opened ? "隐藏歌词" : "显示歌词");
-      clearPanelMotion();
       onError(`无法调整歌词窗口：${String(e)}`);
     } finally {
-      if (serial === transition) releasePlayerWidth();
+      // Every early return leaves through here, so a filled animation can
+      // never strand the panel off screen with inline styles.
+      if (serial === transition) {
+        releasePlayerWidth();
+        clearPanelMotion();
+      }
     }
   }
   motionPreference.addEventListener("change", () => {

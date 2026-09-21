@@ -1,15 +1,51 @@
+/* One ladder of durations, easings and distances. Every transition in the app
+   reads from these tokens so motion stays comparable across files, and the
+   JavaScript mirror lives in src/motion.ts as MOTION. */
+:root {
+  /* Durations. Exits always drop one step below their matching entrance. */
+  --t-1: 120ms; /* micro feedback: icon swaps, press rebound */
+  --t-2: 180ms; /* every exit */
+  --t-3: 240ms; /* same-layer arrival, sibling switch, leaving a layer */
+  --t-4: 300ms; /* surface entrance, pushing into a layer */
+  --t-5: 420ms; /* settling a continuous effect back to identity */
+
+  /* Easings. Entrances decelerate, exits accelerate, moves stay soft at both
+     ends, and the breathing curve approximates a sine half period. */
+  --e-enter: cubic-bezier(0.22, 1, 0.36, 1);
+  --e-exit: cubic-bezier(0.4, 0, 1, 1);
+  --e-move: cubic-bezier(0.32, 0.72, 0, 1);
+  --e-breath: cubic-bezier(0.37, 0, 0.63, 1);
+
+  /* Distances scale with the surface that moves. Edge-anchored fixed surfaces
+     use 100% instead of a pixel value. */
+  --d-micro: 4px; /* text replaced inside one slot */
+  --d-arrive: 6px; /* a newly added row landing */
+  --d-lateral: 16px; /* sibling tab switch */
+  --d-push: 28px; /* pushing into or out of a layer */
+
+  --stagger-step: 22ms;
+
+  /* Continuous playback feedback. The breath is slow enough to read as a
+     state rather than an event; buffering uses a third of its period. */
+  --now-pulse-period: 4400ms;
+  --now-wait-period: 1400ms;
+}
+
 /* A reversible opacity transition keeps the backdrop continuous when a
    closing dialog reopens. Older WebViews without @starting-style show the
    first backdrop immediately, while retaining safe close/reopen behavior. */
 dialog[data-motion]::backdrop {
   opacity: 1;
-  transition: opacity 150ms ease-out;
+  transition: opacity var(--t-3) var(--e-enter);
 }
 dialog[data-motion="closing"] {
   pointer-events: none;
 }
+/* The shade leaves slightly ahead of the sheet, so the layers stay readable. */
 dialog[data-motion="closing"]::backdrop {
   opacity: 0;
+  transition-duration: 150ms;
+  transition-timing-function: var(--e-exit);
 }
 @starting-style {
   dialog[data-motion="open"]::backdrop {
