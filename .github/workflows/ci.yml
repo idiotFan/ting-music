@@ -219,10 +219,20 @@ jobs:
           echo "OHOS_HOME=$HOME/deveco/sdk/default/openharmony/current" >> "$GITHUB_ENV"
           echo "DEVECO_SDK_HOME=$HOME/deveco/sdk" >> "$GITHUB_ENV"
           echo "OHOS_NDK_HOME=$HOME/deveco/sdk/default/openharmony/current" >> "$GITHUB_ENV"
+      - name: Toolchain diagnostics
+        run: |
+          echo "PATH=$PATH"
+          for tool in ohpm hvigorw hdc node java cargo ohrs cargo-tauri; do printf '%-12s %s\n' "$tool" "$(command -v "$tool" || echo MISSING)"; done
+          ls -l "$HOS_SDK_HOME/../bin" | head -20
+          for tool in ohpm hvigorw; do f="$HOS_SDK_HOME/../bin/$tool"; [ -e "$f" ] && { file "$f"; head -c 200 "$f" | head -3; echo; }; done
+          ohpm -v || true
+          hvigorw -v || true
+          # cargo-mobile2 looks for <OHOS_HOME>/../../../ohpm/bin/ohpm before falling back to PATH.
+          mkdir -p "$HOME/deveco/sdk/ohpm/bin" && ln -sf "$(command -v ohpm)" "$HOME/deveco/sdk/ohpm/bin/ohpm"
       - name: Build hap
         run: |
           npm run tauri -- ohos init --ci
-          npm run tauri -- ohos build --ci
+          npm run tauri -- ohos build --ci -v
           ls -l src-tauri/gen/ohos/entry/build/default/outputs/default/
       # Signing needs AppGallery Connect material (.p12 keystore, .cer certificate,
       # .p7b debug/release profile) stored as secrets; without them the job still
