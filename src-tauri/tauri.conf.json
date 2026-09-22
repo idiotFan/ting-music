@@ -56,7 +56,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI4NjcxNzA3MDlCMjU3QTUKUldTbFY3SUpCeGRuS0tzR1ZtWVZ1SWltTHR1WnFLWTFQdVV0ck41Z1pYQjMrb2ZINVJmb0NQTm8K",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFGQTAwNTVBNjgzNkRFOEEKUldTSzNqWm9XZ1dnSDdYUHJBMnRmcFRCY3ppYXNZK2NyVTAxd3ErN1ZqK2ptMm5qeXRYb1BWR0MK",
       "endpoints": [
         "https://github.com/idiotFan/ting-music/releases/latest/download/latest.json"
       ],

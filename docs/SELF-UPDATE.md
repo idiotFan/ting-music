@@ -16,7 +16,8 @@
 - 公钥在 `src-tauri/tauri.conf.json`，随应用分发。
 - 私钥**不入库**：本机默认读取 `~/.tauri/ting-music-updater.key`（或 `TAURI_SIGNING_PRIVATE_KEY_PATH`），CI 使用仓库 secret `TAURI_SIGNING_PRIVATE_KEY`。
 - 私钥丢失后，已安装的应用无法再验证新包，只能手动安装换了公钥的新版本；请离线备份。私钥泄露等同于可向所有用户推送任意代码，须立即更换公钥并发版。
-- 私钥**必须是无密码的**（`tauri signer generate` 时密码留空）：`scripts/tauri.mjs` 只传空密码，仓库和 CI 里都没有传递密码的路径。轮换密钥时若设了密码，签名步骤会直接失败。
+- 私钥可以带口令：口令通过环境变量 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 传给 CLI，本机构建前在当前 shell 里 `export` 它，CI 使用同名仓库 secret。未设置该变量时按无口令密钥处理（传空口令），不会进入交互式提示；口令不写入仓库、脚本或日志。
+- 生成或轮换密钥：`npm run tauri -- signer generate -w ~/.tauri/ting-music-updater.key -f`，按提示输入口令；然后把新公钥（`.key.pub` 文件内容）写入 `src-tauri/tauri.conf.json` 的 `plugins.updater.pubkey`。换公钥后，旧公钥签发的应用无法校验新包，需要用户手动安装一次新版本。
 - `scripts/tauri.mjs` 只在拿得到私钥时才追加 `src-tauri/tauri.updater.conf.json`（`createUpdaterArtifacts` 与 macOS ad-hoc 整包签名）。没有 secret 的 fork / Dependabot PR 仍能正常构建，只是不产出更新包。
 
 ## 发布

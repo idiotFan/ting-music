@@ -40,6 +40,8 @@ if (["build", "bundle"].includes(args[0])) {
     if (!env.TAURI_SIGNING_PRIVATE_KEY) throw new Error(`Updater signing key file is empty: ${keyFile}`);
   }
   if (env.TAURI_SIGNING_PRIVATE_KEY) {
+    // A passphrase-protected key needs TAURI_SIGNING_PRIVATE_KEY_PASSWORD; an
+    // unset value means a passphrase-free key, never an interactive prompt.
     env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ??= "";
     args.splice(1, 0, "--config", "src-tauri/tauri.updater.conf.json");
   }
