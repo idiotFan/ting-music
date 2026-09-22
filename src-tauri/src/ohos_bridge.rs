@@ -41,7 +41,7 @@ pub fn bootstrap(info: String) -> NapiResult<()> {
             .map(PathBuf::from)
     };
     let (Some(files_dir), Some(cache_dir)) = (dir("filesDir"), dir("cacheDir")) else {
-        return Err(Error::new(
+        return Err(NapiError::new(
             Status::InvalidArg,
             "bootstrap needs filesDir and cacheDir",
         ));
