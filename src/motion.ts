@@ -95,8 +95,14 @@ export function animateContent(
   element: HTMLElement | SVGElement,
   options: ContentMotion = {},
 ): void {
+  // Only an animation still in flight hands over its current frame; one that
+  // has finished but not yet dropped out of the map must not start the next
+  // entrance from the resting transform and lose its direction.
   const previous = content.get(element);
-  const current = previous ? getComputedStyle(element) : undefined;
+  const current =
+    previous && previous.playState === "running"
+      ? getComputedStyle(element)
+      : undefined;
   // Read the live values before cancelling, so a reversal continues from the
   // painted frame instead of snapping back to a nominal start.
   const liveOpacity = current?.opacity;
