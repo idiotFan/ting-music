@@ -154,3 +154,57 @@ test("the playback column is filled by the artwork instead of an empty middle", 
   expect(cover.width).toBe(72);
   expect(heading.x).toBeGreaterThanOrEqual(cover.x + cover.width);
 });
+
+test("a landscape phone stacks the artwork above the title instead of leaving a gap", async ({
+  browser,
+}) => {
+  for (const [width, height] of [
+    [874, 402],
+    [667, 375],
+  ]) {
+    const context = await browser.newContext({
+      viewport: { width, height },
+      isMobile: true,
+      hasTouch: true,
+      userAgent:
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile",
+    });
+    const page = await context.newPage();
+    await page.addInitScript(() => {
+      const w = window as any;
+      Object.defineProperty(window, "isTauri", { value: true });
+      const songs = Array.from({ length: 20 }, (_, i) => ({
+        id: i + 1,
+        name: `横屏歌曲 ${i + 1}`,
+        artist: "测试歌手",
+        album: "测试专辑",
+        cover: "",
+        duration: 20000,
+        fee: 0,
+      }));
+      w.__TAURI_INTERNALS__ = {
+        invoke: async (cmd: string) =>
+          cmd === "search_songs" ? { songs, total: songs.length } : null,
+      };
+    });
+    await page.goto("/");
+    await expect(page.locator(".song-row")).toHaveCount(20);
+    const box = async (selector: string) =>
+      (await page.locator(selector).boundingBox())!;
+    const now = await box(".now-panel");
+    const player = await box(".player");
+    const cover = await box("#now-cover");
+    const heading = await box(".now-heading");
+    expect(cover.width).toBeGreaterThanOrEqual(70);
+    expect(Math.abs(cover.width - cover.height)).toBeLessThanOrEqual(1);
+    expect(heading.y).toBeGreaterThanOrEqual(cover.y + cover.height);
+    expect(heading.width).toBeGreaterThanOrEqual(now.width * 0.5);
+    expect(heading.y + heading.height).toBeLessThanOrEqual(player.y + 1);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth - innerWidth,
+      ),
+    ).toBeLessThanOrEqual(0);
+    await context.close();
+  }
+});
