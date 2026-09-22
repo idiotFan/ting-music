@@ -44,6 +44,7 @@ import { PlaybackQueue } from "./playback-queue.mjs";
 import { setupThemes } from "./themes";
 import { setupUpdater } from "./updater";
 import { setupLyrics } from "./lyrics";
+import { setupColumns } from "./columns";
 import { makeLoginQr, verifyOriginalQr, qrPngForSharing } from "./qr";
 import { mountPhoneLogin, type PhoneLoginResult } from "./phone-login";
 import { setupMobileViewport } from "./mobile-viewport";
@@ -247,23 +248,25 @@ const icon = (name: string) => {
   }
   return iconCache.get(name)!;
 };
+function restoreSongs(data: unknown): Song[] {
+  return Array.isArray(data)
+    ? data.filter(
+        (s) =>
+          s &&
+          !s.localUrl &&
+          (!s.source || ["netease", "qq"].includes(s.source)) &&
+          Number.isSafeInteger(s.id) &&
+          s.id > 0 &&
+          typeof s.name === "string" &&
+          typeof s.artist === "string" &&
+          typeof s.album === "string" &&
+          typeof s.cover === "string",
+      )
+    : [];
+}
 function restore(key: string): Song[] {
   try {
-    const data = JSON.parse(localStorage.getItem(key) || "[]");
-    return Array.isArray(data)
-      ? data.filter(
-          (s) =>
-            s &&
-            !s.localUrl &&
-            (!s.source || ["netease", "qq"].includes(s.source)) &&
-            Number.isSafeInteger(s.id) &&
-            s.id > 0 &&
-            typeof s.name === "string" &&
-            typeof s.artist === "string" &&
-            typeof s.album === "string" &&
-            typeof s.cover === "string",
-        )
-      : [];
+    return restoreSongs(JSON.parse(localStorage.getItem(key) || "[]"));
   } catch {
     return [];
   }
@@ -272,6 +275,57 @@ let favorites = favoriteSongs(),
   locals: Song[] = [],
   results: Song[] = [];
 const playbackQueue = new PlaybackQueue(restore("ting.queue"));
+/** What was on screen when the app last closed: the track, its position, and
+ *  the list being browsed. Read once at startup, before any view renders. */
+type Session = {
+  song?: Song;
+  position?: number;
+  view?: View;
+  playlist?: Playlist;
+};
+function readSession(): Session {
+  try {
+    const data = JSON.parse(localStorage.getItem("ting.session") || "{}");
+    if (!data || typeof data !== "object") return {};
+    const song = restoreSongs([data.song])[0];
+    const playlist = data.playlist;
+    const validPlaylist =
+      playlist &&
+      typeof playlist === "object" &&
+      Number.isSafeInteger(playlist.id) &&
+      typeof playlist.name === "string" &&
+      (!playlist.source || ["netease", "qq"].includes(playlist.source));
+    return {
+      song,
+      position:
+        typeof data.position === "number" && data.position >= 0
+          ? data.position
+          : 0,
+      view: ["favorites", "playlists", "playlist", "queue"].includes(data.view)
+        ? data.view
+        : undefined,
+      playlist: validPlaylist ? (playlist as Playlist) : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+const startupSession = readSession();
+let session: Session = { ...startupSession };
+let sessionTimer = 0;
+function saveSession(patch: Partial<Session>) {
+  session = { ...session, ...patch };
+  try {
+    localStorage.setItem("ting.session", JSON.stringify(session));
+  } catch {}
+}
+// The position is worth remembering to the second, not to the frame.
+function savePosition() {
+  if (!current || current.localUrl) return;
+  saveSession({ position: Math.floor(audio.currentTime) });
+}
+/** Where playback resumes from after a cold start, until the first play. */
+let resumePosition: number | undefined;
 let view: View = "discover",
   playlistReturnView: View = "playlists",
   current: Song | undefined,
@@ -341,6 +395,16 @@ function save() {
     toast("本地存储空间不足，本次列表未保存");
   }
 }
+/** Sliders draw their own fill (see style.css); keep --fill in step with value. */
+function paintRange(input: HTMLInputElement) {
+  const min = Number(input.min) || 0;
+  const max = Number(input.max) || 100;
+  const ratio = max > min ? (Number(input.value) - min) / (max - min) : 0;
+  input.style.setProperty(
+    "--fill",
+    `${Math.min(Math.max(ratio, 0), 1) * 100}%`,
+  );
+}
 function toast(message: string) {
   $("#toast").textContent = message;
   $("#toast").classList.add("visible");
@@ -358,7 +422,7 @@ if (isTauri() && platform.mac)
   document.documentElement.classList.add("mac-window");
 $("#app").innerHTML = `
 <header class="app-header" data-tauri-drag-region><button type="button" class="brand" aria-label="听 首页"><span class="brand-mark">听</span><strong>Ting</strong></button><span class="app-caption" data-tauri-drag-region>音乐，简单一点。</span><button id="sync-button" class="icon-button" aria-label="iCloud 歌单同步" title="iCloud 歌单同步">${icon("Cloud")}</button><button id="theme-button" class="icon-button" aria-label="切换主题" title="主题配色">${icon("Palette")}</button><button id="account-button" class="account-button" aria-label="登录网易云"><span class="avatar">听</span><span id="account-name">登录</span></button></header>
-<section class="now-panel" aria-label="正在播放"><div class="now-card"><div id="now-cover" class="now-cover"><img class="now-glow" alt="" aria-hidden="true" referrerpolicy="no-referrer" decoding="async"/><span class="fallback-cover">${icon("Music2")}</span></div><div class="now-heading"><span class="now-eq" aria-hidden="true"><i></i><i></i><i></i></span><h3 id="now-name">选一首喜欢的歌</h3><p id="now-artist">搜索音乐，或打开你的歌单</p><div class="track-tag" id="track-tag">等待播放</div></div><button id="download-current" class="icon-button" aria-label="下载当前歌曲最高可用音质" title="下载当前歌曲最高可用音质" disabled>${icon("Download")}</button><button id="now-fav" class="icon-button" aria-label="收藏当前歌曲" disabled>${icon("Heart")}</button></div></section>
+<section class="now-panel" aria-label="正在播放"><div class="now-card"><div id="now-cover" class="now-cover"><span class="fallback-cover">${icon("Music2")}</span></div><div class="now-heading"><span class="now-eq" aria-hidden="true"><i></i><i></i><i></i></span><h3 id="now-name">选一首喜欢的歌</h3><p id="now-artist">搜索音乐，或打开你的歌单</p><div class="track-tag" id="track-tag">等待播放</div></div><button id="download-current" class="icon-button" aria-label="下载当前歌曲最高可用音质" title="下载当前歌曲最高可用音质" disabled>${icon("Download")}</button><button id="now-fav" class="icon-button" aria-label="收藏当前歌曲" disabled>${icon("Heart")}</button></div></section>
 <section class="player" aria-label="播放控制"><div class="transport"><div class="timeline"><span id="elapsed">0:00</span><input id="seek" aria-label="播放进度" type="range" min="0" max="100" value="0" step="0.1" disabled/><span id="duration">0:00</span></div><div class="transport-buttons"><button id="repeat" class="icon-button mode-button" aria-label="播放模式：顺序播放" title="切换播放模式">${icon("ListOrdered")}</button><button id="previous" class="icon-button" aria-label="上一首">${icon("SkipBack")}</button><button id="toggle" class="play-toggle" aria-label="播放">${icon("Play")}</button><button id="next" class="icon-button" aria-label="下一首">${icon("SkipForward")}</button><button id="lyrics-toggle" class="icon-button lyrics-toggle" aria-label="显示歌词" aria-expanded="false" aria-controls="lyrics-panel">词</button></div></div><div class="player-options"><div class="volume"><button id="mute" class="icon-button" aria-label="静音">${icon("Volume2")}</button><input id="volume" aria-label="音量" type="range" min="0" max="1" value="0.7" step="0.01"/></div><span id="mode-label">顺序播放</span><select id="quality" aria-label="播放音质">${Object.entries(
   qualityNames,
 )
@@ -399,6 +463,11 @@ if (mobileDevice) {
       if (option.value === "exhigh") option.textContent = "高品";
     });
 }
+for (const id of ["#seek", "#volume"]) {
+  const input = $(id) as HTMLInputElement;
+  input.addEventListener("input", () => paintRange(input));
+  paintRange(input);
+}
 const lyricFollower = setupLyrics(
   audio,
   (index) => {
@@ -413,7 +482,10 @@ const lyricFollower = setupLyrics(
   toast,
 );
 setupThemes();
-if (!mobileDevice) setupUpdater(toast);
+if (!mobileDevice) {
+  setupColumns();
+  setupUpdater(toast);
+}
 const accountKey = (source: Source) =>
   String((source === "qq" ? qqProfile : profile)?.userId || "");
 const library = setupLibrary({
@@ -706,6 +778,11 @@ function setView(next: View) {
     libraryBusy = false;
   }
   view = next;
+  if (next !== "discover" && next !== "local")
+    saveSession({
+      view: next,
+      playlist: next === "playlist" ? selectedPlaylist : undefined,
+    });
   document
     .querySelectorAll("[data-view]")
     .forEach((el) =>
@@ -945,6 +1022,13 @@ async function play(
   }
   current = song;
   pendingSeek = resumeAt;
+  resumePosition = undefined;
+  // Local files cannot be reopened after a restart; remember online tracks only.
+  if (song.localUrl) saveSession({ song: undefined, position: 0 });
+  else {
+    const { localUrl: _local, ...persisted } = song;
+    saveSession({ song: persisted as Song, position: Math.floor(resumeAt) });
+  }
   if (!sameSong) lyrics = [];
   activeLine = -1;
   trialStart = 0;
@@ -966,6 +1050,7 @@ async function play(
   ($("#seek") as HTMLInputElement).disabled = true;
   $("#elapsed").textContent = $("#duration").textContent = "0:00";
   ($("#seek") as HTMLInputElement).value = "0";
+  paintRange($("#seek") as HTMLInputElement);
   try {
     let url = song.localUrl;
     if (!url) {
@@ -1106,7 +1191,8 @@ function toggle() {
   }
   resumeAfterLoad = audio.paused;
   if (audio.paused) {
-    if (!audio.getAttribute("src")) void play(current);
+    if (!audio.getAttribute("src"))
+      void play(current, undefined, resumePosition ?? 0);
     else {
       if (current && !systemMedia.active) systemMedia.select(current);
       void audio.play().catch(() => toast("播放失败，请重新选择歌曲"));
@@ -1384,6 +1470,7 @@ audio.addEventListener("playing", () => {
 });
 function updateVolume() {
   ($("#volume") as HTMLInputElement).value = String(audio.volume);
+  paintRange($("#volume") as HTMLInputElement);
   $("#mute").setAttribute("aria-label", audio.muted ? "取消静音" : "静音");
   const button = $("#mute");
   const glyph = audio.muted || !audio.volume ? "VolumeX" : "Volume2";
@@ -1414,6 +1501,7 @@ audio.addEventListener("loadedmetadata", () => {
   if (!Number.isFinite(audio.duration)) return;
   const seek = $("#seek") as HTMLInputElement;
   seek.max = String(audio.duration);
+  paintRange(seek);
   seek.disabled = false;
   $("#duration").textContent = formatTime(audio.duration);
   if (pendingSeek !== null) {
@@ -1436,11 +1524,20 @@ audio.addEventListener("timeupdate", () => {
     $("#elapsed").textContent = elapsed;
   if (!seekDragging)
     ($("#seek") as HTMLInputElement).value = String(audio.currentTime);
+  if (!seekDragging) paintRange($("#seek") as HTMLInputElement);
   const index = lyricIndex(lyrics, audio.currentTime + trialStart);
   activeLine = index;
   if (!preparingPlayback && !$("#lyrics").inert)
     lyricFollower.sync(index, audio.seeking);
+  if (!sessionTimer)
+    sessionTimer = window.setTimeout(() => {
+      sessionTimer = 0;
+      savePosition();
+    }, 5000);
 });
+audio.addEventListener("pause", savePosition);
+audio.addEventListener("seeked", savePosition);
+window.addEventListener("pagehide", savePosition);
 audio.addEventListener(
   "seeked",
   () =>
@@ -1487,6 +1584,23 @@ async function initialize() {
   renderPlaybackMode();
   renderAccount();
   ($("#quality") as HTMLSelectElement).value = quality;
+  if (startupSession.song && !current) {
+    // Show the last track without touching the network; the first play
+    // fetches a fresh stream and seeks back to where it stopped.
+    const song = startupSession.song;
+    if (playbackQueue.start(song)) {
+      current = song;
+      resumePosition = startupSession.position || 0;
+      updateNow(song);
+      $("#track-tag").textContent = resumePosition
+        ? `上次听到 ${formatTime(resumePosition)}`
+        : "上次播放";
+      updateTransport();
+      updateFavorite();
+      updateDownloadButton();
+      syncRows();
+    }
+  }
   void search(query);
   if (!isTauri()) return;
   await Promise.allSettled(
@@ -1517,6 +1631,24 @@ async function initialize() {
     }),
   );
   if (view === "playlists") void loadPlaylists();
+  else if (view === "discover") await restoreBrowsing();
+}
+/** Reopen the list that was on screen at the last close, if it still exists. */
+async function restoreBrowsing() {
+  const { view: last, playlist } = startupSession;
+  if (!last) return;
+  if (last === "playlist" && playlist) {
+    await loadPlaylists();
+    const key = playlistKey(playlist);
+    const item = playlists.find((p) => playlistKey(p) === key);
+    if (item && view === "playlists") await loadPlaylist(item);
+    return;
+  }
+  if (last === "playlists") await loadPlaylists();
+  else if (last === "favorites" || last === "queue") {
+    setView(last);
+    renderSongs();
+  }
 }
 function displayedPlaylists(): Playlist[] {
   if (playlistFilter === "recent")

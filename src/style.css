@@ -279,11 +279,63 @@ svg {
 .timeline span:last-child {
   text-align: right;
 }
+/* Sliders are drawn by hand: engines disagree on accent-color for range
+   inputs, and the filled part must follow the theme everywhere. --fill is the
+   value as a percentage, kept current by paintRange() in main.ts. */
 input[type="range"] {
-  accent-color: var(--accent);
+  -webkit-appearance: none;
+  appearance: none;
   height: 4px;
   min-width: 0;
+  margin: 0;
+  padding: 0;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--fill, 0%),
+    var(--line) var(--fill, 0%)
+  );
   cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  background: transparent;
+  border: 0;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+  background: var(--accent);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--ink) 25%, transparent);
+  transition: transform var(--t-2) var(--e-enter);
+}
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  background: transparent;
+  border: 0;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+  background: var(--accent);
+}
+input[type="range"]:active::-webkit-slider-thumb,
+input[type="range"]:focus-visible::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+input[type="range"]:focus-visible {
+  outline: none;
+}
+input[type="range"]:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 #seek {
   flex: 1;
@@ -1269,9 +1321,63 @@ body.lyrics-open #app {
   max-width: none;
   margin: 0;
 }
+/* Column separators: 10px hit area, a 2px accent line while hovered or
+   dragged. Only the wide desktop grid and the lyrics pane show them. */
+.col-resizer {
+  display: none;
+  position: relative;
+  width: 10px;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 2;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.col-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--t-2) var(--e-exit);
+}
+.col-resizer:hover::after,
+.col-resizer.dragging::after,
+.col-resizer:focus-visible::after {
+  opacity: 0.7;
+}
+.col-resizer:focus-visible {
+  outline: none;
+}
+body.column-resizing {
+  cursor: col-resize;
+}
+body.column-resizing #app,
+body.column-resizing #lyrics-panel {
+  pointer-events: none;
+}
+/* Inside the pane (it clips overflow); the line hugs the border. */
+#lyrics-resizer {
+  display: block;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  pointer-events: auto;
+}
+#lyrics-resizer::after {
+  left: 0;
+}
+body.column-resizing .col-resizer {
+  pointer-events: auto;
+}
 #lyrics-panel {
-  flex: 0 0 320px;
-  width: 320px;
+  flex: 0 0 var(--lyrics-col, 320px);
+  width: var(--lyrics-col, 320px);
   height: 100dvh;
   min-height: 0;
   display: flex;
@@ -1361,6 +1467,9 @@ body.lyrics-open #app {
   box-shadow: 0 3px 12px #0000000c;
 }
 @media (max-width: 719px) {
+  #lyrics-resizer {
+    display: none;
+  }
   body.lyrics-open #lyrics-panel {
     position: fixed;
     inset: 0 0 0 auto;
@@ -1936,7 +2045,9 @@ button.brand:active {
 @media (min-width: 900px) and (orientation: landscape) {
   html:not(.mobile-device) #app {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) clamp(360px, 36vw, 520px);
+    grid-template-columns:
+      minmax(0, 1fr)
+      var(--player-col, clamp(360px, 36vw, 520px));
     grid-template-rows: auto auto minmax(0, 1fr) auto;
     max-width: none;
   }
@@ -1964,6 +2075,13 @@ button.brand:active {
     grid-column: 2;
     grid-row: 4;
     padding: 8px 24px 20px;
+  }
+  html:not(.mobile-device) #player-resizer {
+    display: block;
+    grid-column: 2;
+    grid-row: 2 / 5;
+    justify-self: start;
+    margin-left: -5px;
   }
 }
 
@@ -2055,6 +2173,9 @@ button.brand:active {
   }
   html:not(.mobile-device) body.lyrics-open .player {
     padding: 12px 20px 14px;
+  }
+  html:not(.mobile-device) body.lyrics-open #player-resizer {
+    display: none;
   }
 }
 

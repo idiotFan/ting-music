@@ -60,11 +60,34 @@ export function setupPlaybackState(
     clearWait();
     apply();
   });
-  for (const event of ["waiting", "stalled"])
-    audio.addEventListener(event, () => {
-      live = false;
-      scheduleWait();
-    });
+  audio.addEventListener("waiting", () => {
+    live = false;
+    scheduleWait();
+  });
+  // `stalled` only says the network went quiet; buffered audio keeps playing
+  // through it (window resizes on macOS trigger it routinely). Treat it as a
+  // stall only when the element really has nothing left to play.
+  audio.addEventListener("stalled", () => {
+    if (audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) return;
+    live = false;
+    scheduleWait();
+  });
+  // Progress is the ground truth: a track that keeps advancing is playing,
+  // whatever the last network event said.
+  audio.addEventListener("timeupdate", () => {
+    if (
+      !live &&
+      !audio.paused &&
+      !audio.ended &&
+      !audio.seeking &&
+      audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA
+    ) {
+      live = true;
+      waiting = false;
+      clearWait();
+      apply();
+    }
+  });
   audio.addEventListener("ended", () => {
     live = false;
     waiting = false;

@@ -19,16 +19,8 @@ export function createCover(
       queued = { node: next, direction };
       return;
     }
-    // The ambient glow is a permanent layer, never one of the cover images.
-    const previous = container.querySelector(":scope > :not(.now-glow)");
+    const previous = container.firstElementChild;
     container.append(next);
-    const glow =
-      container.querySelector<HTMLImageElement>(":scope > .now-glow");
-    if (glow) {
-      // The same decoded bytes, blurred behind the artwork; no glow for the fallback.
-      if (next instanceof HTMLImageElement) glow.src = next.src;
-      else glow.removeAttribute("src");
-    }
     if (!previous || reduced.matches || typeof next.animate !== "function") {
       previous?.remove();
       return;

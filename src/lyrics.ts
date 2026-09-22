@@ -1,5 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { mobileDevice } from "./platform";
+import { lyricsWidth } from "./columns";
 import { MOTION } from "./motion";
 import "./lyrics-motion.css";
 export function setupLyrics(
@@ -71,7 +72,7 @@ export function setupLyrics(
       .catch(() => {})
       .then(async () => {
         if (nativeExpanded === open) return;
-        await invoke("set_lyrics_panel", { open });
+        await invoke("set_lyrics_panel", { open, width: lyricsWidth() });
         nativeExpanded = open;
       });
     return nativeResize;

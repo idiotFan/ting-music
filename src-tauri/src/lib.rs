@@ -109,7 +109,10 @@ fn set_lyrics_panel(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, LyricsWindow>,
     open: bool,
+    width: Option<f64>,
 ) -> Result<(), String> {
+    // The pane width is a per-machine preference; keep the window growth sane.
+    let pane = width.unwrap_or(320.0).clamp(260.0, 640.0);
     let mut added = state.added.lock().map_err(|_| "窗口状态不可用")?;
     if open == added.is_some() {
         return Ok(());
@@ -125,8 +128,8 @@ fn set_lyrics_panel(
             .ok()
             .flatten()
             .map(|m| m.size().width as f64 / m.scale_factor())
-            .unwrap_or(size.width + 320.0);
-        let width = (size.width + 320.0).min(available).max(720.0);
+            .unwrap_or(size.width + pane);
+        let width = (size.width + pane).min(available).max(720.0);
         window
             .set_size(tauri::LogicalSize::new(width, size.height))
             .map_err(|_| "无法展开歌词窗口")?;
@@ -139,7 +142,7 @@ fn set_lyrics_panel(
         }
         *added = Some((width - size.width).max(0.0));
     } else {
-        let width = (size.width - added.unwrap_or(320.0)).max(400.0);
+        let width = (size.width - added.unwrap_or(pane)).max(400.0);
         window
             .set_min_size(Some(tauri::LogicalSize::new(400.0, 560.0)))
             .map_err(|_| "无法收起歌词窗口")?;
@@ -152,8 +155,8 @@ fn set_lyrics_panel(
 }
 #[cfg(mobile)]
 #[tauri::command]
-fn set_lyrics_panel(open: bool) -> Result<(), String> {
-    let _ = open;
+fn set_lyrics_panel(open: bool, width: Option<f64>) -> Result<(), String> {
+    let _ = (open, width);
     Ok(())
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

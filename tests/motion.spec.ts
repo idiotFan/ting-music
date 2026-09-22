@@ -328,9 +328,7 @@ test("track artwork retains the decoded cover until the latest image is ready an
 }) => {
   const { releaseCover } = await fixture(page, [2, 3]);
   await page.locator(".song-row").first().dblclick();
-  const initial = page.locator(
-    `#now-cover > img:not(.now-glow)[src="${coverUrl(1)}"]`,
-  );
+  const initial = page.locator(`#now-cover img[src="${coverUrl(1)}"]`);
   await expect(initial).toBeVisible();
   await expect
     .poll(() => initial.evaluate((img: HTMLImageElement) => img.naturalWidth))
@@ -344,9 +342,7 @@ test("track artwork retains the decoded cover until the latest image is ready an
   await expect(page.locator("#now-name")).toHaveText("动画歌曲 3");
   await expect(initial).toBeVisible();
   await releaseCover(3);
-  const latest = page.locator(
-    `#now-cover > img:not(.now-glow)[src="${coverUrl(3)}"]`,
-  );
+  const latest = page.locator(`#now-cover img[src="${coverUrl(3)}"]`);
   await expect(latest).toBeVisible();
   await expect
     .poll(() => latest.evaluate((img: HTMLImageElement) => img.naturalWidth))
@@ -370,7 +366,7 @@ test("track artwork retains the decoded cover until the latest image is ready an
   await expect(page.locator("#now-name")).toHaveText("动画歌曲 3");
   await expect(latest).toBeVisible();
   await expect(
-    page.locator(`#now-cover > img:not(.now-glow)[src="${coverUrl(2)}"]`),
+    page.locator(`#now-cover img[src="${coverUrl(2)}"]`),
   ).toHaveCount(0);
   await expect(page.locator("#now-cover .fallback-cover")).toHaveCount(0);
 });
@@ -637,7 +633,7 @@ test("an artwork URL that failed can load again for a later track with the same 
   );
   await page.locator(".song-row").first().dblclick();
   await expect(
-    page.locator(`#now-cover > img:not(.now-glow)[src="${coverUrl(1)}"]`),
+    page.locator(`#now-cover img[src="${coverUrl(1)}"]`),
   ).toBeVisible();
   await expectResting(page, "#now-cover");
   await page.locator("#next").click();
@@ -647,9 +643,7 @@ test("an artwork URL that failed can load again for a later track with the same 
   recoverCover(2);
   await page.locator("#next").click();
   await expect(page.locator("#now-name")).toHaveText("动画歌曲 3");
-  const recovered = page.locator(
-    `#now-cover > img:not(.now-glow)[src="${coverUrl(2)}"]`,
-  );
+  const recovered = page.locator(`#now-cover img[src="${coverUrl(2)}"]`);
   await expect(recovered).toBeVisible();
   await expect
     .poll(() => recovered.evaluate((img: HTMLImageElement) => img.naturalWidth))
@@ -1099,39 +1093,19 @@ test("均衡器只在真实播放时跳动，暂停即放平", async ({ page }) 
   await expect(eq).toBeVisible();
 });
 
-test("播放时封面后方的光晕呼吸，暂停即淡出，封面本身从不缩放", async ({
-  page,
-}) => {
+test("封面本身从不被动画：播放与暂停都不改变它的变换", async ({ page }) => {
   await fixture(page);
-  const glow = () =>
-    page.locator("#now-cover").evaluate((element) => {
-      const glow = element.querySelector(".now-glow") as HTMLElement;
-      const style = getComputedStyle(glow);
-      return {
-        animation: style.animationName,
-        opacity: Number(style.opacity),
-        // The glow shows the same artwork as the cover.
-        src: (glow as HTMLImageElement).getAttribute("src") || "",
-        transform: getComputedStyle(element).transform,
-        // Nothing may animate the cover box itself.
-        own: element.getAnimations().length,
-      };
-    });
-  expect((await glow()).opacity).toBe(0);
   await page.locator(".song-row").first().dblclick();
   await expect(playbackState(page)).toHaveAttribute("data-playback", "playing");
-  const playing = await glow();
-  expect(playing.animation).toBe("now-glow");
-  expect(playing.src).toContain("cover-1.png");
-  expect(playing.transform).toBe("none");
-  expect(playing.own).toBe(0);
+  expect(
+    await page.locator("#now-cover").evaluate((element) => ({
+      transform: getComputedStyle(element).transform,
+      animations: element.getAnimations().length,
+    })),
+  ).toEqual({ transform: "none", animations: 0 });
   await page.locator("#toggle").click();
   await expect(playbackState(page)).toHaveAttribute("data-playback", "paused");
-  await expect
-    .poll(async () => (await glow()).opacity, { timeout: 2000 })
-    .toBe(0);
-  expect((await glow()).animation).toBe("none");
-  expect((await glow()).transform).toBe("none");
+  await expect(page.locator("#now-cover")).toHaveCSS("transform", "none");
 });
 
 test("减少动态效果时播放状态仍然一眼可辨", async ({ browser }) => {
@@ -1156,22 +1130,14 @@ test("减少动态效果时播放状态仍然一眼可辨", async ({ browser }) 
         const style = getComputedStyle(bar);
         return { transform: style.transform, color: style.backgroundColor };
       });
-      const glow = getComputedStyle(element.querySelector(".now-glow")!);
-      return {
-        glow: Number(glow.opacity),
-        animation: glow.animationName,
-        bars,
-      };
+      return { bars };
     });
   const playing = await read();
-  expect(playing.animation).toBe("none");
-  expect(playing.glow).toBeGreaterThan(0);
   // A stepped silhouette still reads as "playing" without motion.
   expect(new Set(playing.bars.map((bar) => bar.transform)).size).toBe(3);
   await page.locator("#toggle").click();
   await expect(playbackState(page)).toHaveAttribute("data-playback", "paused");
   const paused = await read();
-  expect(paused.glow).toBe(0);
   expect(paused.bars[0].color).not.toBe(playing.bars[0].color);
   await expect(page.locator("#now-cover")).toHaveCSS("transform", "none");
   await context.close();
@@ -1380,7 +1346,7 @@ test("改变窗口宽度跨越两栏阈值时封面不缩放、均衡器留在�
         width: Math.round(c.width),
         square: Math.abs(c.width - c.height) <= 1,
         transform: getComputedStyle(cover).transform,
-        glow: getComputedStyle(cover.querySelector(".now-glow")!).animationName,
+        eqAnimation: getComputedStyle(eq.querySelector("i")!).animationName,
         // Beside the title in a row, below the artwork in a column; never on it.
         beside: e.left >= c.right || e.top >= c.bottom,
         overflow: document.documentElement.scrollWidth - innerWidth,
@@ -1392,7 +1358,7 @@ test("改变窗口宽度跨越两栏阈值时封面不缩放、均衡器留在�
     const state = await read();
     expect(state.transform).toBe("none");
     expect(state.square).toBe(true);
-    expect(state.glow).toBe("now-glow");
+    expect(state.eqAnimation).toBe("now-eq");
     expect(state.beside).toBe(true);
     expect(state.overflow).toBeLessThanOrEqual(0);
   }
