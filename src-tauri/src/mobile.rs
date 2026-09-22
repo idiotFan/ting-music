@@ -120,7 +120,7 @@ pub async fn share_login_qr(window: tauri::WebviewWindow, data_url: String) -> R
     }
 }
 
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+#[cfg(not(any(target_os = "ios", target_os = "android", target_env = "ohos")))]
 #[tauri::command]
 pub async fn share_login_qr(data_url: String) -> Result<(), String> {
     let _ = qr_png(&data_url)?;
@@ -132,6 +132,12 @@ pub async fn share_login_qr(data_url: String) -> Result<(), String> {
 pub async fn share_login_qr(data_url: String) -> Result<(), String> {
     qr_png(&data_url)?;
     crate::android_platform::share_qr(data_url).await
+}
+#[cfg(target_env = "ohos")]
+#[tauri::command]
+pub async fn share_login_qr(data_url: String) -> Result<(), String> {
+    qr_png(&data_url)?;
+    crate::ohos_bridge::share_qr(data_url).await
 }
 
 #[cfg(test)]

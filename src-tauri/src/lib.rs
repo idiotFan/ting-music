@@ -7,20 +7,14 @@ mod download_engine;
 mod http;
 mod mobile;
 pub mod netease;
+#[cfg(target_env = "ohos")]
+mod ohos_bridge;
 mod qq;
 mod sync;
 mod sync_model;
-#[cfg(any(
-    target_os = "windows",
-    all(target_os = "linux", not(target_env = "ohos")),
-    target_os = "android"
-))]
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "android"))]
 mod system_media;
-#[cfg(not(any(
-    target_os = "windows",
-    all(target_os = "linux", not(target_env = "ohos")),
-    target_os = "android"
-)))]
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "android")))]
 #[path = "system_media_web.rs"]
 mod system_media;
 mod updater;
@@ -194,6 +188,8 @@ pub fn run() {
                     unsafe { ting_disable_page_zoom(webview.inner()) };
                 })?;
             }
+            #[cfg(target_env = "ohos")]
+            ohos_bridge::attach(app.handle());
             app.manage(qq::Qq::new());
             app.manage(Api::persistent().map_err(std::io::Error::other)?);
             #[cfg(desktop)]

@@ -20,7 +20,7 @@ export async function systemMediaBackend() {
         session.dispatch(event.payload),
       );
       const backend = await invoke<string>("system_media_init");
-      if (!["windows", "mpris", "android"].includes(backend))
+      if (!["windows", "mpris", "android", "harmony"].includes(backend))
         throw Error("unsupported");
       // Do not register web actions as well: two owners can hide buttons or
       // dispatch the same media key twice. Browser previews retain the web API.

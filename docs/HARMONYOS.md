@@ -13,9 +13,13 @@
 
 - 复用全部前端与 Rust 核心（网易云 / QQ 协议、播放、下载校验、同步模型）。ArkWeb 的 UA 含 `OpenHarmony`，前端按手机布局渲染。
 - 鸿蒙上 `target_os = "linux"` 且 `target_env = "ohos"`，桌面 Linux 专用的 D-Bus / MPRIS、Secret Service、`xdg-open` 和自更新都已排除。
-- **暂未实现**：登录会话持久化（重启后需重新登录，应接 Asset Store Kit）、系统媒体控制（应接 AVSession）、下载目录浏览与分享、二维码原生分享。这些对应 Android 那套 Kotlin 插件，需要用 ArkTS + NAPI 重写。
-- 产物未签名：签名需要 AppGallery Connect 的证书与 profile（debug 证书绑定设备 UDID），配好后可用 SDK 里的 `hap-sign-tool` 在 CI 签名。
+- 系统能力由 ArkTS 桥提供，源码在 `src-tauri/ohos/entry/`，`scripts/prepare-ohos.mjs` 在 `ohos init` 后把它们覆盖进被忽略的生成工程，并补上权限与版本号：
+  - **登录持久化**：`Credentials.ets` 用 Asset Store Kit 保存两个平台的会话（别名 `com.ting.music.demo:<account>`，仅本机、首次解锁后可读）。`EntryAbility.onCreate` 在原生模块初始化前同步读取并通过 `bootstrap()` 注入 Rust，保存 / 删除由 Rust 单向通知 ArkTS 完成；会话值不经过 WebView。
+  - **系统媒体控制**：`Media.ets` 创建 AVSession（元数据、播放状态、播放 / 暂停 / 上下曲 / seek 回调），命令经 `mediaCommand()` 回到唯一播放队列；播放时启动 `AUDIO_PLAYBACK` 长时任务保证后台播放，暂停即停止。Rust 侧 `system_media/ohos.rs` 与 Android 后端同一契约，前端把后端名 `harmony` 视为原生媒体会话。
+  - **下载浏览**：`Downloads.ets` 列出沙箱 `files/Ting` 下的音频，ActionSheet 选中后经 `DocumentViewPicker.save` 复制到用户选择的位置；二维码同样经文件选择器保存（`Qr.ets`），不依赖 HMS 专有的 Share Kit。
+- Rust 与 ArkTS 之间是一个同步 JSON 分发器（`ohos_bridge.rs` ↔ `TingBridge.ets`）：Rust 在非主线程阻塞等待 ArkTS 主线程的即时应答，耗时的系统调用在 ArkTS 侧后台继续并只写日志。
+- 产物未签名：签名需要 AppGallery Connect 的证书与 profile（debug 证书绑定设备 UDID），配好后可用 SDK 里的 `hap-sign-tool` 在 CI 签名。第三方客户端上架商店审核风险很高，当前目标是内测分发。
 
 ## 验证边界
 
-CI 只证明能交叉编译并打出 hap。界面、播放、登录流程在鸿蒙上尚未实测；模拟器或真机验收前，不要把鸿蒙包描述为可用版本。
+CI 证明的只是 Rust 交叉编译 + ArkTS 类型检查 + hap 打包通过。凭据恢复、AVSession、后台播放、文件导出与二维码保存在鸿蒙模拟器或真机上尚未实测；模拟器验证前不要把鸿蒙包描述为可用版本。首次真机验收清单：冷启动恢复双账号、控制中心显示封面与上下曲、锁屏后继续播放、「查看下载」导出一首歌、扫码页保存二维码。

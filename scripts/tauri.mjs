@@ -11,8 +11,17 @@ function prepareAndroid() {
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
+// HarmonyOS keeps its ArkTS bridge out of the ignored generated project the same way.
+function prepareOhos() {
+  const result = spawnSync(process.execPath, ['scripts/prepare-ohos.mjs'], { stdio: 'inherit' });
+  if (result.error) throw result.error;
+  if (result.status !== 0) process.exit(result.status ?? 1);
+}
 if (!androidHelp && process.argv[2] === 'android' && ['dev', 'build'].includes(process.argv[3])) {
   prepareAndroid();
+}
+if (!androidHelp && process.argv[2] === 'ohos' && ['dev', 'build'].includes(process.argv[3])) {
+  prepareOhos();
 }
 if (["dev", "build", "bundle"].includes(process.argv[2]) ||
     (["ios", "android", "ohos"].includes(process.argv[2]) && ["dev", "build"].includes(process.argv[3]))) {
@@ -58,6 +67,7 @@ const child = ohos
     });
 child.on("exit", (code) => {
   if (code === 0 && !androidHelp && process.argv[2] === 'android' && process.argv[3] === 'init') prepareAndroid();
+  if (code === 0 && !androidHelp && process.argv[2] === 'ohos' && process.argv[3] === 'init') prepareOhos();
   process.exit(code ?? 1);
 });
 child.on("error", (error) => { console.error(error.message); process.exit(1); });

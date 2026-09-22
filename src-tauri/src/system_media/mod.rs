@@ -2,15 +2,18 @@
 //! this layer never fetches a song, a remote artwork URL, or account credentials.
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+#[cfg(any(
+    target_os = "windows",
+    all(target_os = "linux", not(target_env = "ohos"))
+))]
 use tauri::Emitter;
 use tauri::Manager;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", not(target_env = "ohos")))]
 mod linux;
 #[cfg(target_os = "windows")]
 mod windows;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", not(target_env = "ohos")))]
 use linux::Backend;
 #[cfg(target_os = "windows")]
 use windows::Backend;
@@ -18,6 +21,10 @@ use windows::Backend;
 mod android;
 #[cfg(target_os = "android")]
 use android::Backend;
+#[cfg(target_env = "ohos")]
+mod ohos;
+#[cfg(target_env = "ohos")]
+use ohos::Backend;
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -61,7 +68,10 @@ struct Inner {
 #[derive(Default)]
 pub struct State(Mutex<Inner>);
 
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+#[cfg(any(
+    target_os = "windows",
+    all(target_os = "linux", not(target_env = "ohos"))
+))]
 pub fn emit(app: &tauri::AppHandle, action: &str, value: Option<(&str, f64)>) {
     let mut event = serde_json::json!({"action":action});
     if let Some((key, value)) = value {
@@ -155,7 +165,7 @@ fn merge(previous: &Snapshot, value: &serde_json::Value) -> Result<Snapshot, Str
 
 #[tauri::command]
 pub async fn system_media_init(app: tauri::AppHandle) -> Result<String, String> {
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_env = "ohos"))]
     {
         tauri::async_runtime::spawn_blocking(move || {
             let state = app.state::<State>();
@@ -173,7 +183,7 @@ pub async fn system_media_init(app: tauri::AppHandle) -> Result<String, String> 
         .await
         .map_err(|_| "系统媒体初始化已取消")?
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
     {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let handle = app.clone();
@@ -205,7 +215,7 @@ pub async fn system_media_update(
     app: tauri::AppHandle,
     snapshot: serde_json::Value,
 ) -> Result<(), String> {
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_env = "ohos"))]
     {
         tauri::async_runtime::spawn_blocking(move || {
             let state = app.state::<State>();
@@ -227,7 +237,7 @@ pub async fn system_media_update(
         .await
         .map_err(|_| "系统媒体更新已取消")?
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
     {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let handle = app.clone();
@@ -256,7 +266,10 @@ pub async fn system_media_update(
     }
 }
 
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+#[cfg(any(
+    target_os = "windows",
+    all(target_os = "linux", not(target_env = "ohos"))
+))]
 pub fn save_cover(
     app: &tauri::AppHandle,
     track: &Track,

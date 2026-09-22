@@ -102,7 +102,13 @@ fn directory(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         ensure_writable(&path).map_err(|_| "无法写入下载目录")?;
         Ok(path)
     }
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    #[cfg(target_env = "ohos")]
+    {
+        let path = crate::ohos_bridge::files_dir()?.join("Ting");
+        ensure_writable(&path).map_err(|_| "无法写入下载目录")?;
+        return Ok(path);
+    }
+    #[cfg(not(any(target_os = "ios", target_os = "android", target_env = "ohos")))]
     {
         // Prefer the user's Downloads/Ting folder on every desktop platform.
         // Fall back to app data only when the preferred folder is not writable.
@@ -335,10 +341,15 @@ pub async fn open_download_folder(app: tauri::AppHandle) -> Result<(), String> {
         let _ = dir;
         crate::android_platform::open_downloads().await
     }
+    #[cfg(target_env = "ohos")]
+    {
+        let _ = dir;
+        crate::ohos_bridge::open_downloads().await
+    }
     #[cfg(not(any(
         target_os = "macos",
         target_os = "windows",
-        all(target_os = "linux", not(target_env = "ohos")),
+        target_os = "linux",
         target_os = "android"
     )))]
     {

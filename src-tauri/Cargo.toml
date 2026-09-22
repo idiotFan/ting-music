@@ -48,6 +48,11 @@ dbus = "0.9"
 dbus-crossroads = "0.5"
 keyring = { version = "3", features = ["sync-secret-service"] }
 
+[target.'cfg(target_env = "ohos")'.dependencies]
+# Versions follow openharmony-ability 295a276a, which the Tauri branches build against.
+napi-ohos = "1.1"
+napi-derive-ohos = "1.1"
+
 [target.'cfg(target_os = "ios")'.dependencies]
 objc2 = "0.6.3"
 block2 = "0.6.2"

@@ -186,7 +186,7 @@ jobs:
             ~/.cargo/bin/ohrs
             ~/.cargo/registry
             ~/.cargo/git
-          key: ohos-tools-${{ runner.os }}-${{ hashFiles('src-tauri/ohos/cargo-config.toml') }}-2
+          key: ohos-tools-${{ runner.os }}-${{ hashFiles('src-tauri/ohos/cargo-config.toml') }}-3
       - name: Prepare
         run: |
           sudo apt-get update && sudo apt-get install -y libgl1
@@ -195,9 +195,19 @@ jobs:
           rustup default stable
           rustup target add aarch64-unknown-linux-ohos
           test -x ~/.cargo/bin/ohrs || cargo install ohrs --locked
-          test -x ~/.cargo/bin/cargo-tauri || cargo install tauri-cli --git https://github.com/tauri-apps/tauri --branch feat/open-harmony --locked
+          # The branch lockfile no longer resolves (rustls-platform-verifier/webpki), so let cargo re-resolve.
+          test -x ~/.cargo/bin/cargo-tauri || cargo install tauri-cli --git https://github.com/tauri-apps/tauri --branch feat/open-harmony
           # OpenHarmony crates come from the feat/open-harmony branches; keep the patch out of Cargo.toml.
+          # openharmony-ability dropped its `webview` feature after 295a276a, which the branches still
+          # need, so that commit is checked out and patched in by path (a git source cannot patch itself).
+          git clone -q https://github.com/harmony-contrib/openharmony-ability.git "$HOME/openharmony-ability"
+          git -C "$HOME/openharmony-ability" checkout -q 295a276a699ba2352addc69b8cacb6acd3be6ab1
           mkdir -p ~/.cargo && cat src-tauri/ohos/cargo-config.toml >> ~/.cargo/config.toml
+          cat >> ~/.cargo/config.toml <<EOF2
+          [patch."https://github.com/harmony-contrib/openharmony-ability.git"]
+          openharmony-ability = { path = "$HOME/openharmony-ability/crates/ability" }
+          openharmony-ability-derive = { path = "$HOME/openharmony-ability/crates/derive" }
+          EOF2
           # cargo-mobile2 derives DEVECO_SDK_HOME as three parents of OHOS_HOME, so
           # expose the SDK one level deeper than the command line tools lay it out.
           ln -s . "$OHOS_NDK_HOME/current"

@@ -297,7 +297,7 @@ fn stored_session() -> Option<String> {
     target_os = "macos",
     target_os = "ios",
     target_os = "windows",
-    all(target_os = "linux", not(target_env = "ohos")),
+    target_os = "linux",
     target_os = "android"
 )))]
 fn stored_session() -> Option<String> {
@@ -327,7 +327,7 @@ fn store_session(cookie: &str) -> Result<(), String> {
     target_os = "macos",
     target_os = "ios",
     target_os = "windows",
-    all(target_os = "linux", not(target_env = "ohos")),
+    target_os = "linux",
     target_os = "android"
 )))]
 fn store_session(_: &str) -> Result<(), String> {
@@ -359,7 +359,7 @@ fn delete_session() -> Result<(), String> {
     target_os = "macos",
     target_os = "ios",
     target_os = "windows",
-    all(target_os = "linux", not(target_env = "ohos")),
+    target_os = "linux",
     target_os = "android"
 )))]
 fn delete_session() -> Result<(), String> {
@@ -368,6 +368,18 @@ fn delete_session() -> Result<(), String> {
 #[cfg(target_os = "android")]
 fn stored_session() -> Option<String> {
     crate::android_credentials::load(KEYCHAIN_ACCOUNT)
+}
+#[cfg(target_env = "ohos")]
+fn stored_session() -> Option<String> {
+    crate::ohos_bridge::credential_load(KEYCHAIN_ACCOUNT)
+}
+#[cfg(target_env = "ohos")]
+fn store_session(cookie: &str) -> Result<(), String> {
+    crate::ohos_bridge::credential_save(KEYCHAIN_ACCOUNT, cookie)
+}
+#[cfg(target_env = "ohos")]
+fn delete_session() -> Result<(), String> {
+    crate::ohos_bridge::credential_remove(KEYCHAIN_ACCOUNT)
 }
 #[cfg(target_os = "android")]
 fn store_session(cookie: &str) -> Result<(), String> {

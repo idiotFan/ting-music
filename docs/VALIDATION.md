@@ -1,3 +1,7 @@
+## 0.9.7 HarmonyOS NEXT 实验构建 · 2026-09-22
+
+公开版本维持 0.9.7。新增 CI `harmony` 任务，用 Tauri `feat/open-harmony` 分支交叉编译未签名 hap；ArkTS 桥实现 Asset Store 登录持久化、AVSession 系统媒体控制与后台播放、下载导出与二维码保存，详见 [HarmonyOS 构建](HARMONYOS.md)。宿主端回归不受影响（Rust 51、Node 21 通过）。鸿蒙侧仅有云端编译，没有任何模拟器或真机验收。
+
 ## 0.9.7 桌面自更新 · 2026-09-22
 
 公开版本维持 0.9.7，用提交号区分构建。

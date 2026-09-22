@@ -59,7 +59,7 @@ fn load() -> Option<Value> {
     target_os = "macos",
     target_os = "ios",
     target_os = "windows",
-    all(target_os = "linux", not(target_env = "ohos")),
+    target_os = "linux",
     target_os = "android"
 )))]
 fn load() -> Option<Value> {
@@ -106,7 +106,7 @@ fn persist(value: Option<&Value>) -> Result<(), String> {
     target_os = "macos",
     target_os = "ios",
     target_os = "windows",
-    all(target_os = "linux", not(target_env = "ohos")),
+    target_os = "linux",
     target_os = "android"
 )))]
 fn persist(value: Option<&Value>) -> Result<(), String> {
@@ -121,6 +121,18 @@ fn persist(value: Option<&Value>) -> Result<(), String> {
 fn load() -> Option<Value> {
     crate::android_credentials::load("qq-session")
         .and_then(|value| serde_json::from_str(&value).ok())
+}
+#[cfg(target_env = "ohos")]
+fn load() -> Option<Value> {
+    crate::ohos_bridge::credential_load("qq-session")
+        .and_then(|value| serde_json::from_str(&value).ok())
+}
+#[cfg(target_env = "ohos")]
+fn persist(value: Option<&Value>) -> Result<(), String> {
+    match value {
+        Some(value) => crate::ohos_bridge::credential_save("qq-session", &value.to_string()),
+        None => crate::ohos_bridge::credential_remove("qq-session"),
+    }
 }
 #[cfg(target_os = "android")]
 fn persist(value: Option<&Value>) -> Result<(), String> {
