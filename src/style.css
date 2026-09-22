@@ -187,6 +187,18 @@ svg {
 .now-heading {
   min-width: 0;
   flex: 1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 8px;
+}
+.now-heading > .now-eq {
+  grid-column: 1;
+  grid-row: 1;
+}
+.now-heading > h3,
+.now-heading > p,
+.now-heading > .track-tag {
+  grid-column: 2;
 }
 .now-heading h3 {
   font-size: 20px;

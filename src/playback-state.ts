@@ -1,4 +1,4 @@
-import { applyPlaybackMotion } from "./playback-motion";
+import "./playback-motion.css";
 
 /** What the audio element is actually doing, never what a button intends. */
 export type PlaybackState = "idle" | "loading" | "playing" | "paused" | "error";
@@ -46,7 +46,6 @@ export function setupPlaybackState(
     if (next === current) return;
     current = next;
     document.body.dataset.playback = next;
-    applyPlaybackMotion(next);
   }
   audio.addEventListener("playing", () => {
     live = true;

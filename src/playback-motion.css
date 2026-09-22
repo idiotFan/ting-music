@@ -1,100 +1,69 @@
 /* Playback is a fact, not an intention: everything here is driven by
    body[data-playback], which src/playback-state.ts derives from the media
-   events alone. The breathing cover lives in src/playback-motion.ts; the badge
-   below is its static counterpart and carries the whole meaning on its own. */
+   events alone. The cover itself never moves; a glow behind it breathes while
+   audio really plays, and the equalizer beside the title carries the state on
+   its own. Only opacity and transform are animated. */
 :root {
-  --now-pulse: 1.022;
-  --now-dot: 20px;
-  --now-dot-inset: 5px;
+  --now-glow-blur: 14px;
+  --now-glow-spread: 10%;
+  --now-eq-height: 12px;
 }
 
-#now-cover::after {
-  content: "";
+/* The artwork clips its layers itself so the glow can spill past the box.
+   :root outranks the base rule regardless of stylesheet order. */
+:root .now-cover {
+  overflow: visible;
+  isolation: isolate;
+}
+:root .now-cover > img,
+:root .now-cover > .fallback-cover {
+  border-radius: inherit;
+  z-index: 0;
+}
+/* Ambient light: the current artwork itself, blurred and saturated, breathing
+   behind the cover while audio really plays. src is kept in step by cover.ts;
+   without artwork it falls back to the accent colour. */
+:root .now-cover > .now-glow {
   position: absolute;
-  right: var(--now-dot-inset);
-  bottom: var(--now-dot-inset);
-  width: var(--now-dot);
-  height: var(--now-dot);
-  border-radius: 32%;
-  background: var(--muted);
-  /* A ring keeps the plate legible on top of any artwork. */
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--surface) 78%, transparent);
+  inset: calc(-1 * var(--now-glow-spread));
+  width: auto;
+  height: auto;
+  border-radius: inherit;
+  object-fit: cover;
+  background: var(--accent);
+  filter: blur(var(--now-glow-blur)) saturate(1.4);
   opacity: 0;
-  transform: scale(0.7);
+  z-index: -1;
   pointer-events: none;
-  transition:
-    opacity var(--t-2) var(--e-exit),
-    transform var(--t-2) var(--e-exit),
-    background-color var(--t-2) linear;
+  transition: opacity var(--t-3) var(--e-exit);
 }
-body[data-playback="playing"] #now-cover::after {
-  opacity: 1;
-  transform: scale(1);
-  background: var(--accent);
+body[data-playback="playing"] .now-cover > .now-glow {
+  opacity: 0.55;
+  animation: now-glow var(--now-pulse-period, 4400ms) var(--e-breath) infinite;
 }
-body[data-playback="paused"] #now-cover::after {
-  opacity: 1;
-  transform: scale(0.9);
-  background: var(--muted);
+body[data-playback="loading"] .now-cover > .now-glow {
+  opacity: 0.22;
 }
-/* Buffering moves a different property on a much shorter period, so it can
-   never be mistaken for the cover's slow breath. */
-body[data-playback="loading"] #now-cover::after {
-  opacity: 1;
-  transform: scale(1);
-  background: var(--accent);
-  animation: now-wait var(--now-wait-period, 1400ms) var(--e-breath) infinite;
-}
-body[data-playback="error"] #now-cover::after {
-  opacity: 1;
-  transform: scale(1);
-  background: var(--error);
-}
-
-@keyframes now-wait {
+@keyframes now-glow {
   0%,
   100% {
-    opacity: 0.28;
+    opacity: 0.38;
   }
   50% {
-    opacity: 1;
+    opacity: 0.72;
   }
 }
 
-/* Three bars are the glanceable half of the badge: they dance only while
-   audio is really playing, rest level when paused, hold still while buffering
-   (the plate blinks instead) and flatten on failure. Bars move on scaleY alone,
-   so they stay on the compositor beside the cover's breath. */
+/* The equalizer sits beside the title. Bars move on scaleY alone. Idle hides
+   the whole column so an empty player keeps its original text alignment. */
 .now-eq {
-  position: absolute;
-  right: var(--now-dot-inset);
-  bottom: var(--now-dot-inset);
-  width: var(--now-dot);
-  height: var(--now-dot);
-  /* Above the ::after plate, which paints after every real child. */
-  z-index: 2;
-  display: flex;
+  display: none;
   align-items: flex-end;
-  justify-content: center;
-  /* Percent padding would resolve against the cover, not this badge. */
-  gap: calc(var(--now-dot) * 0.09);
-  padding: calc(var(--now-dot) * 0.26) calc(var(--now-dot) * 0.24);
-  box-sizing: border-box;
-  opacity: 0;
+  gap: 2px;
+  width: 14px;
+  height: var(--now-eq-height);
+  align-self: center;
   pointer-events: none;
-  transition: opacity var(--t-2) var(--e-exit);
-}
-#now-cover::after {
-  z-index: 1;
-}
-.now-eq i {
-  flex: 1;
-  height: 100%;
-  border-radius: 1px;
-  background: var(--on-accent);
-  transform-origin: 50% 100%;
-  transform: scaleY(0.34);
-  transition: transform var(--t-3, 240ms) var(--e-enter, ease-out);
 }
 body:is(
     [data-playback="playing"],
@@ -103,9 +72,21 @@ body:is(
     [data-playback="error"]
   )
   .now-eq {
-  opacity: 1;
+  display: inline-flex;
+}
+.now-eq i {
+  flex: 1;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--muted);
+  transform-origin: 50% 100%;
+  transform: scaleY(0.28);
+  transition:
+    transform var(--t-3) var(--e-enter),
+    background-color var(--t-2) linear;
 }
 body[data-playback="playing"] .now-eq i {
+  background: var(--accent);
   animation: now-eq 980ms var(--e-breath) infinite alternate;
 }
 body[data-playback="playing"] .now-eq i:nth-child(2) {
@@ -116,11 +97,15 @@ body[data-playback="playing"] .now-eq i:nth-child(3) {
   animation-duration: 1180ms;
   animation-delay: -260ms;
 }
+/* Buffering blinks on a much shorter period, so it is never mistaken for play. */
 body[data-playback="loading"] .now-eq i {
+  background: var(--accent);
   transform: scaleY(0.55);
+  animation: now-wait var(--now-wait-period, 1400ms) var(--e-breath) infinite;
 }
 body[data-playback="error"] .now-eq i {
-  transform: scaleY(0.16);
+  background: var(--error);
+  transform: scaleY(0.18);
 }
 @keyframes now-eq {
   from {
@@ -130,20 +115,21 @@ body[data-playback="error"] .now-eq i {
     transform: scaleY(1);
   }
 }
-
-/* A playback column shows the artwork large, so the same relative travel would
-   shout; the badge grows with it instead. Matches the block in style.css. */
-@container now-playing (min-height: 280px) {
-  :root .now-cover {
-    --now-pulse: 1.012;
-    --now-dot: 34px;
-    --now-dot-inset: 14px;
+@keyframes now-wait {
+  0%,
+  100% {
+    opacity: 0.28;
+  }
+  50% {
+    opacity: 1;
   }
 }
-@media (max-width: 430px) {
-  :root {
-    --now-dot: 18px;
-    --now-dot-inset: 3px;
+
+/* A large cover in a playback column gets a wider, softer halo. */
+@container now-playing (min-height: 110px) {
+  :root .now-cover {
+    --now-glow-blur: 32px;
+    --now-glow-spread: 5%;
   }
 }
 
@@ -172,14 +158,17 @@ body[data-playback="error"] .song-row.playing .song-info small::before {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #now-cover::after,
-  .now-eq,
-  .now-eq i,
-  .song-row.playing .song-info small::before {
+  /* :root keeps these ahead of the animated rules above. */
+  :root .now-cover > .now-glow,
+  :root .now-eq i,
+  :root .song-row.playing .song-info small::before {
     animation: none !important;
     transition: none;
   }
-  /* Still readable as "playing": a stepped, unequal silhouette. */
+  /* Four states must stay tellable apart from colour and shape alone. */
+  body[data-playback="playing"] .now-cover > .now-glow {
+    opacity: 0.5;
+  }
   body[data-playback="playing"] .now-eq i {
     transform: scaleY(0.6);
   }
@@ -189,8 +178,7 @@ body[data-playback="error"] .song-row.playing .song-info small::before {
   body[data-playback="playing"] .now-eq i:nth-child(3) {
     transform: scaleY(0.78);
   }
-  /* Four states must stay tellable apart from colour and size alone. */
-  body[data-playback="loading"] #now-cover::after {
+  body[data-playback="loading"] .now-eq i {
     opacity: 0.55;
   }
 }
