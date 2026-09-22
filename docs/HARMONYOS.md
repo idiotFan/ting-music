@@ -18,7 +18,7 @@
   - **系统媒体控制**：`Media.ets` 创建 AVSession（元数据、播放状态、播放 / 暂停 / 上下曲 / seek 回调），命令经 `mediaCommand()` 回到唯一播放队列；播放时启动 `AUDIO_PLAYBACK` 长时任务保证后台播放，暂停即停止。Rust 侧 `system_media/ohos.rs` 与 Android 后端同一契约，前端把后端名 `harmony` 视为原生媒体会话。
   - **下载浏览**：`Downloads.ets` 列出沙箱 `files/Ting` 下的音频，ActionSheet 选中后经 `DocumentViewPicker.save` 复制到用户选择的位置；二维码同样经文件选择器保存（`Qr.ets`），不依赖 HMS 专有的 Share Kit。
 - Rust 与 ArkTS 之间是一个同步 JSON 分发器（`ohos_bridge.rs` ↔ `TingBridge.ets`）：Rust 在非主线程阻塞等待 ArkTS 主线程的即时应答，耗时的系统调用在 ArkTS 侧后台继续并只写日志。
-- 产物未签名：签名需要 AppGallery Connect 的证书与 profile（debug 证书绑定设备 UDID），配好后可用 SDK 里的 `hap-sign-tool` 在 CI 签名。第三方客户端上架商店审核风险很高，当前目标是内测分发。
+- 签名：HarmonyOS NEXT 不能安装未签名 hap。在 AppGallery Connect 创建应用（包名 `com.ting.music.demo`）并签发调试证书与 profile（登记目标设备 UDID）后，把材料配成仓库 secret，CI 的 `Sign hap` 步骤会用 SDK 自带的 `hap-sign-tool` 签名并产出 `entry-default-signed.hap`；没有 secret 时只产出未签名包。所需 secret：`HARMONY_KEYSTORE_P12`（.p12 的 base64）、`HARMONY_KEYSTORE_PASSWORD`、`HARMONY_KEY_ALIAS`、`HARMONY_KEY_PASSWORD`、`HARMONY_CERT_CER`（.cer 的 base64）、`HARMONY_PROFILE_P7B`（.p7b 的 base64）。第三方客户端上架商店审核风险很高，当前目标是内测分发。
 
 ## 验证边界
 

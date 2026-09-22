@@ -173,6 +173,10 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
       - name: HarmonyOS command line tools
         uses: ErBWs/setup-ohos@v2
         with:
@@ -220,9 +224,40 @@ jobs:
           npm run tauri -- ohos init --ci
           npm run tauri -- ohos build --ci
           ls -l src-tauri/gen/ohos/entry/build/default/outputs/default/
+      # Signing needs AppGallery Connect material (.p12 keystore, .cer certificate,
+      # .p7b debug/release profile) stored as secrets; without them the job still
+      # publishes the unsigned hap so the build itself stays verifiable.
+      - name: Sign hap
+        env:
+          HARMONY_KEYSTORE_P12: ${{ secrets.HARMONY_KEYSTORE_P12 }}
+          HARMONY_KEYSTORE_PASSWORD: ${{ secrets.HARMONY_KEYSTORE_PASSWORD }}
+          HARMONY_KEY_ALIAS: ${{ secrets.HARMONY_KEY_ALIAS }}
+          HARMONY_KEY_PASSWORD: ${{ secrets.HARMONY_KEY_PASSWORD }}
+          HARMONY_CERT_CER: ${{ secrets.HARMONY_CERT_CER }}
+          HARMONY_PROFILE_P7B: ${{ secrets.HARMONY_PROFILE_P7B }}
+        run: |
+          if [ -z "$HARMONY_KEYSTORE_P12" ] || [ -z "$HARMONY_PROFILE_P7B" ] || [ -z "$HARMONY_CERT_CER" ]; then
+            echo "No HarmonyOS signing secrets; leaving the hap unsigned."
+            exit 0
+          fi
+          set -euo pipefail
+          sign="$(mktemp -d)"
+          trap 'rm -rf "$sign"' EXIT
+          printf '%s' "$HARMONY_KEYSTORE_P12" | base64 -d > "$sign/keystore.p12"
+          printf '%s' "$HARMONY_CERT_CER" | base64 -d > "$sign/app.cer"
+          printf '%s' "$HARMONY_PROFILE_P7B" | base64 -d > "$sign/app.p7b"
+          out=src-tauri/gen/ohos/entry/build/default/outputs/default
+          java -jar "$HOS_SDK_HOME/default/openharmony/toolchains/lib/hap-sign-tool.jar" sign-app \
+            -mode localSign -signAlg SHA256withECDSA -signCode 1 \
+            -keystoreFile "$sign/keystore.p12" -keystorePwd "$HARMONY_KEYSTORE_PASSWORD" \
+            -keyAlias "$HARMONY_KEY_ALIAS" -keyPwd "$HARMONY_KEY_PASSWORD" \
+            -appCertFile "$sign/app.cer" -profileFile "$sign/app.p7b" \
+            -inFile "$out/entry-default-unsigned.hap" -outFile "$out/entry-default-signed.hap"
+          rm -f "$out/entry-default-unsigned.hap"
+          ls -l "$out"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: Ting-0.9.7-build-90701-HarmonyOS-unsigned
+          name: Ting-0.9.7-build-90701-HarmonyOS
           path: src-tauri/gen/ohos/entry/build/default/outputs/default/*.hap
           if-no-files-found: error
           retention-days: 14
