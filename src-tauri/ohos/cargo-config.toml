@@ -1,0 +1,16 @@
+# Cargo config for OpenHarmony builds only. Tauri's OpenHarmony support lives on
+# the feat/open-harmony branches and is not on crates.io yet, so the CI job (and a
+# local `cargo tauri ohos build`) layers these patches through `--config` /
+# $CARGO_HOME/config.toml instead of Cargo.toml, keeping every other platform on
+# the locked crates.io releases. Versions match Cargo.lock (tauri 2.11.5).
+[patch.crates-io]
+tauri = { git = "https://github.com/tauri-apps/tauri", branch = "feat/open-harmony" }
+tauri-build = { git = "https://github.com/tauri-apps/tauri", branch = "feat/open-harmony" }
+tauri-codegen = { git = "https://github.com/tauri-apps/tauri", branch = "feat/open-harmony" }
+tauri-macros = { git = "https://github.com/tauri-apps/tauri", branch = "feat/open-harmony" }
+tauri-runtime = { git = "https://github.com/tauri-apps/tauri", branch = "feat/open-harmony" }
+tauri-runtime-wry = { git = "https://github.com/tauri-apps/tauri", branch = "feat/open-harmony" }
+tauri-utils = { git = "https://github.com/tauri-apps/tauri", branch = "feat/open-harmony" }
+tauri-plugin = { git = "https://github.com/tauri-apps/tauri", branch = "feat/open-harmony" }
+wry = { git = "https://github.com/tauri-apps/wry", branch = "feat/open-harmony" }
+tao = { git = "https://github.com/tauri-apps/tao", branch = "feat/open-harmony" }

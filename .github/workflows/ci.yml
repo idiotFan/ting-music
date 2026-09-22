@@ -161,6 +161,62 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  harmony:
+    name: HarmonyOS NEXT arm64 hap (unsigned, experimental)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+      - name: HarmonyOS command line tools
+        uses: ErBWs/setup-ohos@v2
+        with:
+          version: 6.1.1.280
+          cache: true
+      - name: Cache Rust tools and registry
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          path: |
+            ~/.cargo/bin/cargo-tauri
+            ~/.cargo/bin/ohrs
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ohos-tools-${{ runner.os }}-${{ hashFiles('src-tauri/ohos/cargo-config.toml') }}-2
+      - name: Prepare
+        run: |
+          sudo apt-get update && sudo apt-get install -y libgl1
+          npm ci
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-unknown-linux-ohos
+          test -x ~/.cargo/bin/ohrs || cargo install ohrs --locked
+          test -x ~/.cargo/bin/cargo-tauri || cargo install tauri-cli --git https://github.com/tauri-apps/tauri --branch feat/open-harmony --locked
+          # OpenHarmony crates come from the feat/open-harmony branches; keep the patch out of Cargo.toml.
+          mkdir -p ~/.cargo && cat src-tauri/ohos/cargo-config.toml >> ~/.cargo/config.toml
+          # cargo-mobile2 derives DEVECO_SDK_HOME as three parents of OHOS_HOME, so
+          # expose the SDK one level deeper than the command line tools lay it out.
+          ln -s . "$OHOS_NDK_HOME/current"
+          mkdir -p "$HOME/deveco/sdk" && ln -s "$HOS_SDK_HOME/default" "$HOME/deveco/sdk/default"
+          echo "OHOS_HOME=$HOME/deveco/sdk/default/openharmony/current" >> "$GITHUB_ENV"
+          echo "DEVECO_SDK_HOME=$HOME/deveco/sdk" >> "$GITHUB_ENV"
+          echo "OHOS_NDK_HOME=$HOME/deveco/sdk/default/openharmony/current" >> "$GITHUB_ENV"
+      - name: Build hap
+        run: |
+          npm run tauri -- ohos init --ci
+          npm run tauri -- ohos build --ci
+          ls -l src-tauri/gen/ohos/entry/build/default/outputs/default/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Ting-0.9.7-build-90701-HarmonyOS-unsigned
+          path: src-tauri/gen/ohos/entry/build/default/outputs/default/*.hap
+          if-no-files-found: error
+          retention-days: 14
+
   secrets:
     name: Source and history credential scan
     runs-on: ubuntu-24.04

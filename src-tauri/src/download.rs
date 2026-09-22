@@ -319,9 +319,13 @@ pub async fn open_download_folder(app: tauri::AppHandle) -> Result<(), String> {
     let mut command = std::process::Command::new("open");
     #[cfg(target_os = "windows")]
     let mut command = std::process::Command::new("explorer");
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
     let mut command = std::process::Command::new("xdg-open");
-    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    #[cfg(any(
+        target_os = "macos",
+        target_os = "windows",
+        all(target_os = "linux", not(target_env = "ohos"))
+    ))]
     {
         command.arg(dir).spawn().map_err(|_| "无法打开下载目录")?;
         Ok(())
@@ -334,7 +338,7 @@ pub async fn open_download_folder(app: tauri::AppHandle) -> Result<(), String> {
     #[cfg(not(any(
         target_os = "macos",
         target_os = "windows",
-        target_os = "linux",
+        all(target_os = "linux", not(target_env = "ohos")),
         target_os = "android"
     )))]
     {

@@ -45,7 +45,10 @@ fn load() -> Option<Value> {
     .ok()
     .and_then(|b| serde_json::from_slice(&b).ok())
 }
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+#[cfg(any(
+    target_os = "windows",
+    all(target_os = "linux", not(target_env = "ohos"))
+))]
 fn load() -> Option<Value> {
     keyring::Entry::new("com.ting.music.demo", "qq-session")
         .ok()
@@ -56,7 +59,7 @@ fn load() -> Option<Value> {
     target_os = "macos",
     target_os = "ios",
     target_os = "windows",
-    target_os = "linux",
+    all(target_os = "linux", not(target_env = "ohos")),
     target_os = "android"
 )))]
 fn load() -> Option<Value> {
@@ -80,7 +83,10 @@ fn persist(value: Option<&Value>) -> Result<(), String> {
         }
     }
 }
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+#[cfg(any(
+    target_os = "windows",
+    all(target_os = "linux", not(target_env = "ohos"))
+))]
 fn persist(value: Option<&Value>) -> Result<(), String> {
     let entry = keyring::Entry::new("com.ting.music.demo", "qq-session")
         .map_err(|_| "QQ 已登录，但凭据保存失败，本次会话可用".to_string())?;
@@ -100,7 +106,7 @@ fn persist(value: Option<&Value>) -> Result<(), String> {
     target_os = "macos",
     target_os = "ios",
     target_os = "windows",
-    target_os = "linux",
+    all(target_os = "linux", not(target_env = "ohos")),
     target_os = "android"
 )))]
 fn persist(value: Option<&Value>) -> Result<(), String> {

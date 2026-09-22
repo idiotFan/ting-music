@@ -5,12 +5,16 @@ const ios =
   /iPhone|iPad|iPod/.test(navigator.userAgent) ||
   (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const android = /Android/.test(navigator.userAgent);
+// ArkWeb on HarmonyOS NEXT announces "OpenHarmony" (and "ArkWeb") in its UA.
+const harmony = /OpenHarmony|ArkWeb/.test(navigator.userAgent);
 export const platform = {
   ios,
   android,
-  mac: !ios && !android && /Mac/.test(navigator.platform),
+  harmony,
+  mac: !ios && !android && !harmony && /Mac/.test(navigator.platform),
 };
-export const mobileDevice = platform.ios || platform.android;
+export const mobileDevice =
+  platform.ios || platform.android || platform.harmony;
 export const credentialNotice = !isTauri()
   ? "浏览器预览不保存平台登录凭据。"
   : platform.ios
@@ -19,9 +23,12 @@ export const credentialNotice = !isTauri()
       ? "登录凭据保存在此 Mac 的 macOS 钥匙串中，不保存密码。"
       : platform.android
         ? "登录凭据经 Android Keystore 加密保存在此设备，重启后保持登录，不保存密码。"
-        : /Win/.test(navigator.platform) || /Windows/.test(navigator.userAgent)
-          ? "登录凭据保存在此电脑的 Windows 凭据管理器中，不保存密码。"
-          : "登录凭据由系统凭据存储保管，不保存密码。";
+        : platform.harmony
+          ? "鸿蒙版暂只保留本次登录会话，重启应用后需重新登录，不保存密码。"
+          : /Win/.test(navigator.platform) ||
+              /Windows/.test(navigator.userAgent)
+            ? "登录凭据保存在此电脑的 Windows 凭据管理器中，不保存密码。"
+            : "登录凭据由系统凭据存储保管，不保存密码。";
 export function loginInstructions(source: string, kind: string) {
   const app =
     source === "qq" ? (kind === "wx" ? "微信" : "手机 QQ") : "网易云音乐 App";
@@ -31,6 +38,6 @@ export function loginInstructions(source: string, kind: string) {
 }
 export const downloadLocation = platform.ios
   ? "文件 App → 浏览 → 我的 iPhone / iPad → 听 · Ting → Ting"
-  : platform.android
+  : platform.android || platform.harmony
     ? "应用内「查看下载」（可保存或分享）"
     : "系统下载目录中的 Ting 文件夹";

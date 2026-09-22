@@ -93,7 +93,7 @@ python3 -B scripts/release.py --gitleaks /path/to/gitleaks
 
 ### Linux / Windows
 
-CI 在 Windows（NSIS 安装器）和 Ubuntu Linux（deb / AppImage）上原生构建并运行回归；登录凭据分别持久化到 Windows 凭据管理器和 Linux Secret Service，系统媒体控制使用 SMTC / MPRIS。macOS 应用包也随 CI 作为构建产物提供。iOS 提供手机布局、钥匙串和沙盒下载。
+CI 在 Windows（NSIS 安装器）和 Ubuntu Linux（deb / AppImage）上原生构建并运行回归，并交叉编译未签名的 HarmonyOS NEXT hap（实验性，见 [HarmonyOS 构建](docs/HARMONYOS.md)）；登录凭据分别持久化到 Windows 凭据管理器和 Linux Secret Service，系统媒体控制使用 SMTC / MPRIS。macOS 应用包也随 CI 作为构建产物提供。iOS 提供手机布局、钥匙串和沙盒下载。
 
 ## 使用说明
 

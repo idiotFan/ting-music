@@ -270,7 +270,7 @@ fn check(body: Value) -> Result<Value, String> {
     target_os = "macos",
     target_os = "ios",
     target_os = "windows",
-    target_os = "linux"
+    all(target_os = "linux", not(target_env = "ohos"))
 ))]
 const KEYCHAIN_SERVICE: &str = "com.ting.music.demo";
 const KEYCHAIN_ACCOUNT: &str = "netease-session";
@@ -284,7 +284,10 @@ fn stored_session() -> Option<String> {
     .ok()
     .and_then(|v| String::from_utf8(v).ok())
 }
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+#[cfg(any(
+    target_os = "windows",
+    all(target_os = "linux", not(target_env = "ohos"))
+))]
 fn stored_session() -> Option<String> {
     keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
         .ok()
@@ -294,7 +297,7 @@ fn stored_session() -> Option<String> {
     target_os = "macos",
     target_os = "ios",
     target_os = "windows",
-    target_os = "linux",
+    all(target_os = "linux", not(target_env = "ohos")),
     target_os = "android"
 )))]
 fn stored_session() -> Option<String> {
@@ -309,7 +312,10 @@ fn store_session(cookie: &str) -> Result<(), String> {
     )
     .map_err(|_| "已登录，但钥匙串保存失败；本次会话仍可使用".into())
 }
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+#[cfg(any(
+    target_os = "windows",
+    all(target_os = "linux", not(target_env = "ohos"))
+))]
 fn store_session(cookie: &str) -> Result<(), String> {
     let entry = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
         .map_err(|_| "已登录，但凭据保存失败；本次会话仍可使用".to_string())?;
@@ -321,7 +327,7 @@ fn store_session(cookie: &str) -> Result<(), String> {
     target_os = "macos",
     target_os = "ios",
     target_os = "windows",
-    target_os = "linux",
+    all(target_os = "linux", not(target_env = "ohos")),
     target_os = "android"
 )))]
 fn store_session(_: &str) -> Result<(), String> {
@@ -336,7 +342,10 @@ fn delete_session() -> Result<(), String> {
         Err(_) => Err("无法清除钥匙串登录记录，请重试退出".into()),
     }
 }
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+#[cfg(any(
+    target_os = "windows",
+    all(target_os = "linux", not(target_env = "ohos"))
+))]
 fn delete_session() -> Result<(), String> {
     let entry = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
         .map_err(|_| "无法清除登录凭据，请重试退出".to_string())?;
@@ -350,7 +359,7 @@ fn delete_session() -> Result<(), String> {
     target_os = "macos",
     target_os = "ios",
     target_os = "windows",
-    target_os = "linux",
+    all(target_os = "linux", not(target_env = "ohos")),
     target_os = "android"
 )))]
 fn delete_session() -> Result<(), String> {

@@ -15,7 +15,7 @@ if (!androidHelp && process.argv[2] === 'android' && ['dev', 'build'].includes(p
   prepareAndroid();
 }
 if (["dev", "build", "bundle"].includes(process.argv[2]) ||
-    (["ios", "android"].includes(process.argv[2]) && ["dev", "build"].includes(process.argv[3]))) {
+    (["ios", "android", "ohos"].includes(process.argv[2]) && ["dev", "build"].includes(process.argv[3]))) {
   const check = spawnSync(process.execPath, ["scripts/preflight.mjs"], { stdio: "inherit" });
   if (check.error) throw check.error;
   if (check.status !== 0) process.exit(check.status ?? 1);
@@ -46,11 +46,16 @@ if (["build", "bundle"].includes(args[0])) {
     args.splice(1, 0, "--config", "src-tauri/tauri.updater.conf.json");
   }
 }
+// OpenHarmony lives on Tauri's feat/open-harmony branch, which only ships as
+// `cargo tauri` (see docs/HARMONYOS.md); the npm CLI covers every other target.
+const ohos = args[0] === "ohos";
 // Run the JS entry directly: Windows cannot spawn the extensionless .bin shim.
-const child = spawn(process.execPath, [resolve("node_modules/@tauri-apps/cli/tauri.js"), ...args], {
-  stdio: "inherit",
-  env,
-});
+const child = ohos
+  ? spawn("cargo", ["tauri", ...args], { stdio: "inherit", env })
+  : spawn(process.execPath, [resolve("node_modules/@tauri-apps/cli/tauri.js"), ...args], {
+      stdio: "inherit",
+      env,
+    });
 child.on("exit", (code) => {
   if (code === 0 && !androidHelp && process.argv[2] === 'android' && process.argv[3] === 'init') prepareAndroid();
   process.exit(code ?? 1);

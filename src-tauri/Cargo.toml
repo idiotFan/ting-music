@@ -32,7 +32,8 @@ symphonia = { version = "0.5.5", default-features = false, features = ["flac", "
 lofty = "0.22.4"
 time = "0.3"
 
-[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+# OpenHarmony reports target_os = "linux" with target_env = "ohos"; it updates through the store.
+[target.'cfg(not(any(target_os = "android", target_os = "ios", target_env = "ohos")))'.dependencies]
 tauri-plugin-updater = "2"
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
@@ -42,7 +43,7 @@ security-framework = "3.7"
 windows = { version = "0.61.3", features = ["Foundation", "Media", "Storage", "Storage_Streams", "Win32_Foundation", "Win32_System_WinRT"] }
 keyring = { version = "3", features = ["windows-native"] }
 
-[target.'cfg(target_os = "linux")'.dependencies]
+[target.'cfg(all(target_os = "linux", not(target_env = "ohos")))'.dependencies]
 dbus = "0.9"
 dbus-crossroads = "0.5"
 keyring = { version = "3", features = ["sync-secret-service"] }
