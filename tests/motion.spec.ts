@@ -890,6 +890,8 @@ test("加载更多只让新增的行入场，已读的行一帧不动", async ({
     .locator(".main-scroll")
     .evaluate((element) => (element.scrollTop = element.scrollHeight));
   await page.locator("#more").click();
+  // Park the pointer: a hovered row would report its background transition.
+  await page.mouse.move(2, 2);
   await expect
     .poll(() => page.evaluate(() => typeof (window as any).__motionReleaseMore))
     .toBe("function");

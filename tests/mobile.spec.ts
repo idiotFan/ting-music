@@ -149,7 +149,7 @@ test("iPhone layout keeps controls in viewport and lyrics use a dismissible full
   await context.close();
 });
 
-test("Mac title is centered and clears native traffic lights and account controls", async ({
+test("Mac title sits beside the native traffic lights and clears the account controls", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 400, height: 720 });
@@ -165,8 +165,12 @@ test("Mac title is centered and clears native traffic lights and account control
   await page.goto("/");
   const brand = await page.locator(".brand").boundingBox();
   const theme = await page.locator("#theme-button").boundingBox();
-  expect(Math.abs(brand!.x + brand!.width / 2 - 200)).toBeLessThan(1);
+  // Anchored, not centered: a centered title drifts during live resizes.
   expect(brand!.x).toBeGreaterThan(88);
+  expect(brand!.x).toBeLessThan(100);
+  await page.setViewportSize({ width: 900, height: 720 });
+  expect((await page.locator(".brand").boundingBox())!.x).toBe(brand!.x);
+  await page.setViewportSize({ width: 400, height: 720 });
   expect(brand!.x + brand!.width).toBeLessThan(theme!.x);
   await expect(page.locator(".brand-mark")).toBeHidden();
   await page.screenshot({ path: "work/mac-titlebar-layout.png" });

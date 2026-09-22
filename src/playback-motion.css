@@ -101,6 +101,13 @@ body[data-playback="error"] .song-row.playing .song-info small::before {
   background: var(--error);
 }
 
+/* A window that is minimised or on another desktop keeps no decorative
+   animation ticking; playback-state.ts sets the class from visibilitychange. */
+html.app-hidden .now-eq i,
+html.app-hidden .song-row.playing .song-info small::before {
+  animation-play-state: paused;
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* :root keeps these ahead of the animated rules above. */
   :root .now-eq i,

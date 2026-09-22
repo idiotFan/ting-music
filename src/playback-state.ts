@@ -113,5 +113,10 @@ export function setupPlaybackState(
   // Publish the resting state without deriving it: the callers this closes
   // over are declared later in the module and must not be read yet.
   document.body.dataset.playback = current;
+  // Hidden windows freeze the decorative animations (see playback-motion.css).
+  const hidden = () =>
+    document.documentElement.classList.toggle("app-hidden", document.hidden);
+  document.addEventListener("visibilitychange", hidden);
+  hidden();
   return { refresh: apply, state: () => current };
 }

@@ -591,6 +591,10 @@ main {
   border-bottom: 1px solid var(--line);
   border-radius: 7px;
   cursor: pointer;
+  /* Rows off screen skip layout and paint (a 300-song queue costs the same as
+     a screenful); the intrinsic size keeps the scrollbar honest. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 66px;
 }
 .song-row:hover {
   background: var(--hover);
@@ -1480,7 +1484,9 @@ body.column-resizing .col-resizer {
   }
 }
 
-/* Keep native traffic lights, a centered title, and account tools in separate areas. */
+/* Native traffic lights, then the title anchored beside them, account tools
+   on the right. The title used to be centered with an absolute offset, which
+   drifts during live window resizes while WebKit catches up with the layout. */
 .mac-window .app-header {
   position: relative;
   height: 56px;
@@ -1488,9 +1494,6 @@ body.column-resizing .col-resizer {
   gap: 10px;
 }
 .mac-window .brand {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
   pointer-events: auto;
 }
 .mac-window .brand-mark {
