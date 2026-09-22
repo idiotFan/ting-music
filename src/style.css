@@ -289,16 +289,18 @@ input[type="range"] {
   min-width: 0;
   margin: 0;
   padding: 0;
-  border-radius: 2px;
+  /* The track is a 4px stripe painted at the vertical centre, so a taller
+     touch target (phones use 28px) never turns into a thick bar. */
   background: linear-gradient(
-    to right,
-    var(--accent) var(--fill, 0%),
-    var(--line) var(--fill, 0%)
-  );
+      to right,
+      var(--accent) var(--fill, 0%),
+      var(--line) var(--fill, 0%)
+    )
+    no-repeat center / 100% 4px;
   cursor: pointer;
 }
 input[type="range"]::-webkit-slider-runnable-track {
-  height: 4px;
+  height: 100%;
   background: transparent;
   border: 0;
 }
@@ -307,6 +309,7 @@ input[type="range"]::-webkit-slider-thumb {
   appearance: none;
   width: 14px;
   height: 14px;
+  /* (input height - thumb) / 2; the phone rule below repeats it for 28px. */
   margin-top: -5px;
   border-radius: 50%;
   border: 2px solid var(--surface);
@@ -1688,6 +1691,9 @@ button.brand:active {
 }
 .mobile-device #seek {
   height: 28px;
+}
+.mobile-device #seek::-webkit-slider-thumb {
+  margin-top: 7px;
 }
 .mobile-device .transport-buttons {
   grid-column: 1;
