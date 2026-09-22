@@ -1,5 +1,14 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
+  importLocals,
+  localByKey,
+  localSongs,
+  persistentLocals,
+  restoreLocals,
+  storable,
+  validLocal,
+} from "./local-library";
+import {
   createElement,
   Search,
   Library,
@@ -89,8 +98,20 @@ import {
   type Song,
   type Playlist,
 } from "./library";
-const sourceName = (s?: { source?: Source; localUrl?: string }) =>
-  s?.localUrl ? "本地" : s?.source === "qq" ? "QQ音乐" : "网易云";
+const sourceName = (s?: {
+  source?: Source;
+  localUrl?: string;
+  localPath?: string;
+}) =>
+  s?.localUrl || s?.localPath
+    ? "本地"
+    : s?.source === "qq"
+      ? "QQ音乐"
+      : "网易云";
+/** Any file on this device, whether remembered by path or only for this session. */
+const localSong = (s?: Song) => !!s && !!(s.localUrl || s.localPath);
+/** A session-only import (mobile): gone after restart, so it cannot be organized. */
+const transient = (s?: Song) => !!s && !!s.localUrl && !s.localPath;
 type Playback = {
   url: string;
   trial: boolean;
@@ -249,20 +270,28 @@ const icon = (name: string) => {
   return iconCache.get(name)!;
 };
 function restoreSongs(data: unknown): Song[] {
-  return Array.isArray(data)
-    ? data.filter(
-        (s) =>
-          s &&
-          !s.localUrl &&
-          (!s.source || ["netease", "qq"].includes(s.source)) &&
-          Number.isSafeInteger(s.id) &&
-          s.id > 0 &&
-          typeof s.name === "string" &&
-          typeof s.artist === "string" &&
-          typeof s.album === "string" &&
-          typeof s.cover === "string",
-      )
-    : [];
+  if (!Array.isArray(data)) return [];
+  const online = data.filter(
+    (s) =>
+      s &&
+      !s.localUrl &&
+      !s.localPath &&
+      (!s.source || ["netease", "qq"].includes(s.source)) &&
+      Number.isSafeInteger(s.id) &&
+      s.id > 0 &&
+      typeof s.name === "string" &&
+      typeof s.artist === "string" &&
+      typeof s.album === "string" &&
+      typeof s.cover === "string",
+  );
+  if (!persistentLocals) return online;
+  // Remembered files come back through the library so a moved or deleted
+  // file is flagged rather than played from a stale address.
+  return data.flatMap((s) => {
+    if (!validLocal(s)) return online.includes(s) ? [s] : [];
+    const fresh = localByKey(songKey(s));
+    return fresh ? [fresh] : [];
+  });
 }
 function restore(key: string): Song[] {
   try {
@@ -272,7 +301,7 @@ function restore(key: string): Song[] {
   }
 }
 let favorites = favoriteSongs(),
-  locals: Song[] = [],
+  locals: Song[] = localSongs(),
   results: Song[] = [];
 const playbackQueue = new PlaybackQueue(restore("ting.queue"));
 /** What was on screen when the app last closed: the track, its position, and
@@ -301,7 +330,9 @@ function readSession(): Session {
         typeof data.position === "number" && data.position >= 0
           ? data.position
           : 0,
-      view: ["favorites", "playlists", "playlist", "queue"].includes(data.view)
+      view: ["favorites", "playlists", "playlist", "queue", "local"].includes(
+        data.view,
+      )
         ? data.view
         : undefined,
       playlist: validPlaylist ? (playlist as Playlist) : undefined,
@@ -321,7 +352,7 @@ function saveSession(patch: Partial<Session>) {
 }
 // The position is worth remembering to the second, not to the frame.
 function savePosition() {
-  if (!current || current.localUrl) return;
+  if (!current || transient(current)) return;
   saveSession({ position: Math.floor(audio.currentTime) });
 }
 /** Where playback resumes from after a cold start, until the first play. */
@@ -354,7 +385,10 @@ let lyrics: { time: number; text: string }[] = [],
 let trackDirection: -1 | 0 | 1 = 0;
 const audio = new Audio();
 audio.preload = "metadata";
-audio.volume = 0.7;
+audio.volume = Math.min(
+  1,
+  Math.max(0, Number(readSetting("ting.volume")) || 0.7),
+);
 // The transport button stays optimistic; this is the fact behind it, taken
 // from the media events alone and published on body[data-playback].
 const playback = setupPlaybackState(
@@ -389,7 +423,9 @@ function save() {
   try {
     localStorage.setItem(
       "ting.queue",
-      JSON.stringify(playbackQueue.songs.filter((s) => !s.localUrl)),
+      JSON.stringify(
+        playbackQueue.songs.filter((s) => !transient(s)).map(storable),
+      ),
     );
   } catch {
     toast("本地存储空间不足，本次列表未保存");
@@ -481,6 +517,10 @@ const lyricFollower = setupLyrics(
   },
   toast,
 );
+// Reopen the lyrics pane the way the app was closed; the native window was
+// already restored at its expanded width, so no resize animation is due.
+if (isTauri() && !mobileDevice && readSetting("ting.lyrics-open") === "1")
+  void lyricFollower.setOpen(true, false);
 setupThemes();
 if (!mobileDevice) {
   setupColumns();
@@ -501,6 +541,10 @@ const library = setupLibrary({
     // Keep filling the playback queue, but do not let old pages overwrite an edited library.
     playlistEditVersion++;
     save();
+    // A local file may have been forgotten or favorited from the dialog.
+    locals = localSongs();
+    favorites = favoriteSongs();
+    updateFavorite();
     const local = internalPlaylists();
     playlists = [...local, ...playlists.filter((p) => !p.internal)];
     if (
@@ -755,7 +799,7 @@ function renderSongs() {
       next.setAttribute("role", "group");
       next.setAttribute("aria-label", song.name);
       next.title = mobileDevice ? "轻点播放" : "单击选中，双击播放；回车播放";
-      next.innerHTML = `<span class="row-number"></span><div class="song-info">${coverMarkup(song)}<div><button class="song-title" aria-label="${mobileDevice ? "播放" : "选中"} ${esc(song.name)}" aria-pressed="false">${esc(song.name)}</button>${song.localUrl ? "<em>本地</em>" : song.fee === 1 ? "<em>VIP</em>" : ""}<small><span class="source-badge" data-source="${song.source || "netease"}">${sourceName(song)}</span> ${esc(song.artist)}</small></div></div><span class="album">${esc(song.album)}</span><span class="song-duration">${song.duration ? formatTime(song.duration / 1000) : "—"}</span><div class="row-actions"><button class="icon-button favorite" data-favorite="${songKey(song)}" ${song.localUrl ? "disabled" : ""}>${icon("Heart")}</button><button class="icon-button" data-${view === "queue" ? "remove" : "enqueue"}="${songKey(song)}" aria-label="${view === "queue" ? "移出队列" : "加入队列"} ${esc(song.name)}">${icon(view === "queue" ? "X" : "Plus")}</button><button class="icon-button" data-song-menu="${songKey(song)}" aria-label="歌曲操作 ${esc(song.name)}" ${song.localUrl ? "disabled" : ""}>${icon("Ellipsis")}</button></div>`;
+      next.innerHTML = `<span class="row-number"></span><div class="song-info">${coverMarkup(song)}<div><button class="song-title" aria-label="${mobileDevice ? "播放" : "选中"} ${esc(song.name)}" aria-pressed="false">${esc(song.name)}</button>${song.missing ? "<em>文件丢失</em>" : localSong(song) ? "<em>本地</em>" : song.fee === 1 ? "<em>VIP</em>" : ""}<small><span class="source-badge" data-source="${song.source || "netease"}">${sourceName(song)}</span> ${esc(song.artist)}</small></div></div><span class="album">${esc(song.album)}</span><span class="song-duration">${song.duration ? formatTime(song.duration / 1000) : "—"}</span><div class="row-actions"><button class="icon-button favorite" data-favorite="${songKey(song)}" ${transient(song) ? "disabled" : ""}>${icon("Heart")}</button><button class="icon-button" data-${view === "queue" ? "remove" : "enqueue"}="${songKey(song)}" aria-label="${view === "queue" ? "移出队列" : "加入队列"} ${esc(song.name)}">${icon(view === "queue" ? "X" : "Plus")}</button><button class="icon-button" data-song-menu="${songKey(song)}" aria-label="歌曲操作 ${esc(song.name)}" ${transient(song) ? "disabled" : ""}>${icon("Ellipsis")}</button></div>`;
       if (row) row.replaceWith(next);
       else fresh.push(next);
       row = next;
@@ -778,7 +822,8 @@ function setView(next: View) {
     libraryBusy = false;
   }
   view = next;
-  if (next !== "discover" && next !== "local")
+  // The local shelf is only worth returning to where it persists.
+  if (next !== "discover" && (next !== "local" || persistentLocals))
     saveSession({
       view: next,
       playlist: next === "playlist" ? selectedPlaylist : undefined,
@@ -899,7 +944,7 @@ async function search(term: string, append = false) {
   }
 }
 function toggleFavorite(song: Song) {
-  if (song.localUrl) return;
+  if (transient(song)) return;
   const next = favorites.some((s) => songKey(s) === songKey(song))
     ? favorites.filter((s) => songKey(s) !== songKey(song))
     : [song, ...favorites];
@@ -918,7 +963,7 @@ let downloading = false;
 function updateDownloadButton() {
   $("#download-current").toggleAttribute(
     "disabled",
-    downloading || !current || !!current.localUrl,
+    downloading || !current || localSong(current),
   );
   $("#download-current").title =
     current?.source === "qq"
@@ -927,7 +972,7 @@ function updateDownloadButton() {
 }
 function updateFavorite() {
   updateDownloadButton();
-  $("#now-fav").toggleAttribute("disabled", !current || !!current.localUrl);
+  $("#now-fav").toggleAttribute("disabled", !current || transient(current));
   $("#now-fav").classList.toggle(
     "is-favorite",
     !!current && favorites.some((s) => songKey(s) === songKey(current)),
@@ -1023,12 +1068,9 @@ async function play(
   current = song;
   pendingSeek = resumeAt;
   resumePosition = undefined;
-  // Local files cannot be reopened after a restart; remember online tracks only.
-  if (song.localUrl) saveSession({ song: undefined, position: 0 });
-  else {
-    const { localUrl: _local, ...persisted } = song;
-    saveSession({ song: persisted as Song, position: Math.floor(resumeAt) });
-  }
+  // Session-only files cannot be reopened after a restart; skip those.
+  if (transient(song)) saveSession({ song: undefined, position: 0 });
+  else saveSession({ song: storable(song), position: Math.floor(resumeAt) });
   if (!sameSong) lyrics = [];
   activeLine = -1;
   trialStart = 0;
@@ -1038,7 +1080,7 @@ async function play(
   if (view === "queue") renderSongs();
   else syncRows();
   if (!sameSong) updateNow(song);
-  $("#quality").toggleAttribute("disabled", !!song.localUrl);
+  $("#quality").toggleAttribute("disabled", localSong(song));
   $("#track-tag").textContent = "正在准备播放…";
   if (!sameSong) {
     const box = $("#lyrics");
@@ -1053,6 +1095,18 @@ async function play(
   paintRange($("#seek") as HTMLInputElement);
   try {
     let url = song.localUrl;
+    if (song.localPath) {
+      // Re-read the library entry: the file may have moved since this copy
+      // of the song was queued.
+      const fresh = localByKey(songKey(song));
+      url = fresh?.localUrl;
+      if (!url) {
+        toast("本地文件已不存在，无法播放");
+        $("#track-tag").textContent = "文件丢失";
+        preparingPlayback = false;
+        return;
+      }
+    }
     if (!url) {
       const data = await cloud<Playback>(
         "song_url",
@@ -1074,7 +1128,7 @@ async function play(
     audio.src = url;
     audio.load();
     const playPromise = resumeAfterLoad ? audio.play() : Promise.resolve();
-    if (song.localUrl)
+    if (localSong(song))
       renderLyrics(
         '<p class="lyric-placeholder">本地音乐<br>享受没有文字的片刻。</p>',
       );
@@ -1198,6 +1252,23 @@ function toggle() {
       void audio.play().catch(() => toast("播放失败，请重新选择歌曲"));
     }
   } else audio.pause();
+}
+async function importLibrary() {
+  let added: Song[];
+  try {
+    added = await importLocals();
+  } catch (e) {
+    toast(String(e instanceof Error ? e.message : e));
+    return;
+  }
+  locals = localSongs();
+  setView("local");
+  if (added.length) toast(`已加入本地音乐库 ${added.length} 首`);
+  else if (locals.length) toast("没有新增的音乐文件");
+}
+function pickLocalFiles() {
+  if (persistentLocals) void importLibrary();
+  else ($("#file-input") as HTMLInputElement).click();
 }
 function importFiles(files: FileList | null) {
   if (!files) return;
@@ -1328,8 +1399,7 @@ document.addEventListener("click", (e) => {
     goBack();
     return;
   }
-  if (el.closest("#empty-import"))
-    ($("#file-input") as HTMLInputElement).click();
+  if (el.closest("#empty-import")) pickLocalFiles();
 });
 document.addEventListener("dblclick", (e) => {
   if (mobileDevice) return;
@@ -1389,7 +1459,7 @@ $(".brand").addEventListener("click", (e) => {
   e.preventDefault();
   if (view !== "discover") setView("discover");
 });
-$("#import-top").onclick = () => ($("#file-input") as HTMLInputElement).click();
+$("#import-top").onclick = pickLocalFiles;
 $("#file-input").onchange = () => {
   importFiles(($("#file-input") as HTMLInputElement).files);
   ($("#file-input") as HTMLInputElement).value = "";
@@ -1425,6 +1495,7 @@ $("#volume").oninput = () => {
   audio.volume = Number(($("#volume") as HTMLInputElement).value);
   audio.muted = false;
   updateVolume();
+  writeSetting("ting.volume", String(audio.volume));
 };
 $("#mute").onclick = () => {
   audio.muted = !audio.muted;
@@ -1513,7 +1584,7 @@ audio.addEventListener("loadedmetadata", () => {
   }
   if (!resumeAfterLoad) audio.pause();
   updateTransport();
-  if (current?.localUrl) {
+  if (current?.localUrl && !current.duration) {
     current.duration = audio.duration * 1000;
     renderSongs();
   }
@@ -1603,6 +1674,13 @@ async function initialize() {
   }
   void search(query);
   if (!isTauri()) return;
+  void restoreLocals().then(({ missing }) => {
+    locals = localSongs();
+    favorites = favoriteSongs();
+    if (missing) toast(`有 ${missing} 首本地音乐的文件已找不到`);
+    if (view === "local" || view === "favorites") renderSongs();
+    else syncRows();
+  });
   await Promise.allSettled(
     (["netease", "qq"] as Source[]).map((source) => {
       const version = authVersions[source];
@@ -1645,7 +1723,7 @@ async function restoreBrowsing() {
     return;
   }
   if (last === "playlists") await loadPlaylists();
-  else if (last === "favorites" || last === "queue") {
+  else if (last === "favorites" || last === "queue" || last === "local") {
     setView(last);
     renderSongs();
   }
@@ -2197,7 +2275,7 @@ $("#logout").onclick = async () => {
     await cloud("logout", {}, source);
     if (
       current &&
-      !current.localUrl &&
+      !localSong(current) &&
       (current.source || "netease") === source
     ) {
       ++playSerial;
@@ -2211,7 +2289,7 @@ $("#logout").onclick = async () => {
     else profile = null;
     playlistsLoaded = false;
     const keep = (s: Song) =>
-      !!s.localUrl || (s.source || "netease") !== source;
+      localSong(s) || (s.source || "netease") !== source;
     playbackQueue.replace(playbackQueue.songs.filter(keep));
     queueFillSerial++;
     queueExpected = 0;
@@ -2251,7 +2329,7 @@ $("#quality").onchange = () => {
   quality = ($("#quality") as HTMLSelectElement).value;
   if (!writeSetting("ting.quality", quality))
     toast("音质偏好未保存，本地存储不可用");
-  if (current && !current.localUrl) {
+  if (current && !localSong(current)) {
     const position = audio.currentTime,
       playing = !audio.paused;
     void play(current, undefined, position, playing, false, undefined, true);
@@ -2337,7 +2415,7 @@ async function fillPlaylistQueue(
 }
 
 $("#download-current").onclick = async () => {
-  if (!current || current.localUrl || downloading) return;
+  if (!current || localSong(current) || downloading) return;
   const song = current;
   downloading = true;
   updateDownloadButton();

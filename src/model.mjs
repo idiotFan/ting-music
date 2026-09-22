@@ -29,7 +29,7 @@ export function lyricIndex(lines, time) {
 }
 export function songKey(song) {
   return song
-    ? `${song.localUrl ? "local" : song.source || "netease"}:${song.id}`
+    ? `${song.localUrl || song.localPath ? "local" : song.source || "netease"}:${song.id}`
     : "";
 }
 export function uniqueSongs(songs) {

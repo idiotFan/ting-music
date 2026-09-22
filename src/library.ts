@@ -1,6 +1,13 @@
 import { MOTION, animateContent, openDialog, closeDialog } from "./motion";
 import { songKey, uniqueSongs, formatTime } from "./model.mjs";
 import { changes, type Batch } from "./library-sync-model";
+import {
+  isLocalSong,
+  localMembers,
+  setLocalMembers,
+  dropLocalMembers,
+  removeLocal,
+} from "./local-library";
 export type Source = "netease" | "qq";
 export type Song = {
   source?: Source;
@@ -13,6 +20,10 @@ export type Song = {
   duration: number;
   fee: number;
   localUrl?: string;
+  /** A file imported on this machine; see local-library.ts. */
+  localPath?: string;
+  coverPath?: string;
+  missing?: boolean;
 };
 export type Playlist = {
   source?: Source;
@@ -130,10 +141,16 @@ function favoriteCollection(songs: Song[]): SavedPlaylist {
   };
 }
 export function favoriteSongs(): Song[] {
-  if (favoritesMigrated)
-    return [...(internal.find((p) => p.id === FAVORITES_ID)?.songs || [])];
-  const legacy = read<unknown>("ting.favorites", []);
-  return Array.isArray(legacy) ? uniqueSongs(legacy.filter(validSong)) : [];
+  const online = favoritesMigrated
+    ? [...(internal.find((p) => p.id === FAVORITES_ID)?.songs || [])]
+    : (() => {
+        const legacy = read<unknown>("ting.favorites", []);
+        return Array.isArray(legacy)
+          ? uniqueSongs(legacy.filter(validSong))
+          : [];
+      })();
+  // Local files sit after the synced favorites; they never leave this machine.
+  return [...online, ...localMembers(FAVORITES_ID)];
 }
 export function startSyncLibrary() {
   if (syncEnabled && favoritesMigrated) return;
@@ -159,6 +176,7 @@ export function startSyncLibrary() {
   favoritesMigrated = syncEnabled = true;
 }
 export function setFavoriteSongs(songs: Song[]) {
+  setLocalMembers(FAVORITES_ID, songs.filter(isLocalSong));
   startSyncLibrary();
   commit([
     ...internal.filter((p) => p.id !== FAVORITES_ID),
@@ -204,16 +222,19 @@ export function acceptSyncLibrary(
 export function internalPlaylists(): Playlist[] {
   return internal
     .filter((p) => p.id !== FAVORITES_ID)
-    .map(({ songs, ...p }) => ({
-      ...p,
-      trackCount: songs.length,
-      cover: songs[0]?.cover || "",
-    }));
+    .map(({ songs, ...p }) => {
+      const locals = localMembers(p.id);
+      return {
+        ...p,
+        trackCount: songs.length + locals.length,
+        cover: songs[0]?.cover || locals[0]?.cover || "",
+      };
+    });
 }
 export function internalSongs(p: Playlist): Song[] {
   const found = internal.find((x) => x.id === p.id);
   if (!found) throw new Error("本机歌单已不存在");
-  return [...found.songs];
+  return [...found.songs, ...localMembers(p.id)];
 }
 function updateInternal(
   p: Playlist,
@@ -452,6 +473,22 @@ export function setupLibrary(o: Options) {
   async function edit(p: Playlist, song: Song, action: string) {
     if (!p.owned) throw new Error("只能修改自己创建的歌单");
     if (p.internal) {
+      if (isLocalSong(song)) {
+        // Local files keep their own order after the synced songs.
+        if (!internal.some((x) => x.id === p.id))
+          throw new Error("本机歌单已不存在");
+        const current = localMembers(p.id);
+        setLocalMembers(
+          p.id,
+          action === "add"
+            ? uniqueSongs([...current, song])
+            : action === "remove"
+              ? current.filter((s) => songKey(s) !== songKey(song))
+              : move(current, song, action),
+        );
+        window.dispatchEvent(new Event("ting:library-change"));
+        return;
+      }
       updateInternal(p, (x) => ({
         ...x,
         songs:
@@ -509,9 +546,10 @@ export function setupLibrary(o: Options) {
               creator: "本机",
               owned: true,
               trackCount: song ? 1 : 0,
-              songs: song ? [song] : [],
+              songs: song && !isLocalSong(song) ? [song] : [],
             },
           ]);
+          if (song && isLocalSong(song)) setLocalMembers(id, [song]);
         },
         song ? "已创建歌单并加入歌曲" : "已创建本机歌单",
       );
@@ -615,13 +653,18 @@ export function setupLibrary(o: Options) {
   async function choose(song: Song) {
     screen(
       "加入歌单",
-      `<p class="summary">${esc(song.name)} · ${esc(song.artist)}<br>跨平台加入时会先让你确认对应歌曲版本。</p><button id="create-and-add" class="outline">＋ 新建本机歌单并加入</button><div class="target-filters" role="group" aria-label="目标歌单平台"><button data-target-filter="netease">网易云</button><button data-target-filter="qq">QQ音乐</button><button data-target-filter="internal">本机</button></div><div id="playlist-targets"></div><p id="target-status" class="summary">正在读取你的歌单…</p>`,
+      `<p class="summary">${esc(song.name)} · ${esc(song.artist)}<br>${isLocalSong(song) ? "本地音乐只能加入本机歌单。" : "跨平台加入时会先让你确认对应歌曲版本。"}</p><button id="create-and-add" class="outline">＋ 新建本机歌单并加入</button><div class="target-filters" role="group" aria-label="目标歌单平台"><button data-target-filter="netease">网易云</button><button data-target-filter="qq">QQ音乐</button><button data-target-filter="internal">本机</button></div><div id="playlist-targets"></div><p id="target-status" class="summary">正在读取你的歌单…</p>`,
     );
     q("#create-and-add").onclick = () => create(song);
     const token = generation;
     const targets: Playlist[] = [...internalPlaylists()];
     const errors: string[] = [];
-    let targetSource: string = song.source || "netease";
+    // A file on this machine can only live in a playlist kept on this machine.
+    const localOnly = isLocalSong(song);
+    let targetSource: string = localOnly
+      ? "internal"
+      : song.source || "netease";
+    if (localOnly) q(".target-filters").hidden = true;
     function render(animate = false) {
       dialog
         .querySelectorAll<HTMLElement>("[data-target-filter]")
@@ -711,7 +754,7 @@ export function setupLibrary(o: Options) {
     const editable = !!p?.owned;
     screen(
       song.name,
-      `<p class="summary">${esc(song.artist)} · ${song.source === "qq" ? "QQ音乐" : "网易云"}</p><div class="library-actions"><button id="song-add" class="outline">加入歌单…</button>${
+      `<p class="summary">${esc(song.artist)} · ${isLocalSong(song) ? "本地音乐" : song.source === "qq" ? "QQ音乐" : "网易云"}</p><div class="library-actions"><button id="song-add" class="outline">加入歌单…</button>${isLocalSong(song) ? '<button id="song-forget" class="outline">从本地音乐库移除…</button>' : ""}${
         editable
           ? `<button id="song-remove" class="outline">从此歌单移除…</button><p class="summary">调整顺序${p!.source === "qq" && !p!.internal ? " · 仅本机，重开后保留" : p!.internal ? " · 保存在本机" : " · 同步到网易云"}</p><div class="move-actions">${[
               ["up", "上移"],
@@ -728,6 +771,22 @@ export function setupLibrary(o: Options) {
       }</div>`,
     );
     q("#song-add").onclick = () => void choose(song);
+    if (isLocalSong(song))
+      q("#song-forget").onclick = () => {
+        screen(
+          "移除本地音乐",
+          `<p class="summary">将「${esc(song.name)}」从本地音乐库和所有本机歌单中移除。文件本身不会被删除。</p><button id="confirm-forget" class="primary">确认移除</button>`,
+        );
+        q("#confirm-forget").onclick = () =>
+          void write(
+            async () => {
+              removeLocal(songKey(song));
+              window.dispatchEvent(new Event("ting:library-change"));
+            },
+            "已从本地音乐库移除",
+            p,
+          );
+      };
     if (editable) {
       q("#song-remove").onclick = () => {
         screen(
@@ -775,7 +834,10 @@ export function setupLibrary(o: Options) {
         );
         q("#confirm-delete").onclick = () =>
           void write(
-            async () => commit(internal.filter((x) => x.id !== p.id)),
+            async () => {
+              commit(internal.filter((x) => x.id !== p.id));
+              dropLocalMembers(p.id);
+            },
             "已删除本机歌单",
             p,
           );

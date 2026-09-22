@@ -1,3 +1,11 @@
+## 0.9.7 本地音乐入库与窗口记忆 · 2026-09-22
+
+公开版本维持 0.9.7。
+
+- 桌面版本地音乐改为持久化：Rust 侧 `local.rs` 用系统对话框（tauri-plugin-dialog）选文件，lofty 读取标签与内嵌封面（封面写入应用缓存目录），文件逐个加入 asset 协议作用域（`assetProtocol.scope` 保持为空，只放行用户选过的文件）；启动时 `local_restore` 重新放行并报告丢失文件。前端 `local-library.ts` 以路径哈希作为稳定负数 id，`ting.locals` 保存曲目，`ting.local-members` 按歌单 id 保存本地歌曲归属（含收藏），与 iCloud 同步库完全隔离；`songKey` 对按路径记住的歌曲同样返回 `local:` 前缀。
+- 窗口记忆：`window_memory.rs` 在关闭按钮与退出（Cmd+Q / 菜单退出）时把主窗口位置、尺寸、最大化状态和歌词面板占用宽度写入应用配置目录 `window.json`；启动时先应用再显示窗口（窗口配置 `visible: false`），记忆位置不在任何已连接显示器上则居中。歌词面板开合记在 `ting.lyrics-open`，启动时不带动画复原且不重复放大窗口；音量记在 `ting.volume`。
+- 验证：新增 2 项 Playwright 用例（导入去重、封面地址、收藏与新建本机歌单、同步库不含 `localPath`、重载后 `local_restore` 参数；文件丢失标记、点击播放被拒绝、从本地库移除），Rust 新增 4 项单元测试（稳定 id、无标签文件命名、显示器可见性判断、记忆序列化往返），并用一首真实下载的 FLAC 通过 ignored 用例确认标题 / 歌手 / 专辑 / 时长 / 封面读取正确。全量回归 Playwright **158 项**、Node **21 项**、Rust **55 项** 通过。窗口记忆与原生文件对话框只在 macOS 本机验收；Windows / Linux 的 asset 协议地址（`http://asset.localhost`）已加入 CSP 但未真机验证。
+
 ## 0.9.7 桌面自更新 · 2026-09-22
 
 公开版本维持 0.9.7，用提交号区分构建。

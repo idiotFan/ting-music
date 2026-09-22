@@ -1,6 +1,7 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { mobileDevice } from "./platform";
 import { lyricsWidth } from "./columns";
+import { writeSetting } from "./settings";
 import { MOTION } from "./motion";
 import "./lyrics-motion.css";
 export function setupLyrics(
@@ -109,7 +110,7 @@ export function setupLyrics(
   // into the space the native window just made.
   const offset = () =>
     getComputedStyle(panel).getPropertyValue("--lyrics-enter").trim() || "28px";
-  async function setOpen(open: boolean) {
+  async function setOpen(open: boolean, animate = true) {
     if (open === opened) return;
     const serial = ++transition;
     opened = open;
@@ -149,7 +150,7 @@ export function setupLyrics(
         opacity: open ? "1" : "0",
         transform: open ? "none" : hidden,
       };
-      if (!panel.hidden && !reduced()) {
+      if (!panel.hidden && animate && !reduced()) {
         const animation = panel.animate([from, destination], {
           duration: open ? MOTION.t4 : MOTION.t2,
           easing: open ? MOTION.enter : MOTION.exit,
@@ -167,6 +168,8 @@ export function setupLyrics(
         if (serial !== transition) return;
         if (mobileDevice) toggle.focus({ preventScroll: true });
       }
+      // The desktop window reopens the way it was closed (see window_memory.rs).
+      if (nativeDesktop) writeSetting("ting.lyrics-open", open ? "1" : "");
     } catch (e) {
       if (serial !== transition) return;
       opened = nativeDesktop ? nativeExpanded : wasVisible;
@@ -233,6 +236,7 @@ export function setupLyrics(
   observer.observe(box);
   return {
     sync,
+    setOpen,
     resume: (next: number, instant = false) => {
       manual = false;
       follow.hidden = true;

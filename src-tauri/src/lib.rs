@@ -5,6 +5,7 @@ mod android_platform;
 mod download;
 mod download_engine;
 mod http;
+mod local;
 mod mobile;
 pub mod netease;
 mod qq;
@@ -16,6 +17,7 @@ mod system_media;
 #[path = "system_media_web.rs"]
 mod system_media;
 mod updater;
+mod window_memory;
 use netease::{
     Api, Playback, PlaylistPage, PlaylistTracks, Profile, QrLogin, QrStatus, SearchResult,
 };
@@ -169,6 +171,7 @@ pub fn run() {
     #[cfg(desktop)]
     let builder = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .manage(updater::Updates::default());
     builder
         .manage(LyricsWindow::default())
@@ -192,7 +195,19 @@ pub fn run() {
             app.manage(qq::Qq::new());
             app.manage(Api::persistent().map_err(std::io::Error::other)?);
             #[cfg(desktop)]
-            updater::start(app.handle());
+            {
+                updater::start(app.handle());
+                if let Some(window) = app.get_webview_window("main") {
+                    if let Some(memory) = window_memory::load(app.handle()) {
+                        let lyrics = window_memory::restore(&window, &memory);
+                        if let Ok(mut added) = app.state::<LyricsWindow>().added.lock() {
+                            *added = lyrics;
+                        }
+                    }
+                    // The window is created hidden so the restore never flashes.
+                    let _ = window.show();
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -221,8 +236,35 @@ pub fn run() {
             download::download_song,
             download::open_download_folder,
             updater::update_ready,
-            updater::update_install
+            updater::update_install,
+            local::local_import,
+            local::local_restore
         ])
-        .run(tauri::generate_context!())
-        .expect("Ting could not start");
+        .build(tauri::generate_context!())
+        .expect("Ting could not start")
+        .run(|app, event| {
+            // Saved on the close button and on Quit alike; one write, no timers.
+            #[cfg(desktop)]
+            use tauri::Manager;
+            #[cfg(desktop)]
+            // macOS quits through Exit alone (Cmd+Q, AppleScript); other
+            // platforms close the window first, when the size is still real.
+            if let tauri::RunEvent::ExitRequested { .. }
+            | tauri::RunEvent::Exit
+            | tauri::RunEvent::WindowEvent {
+                event: tauri::WindowEvent::CloseRequested { .. },
+                ..
+            } = &event
+            {
+                let lyrics = app
+                    .state::<LyricsWindow>()
+                    .added
+                    .lock()
+                    .ok()
+                    .and_then(|added| *added);
+                window_memory::save(app, lyrics);
+            }
+            #[cfg(mobile)]
+            let _ = (app, event);
+        });
 }

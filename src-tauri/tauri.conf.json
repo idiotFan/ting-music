@@ -25,11 +25,16 @@
           "x": 16,
           "y": 28
         },
-        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,HardwareMediaKeyHandling,MediaSessionService --autoplay-policy=no-user-gesture-required"
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,HardwareMediaKeyHandling,MediaSessionService --autoplay-policy=no-user-gesture-required",
+        "visible": false
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.music.126.net https://*.music.163.com https://*.126.net https://*.gtimg.cn https://*.qq.com; media-src 'self' blob: https://*.music.126.net https://*.music.163.com https://*.qq.com; connect-src ipc: http://ipc.localhost https://ipc.localhost"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost https://asset.localhost https://*.music.126.net https://*.music.163.com https://*.126.net https://*.gtimg.cn https://*.qq.com; media-src 'self' blob: asset: http://asset.localhost https://asset.localhost https://*.music.126.net https://*.music.163.com https://*.qq.com; connect-src ipc: http://ipc.localhost https://ipc.localhost",
+      "assetProtocol": {
+        "enable": true,
+        "scope": []
+      }
     }
   },
   "bundle": {
