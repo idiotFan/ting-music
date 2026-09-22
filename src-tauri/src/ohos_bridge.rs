@@ -2,9 +2,10 @@
 //! starts, then serves typed requests through one synchronous dispatcher; Rust
 //! never touches ArkTS APIs directly and the frontend never reaches this module.
 use napi_derive_ohos::napi;
+// Imported by name: the bindgen prelude would shadow std's Result for the whole module.
 use napi_ohos::{
-    bindgen_prelude::*,
     threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode},
+    Error as NapiError, Result as NapiResult, Status,
 };
 use serde_json::{json, Value};
 use std::{
@@ -30,9 +31,9 @@ static APP: OnceLock<tauri::AppHandle> = OnceLock::new();
 /// Called once from EntryAbility.onCreate, before the native module initializes.
 /// `info` carries sandbox paths and the Asset Store sessions keyed by account.
 #[napi]
-pub fn bootstrap(info: String) -> Result<()> {
+pub fn bootstrap(info: String) -> NapiResult<()> {
     let value: Value = serde_json::from_str(&info)
-        .map_err(|_| Error::new(Status::InvalidArg, "bootstrap payload is not JSON"))?;
+        .map_err(|_| NapiError::new(Status::InvalidArg, "bootstrap payload is not JSON"))?;
     let dir = |key: &str| {
         value[key]
             .as_str()
