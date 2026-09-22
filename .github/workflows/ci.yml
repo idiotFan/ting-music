@@ -227,8 +227,11 @@ jobs:
           for tool in ohpm hvigorw; do f="$HOS_SDK_HOME/../bin/$tool"; [ -e "$f" ] && { file "$f"; head -c 200 "$f" | head -3; echo; }; done
           ohpm -v || true
           hvigorw -v || true
-          # cargo-mobile2 looks for <OHOS_HOME>/../../../ohpm/bin/ohpm before falling back to PATH.
-          mkdir -p "$HOME/deveco/sdk/ohpm/bin" && ln -sf "$(command -v ohpm)" "$HOME/deveco/sdk/ohpm/bin/ohpm"
+          # cargo-mobile2 runs <OHOS_HOME>/../../../ohpm/bin/ohpm; the wrappers resolve
+          # siblings relative to themselves, so link the whole ohpm directory.
+          tools="$(cd "$HOS_SDK_HOME/.." && pwd)"; ls "$tools"
+          if [ -d "$tools/ohpm" ]; then ln -sfn "$tools/ohpm" "$HOME/deveco/sdk/ohpm"; else ln -sfn "$tools" "$HOME/deveco/sdk/ohpm"; fi
+          "$HOME/deveco/sdk/ohpm/bin/ohpm" -v
       - name: Build hap
         run: |
           npm run tauri -- ohos init --ci
