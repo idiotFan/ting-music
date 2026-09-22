@@ -75,8 +75,8 @@ export class TingMedia {
       });
   }
 
-  update(raw: Record<string, Object>, artworkChanged: boolean): void {
-    const snapshot = raw as Snapshot;
+  update(raw: string, artworkChanged: boolean): void {
+    const snapshot = JSON.parse(raw) as Snapshot;
     if (!this.session) {
       this.pending = snapshot;
       this.init();
@@ -117,7 +117,8 @@ export class TingMedia {
     } else {
       this.assetId = '';
       this.artwork = '';
-      session.setAVMetadata({ assetId: '' } as avSession.AVMetadata).catch(() => {});
+      const empty: avSession.AVMetadata = { assetId: '' };
+      session.setAVMetadata(empty).catch(() => {});
     }
     const playing = snapshot.playbackState === 'playing';
     const state: avSession.AVPlaybackState = {

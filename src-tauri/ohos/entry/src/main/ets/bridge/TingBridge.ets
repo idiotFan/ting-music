@@ -45,7 +45,7 @@ export class TingBridge {
           this.media.init();
           return ok();
         case 'media.update':
-          this.media.update(args['snapshot'] as Record<string, Object>, args['artworkChanged'] === true);
+          this.media.update(JSON.stringify(args['snapshot']), args['artworkChanged'] === true);
           return ok();
         case 'downloads.open':
           if (!this.mainWindow) {

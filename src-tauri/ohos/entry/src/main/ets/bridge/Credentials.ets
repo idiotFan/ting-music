@@ -1,6 +1,7 @@
 import { asset } from '@kit.AssetStoreKit';
 import { util } from '@kit.ArkTS';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { BusinessError } from '@kit.BasicServicesKit';
 
 const DOMAIN = 0x0000;
 // One alias per account, mirroring the Keychain/Keystore records on other platforms.
@@ -34,7 +35,7 @@ export function loadCredentials(): Record<string, string> {
       }
     } catch (error) {
       // 24000002 = not found. Anything else keeps the record for a later launch.
-      const code = (error as Error & { code?: number })?.code;
+      const code = (error as BusinessError).code;
       if (code !== 24000002) {
         hilog.warn(DOMAIN, 'Ting', 'credential restore skipped for %{public}s', account);
       }
@@ -62,8 +63,8 @@ export function saveCredential(account: string, value: string): void {
 export function removeCredential(account: string): void {
   const query: asset.AssetMap = new Map();
   query.set(asset.Tag.ALIAS, aliasOf(account));
-  asset.remove(query).catch((error: Error & { code?: number }) => {
-    if (error?.code !== 24000002) {
+  asset.remove(query).catch((error: BusinessError) => {
+    if (error.code !== 24000002) {
       hilog.error(DOMAIN, 'Ting', 'credential remove failed for %{public}s', account);
     }
   });
