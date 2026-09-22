@@ -16,6 +16,7 @@
 - 公钥在 `src-tauri/tauri.conf.json`，随应用分发。
 - 私钥**不入库**：本机默认读取 `~/.tauri/ting-music-updater.key`（或 `TAURI_SIGNING_PRIVATE_KEY_PATH`），CI 使用仓库 secret `TAURI_SIGNING_PRIVATE_KEY`。
 - 私钥丢失后，已安装的应用无法再验证新包，只能手动安装换了公钥的新版本；请离线备份。私钥泄露等同于可向所有用户推送任意代码，须立即更换公钥并发版。
+- 私钥**必须是无密码的**（`tauri signer generate` 时密码留空）：`scripts/tauri.mjs` 只传空密码，仓库和 CI 里都没有传递密码的路径。轮换密钥时若设了密码，签名步骤会直接失败。
 - `scripts/tauri.mjs` 只在拿得到私钥时才追加 `src-tauri/tauri.updater.conf.json`（`createUpdaterArtifacts` 与 macOS ad-hoc 整包签名）。没有 secret 的 fork / Dependabot PR 仍能正常构建，只是不产出更新包。
 
 ## 发布
@@ -41,6 +42,14 @@ node scripts/updater-manifest.mjs --out latest.json \
 把这些包和 `latest.json` 一起上传到 `v<version>` 发布页。应用读取 `releases/latest/download/latest.json`，因此**只有标为 Latest 的正式 Release 会被推送**；草稿和预发布不会。`latest.json` 必须最后上传：它一出现，旧版本就会开始下载。
 
 macOS 更新包里的应用是 Tauri 构建时的 ad-hoc 整包签名；`scripts/release.py` 生成的 ZIP 会重新 ad-hoc 签名，两者内容一致但签名哈希不同，属正常现象。ad-hoc 签名每次构建都变，更新后首次读取钥匙串时系统可能再次询问授权。
+
+## 已知边界：`requireSignedVersion`
+
+`latest.json` 本身不被签名，只有下载到的包字节会用公钥校验。插件提供 `plugins.updater.requireSignedVersion`，把签名里记录的版本号与 `latest.json` 声明的版本号比对，用来堵住「用新版本号搭配旧版本签名包」的降级配对。
+
+当前**不能打开**：它要求签名的 trusted comment 里带 `version:` 字段，而仓库锁定的 `@tauri-apps/cli` 2.11.4 只写 `timestamp:` 和 `file:`（实测签名输出可验证）。打开后插件会以 `MissingSignedVersion` 拒绝每一个更新，而自更新的失败是静默的，等于悄悄关掉自更新。
+
+升级 CLI 到会记录 `version:` 的版本、并用它重新签名所有仍可能被用户更新到的 release 之后，再把 `"requireSignedVersion": true` 加进 `tauri.conf.json` 的 `plugins.updater`。
 
 ## 验证边界
 

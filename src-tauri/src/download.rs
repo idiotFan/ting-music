@@ -10,11 +10,51 @@ use std::{
 };
 use tauri::Manager;
 
+/// A song download and an update install are mutually exclusive: installing can
+/// end the process without unwinding, so a download started in that window would
+/// be killed mid-write with its scratch directory left behind. Each side claims
+/// its own flag before reading the other's, so a simultaneous pair is rejected
+/// instead of overlapping.
 #[derive(Default)]
-pub struct Downloads(Arc<AtomicBool>);
+pub struct Downloads {
+    busy: Arc<AtomicBool>,
+    installing: Arc<AtomicBool>,
+}
 impl Downloads {
-    pub(crate) fn busy(&self) -> bool {
-        self.0.load(Ordering::Acquire)
+    pub(crate) fn begin_download(&self) -> Result<Guard, &'static str> {
+        if self
+            .busy
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return Err("已有歌曲正在下载");
+        }
+        if self.installing.load(Ordering::SeqCst) {
+            self.busy.store(false, Ordering::SeqCst);
+            return Err("更新正在安装，请稍后再下载");
+        }
+        Ok(Guard(self.busy.clone()))
+    }
+    /// Claims the install window; the claim is held until the process restarts,
+    /// or until `end_install` releases it after a failed install.
+    #[cfg(desktop)]
+    pub(crate) fn begin_install(&self) -> Result<(), &'static str> {
+        if self
+            .installing
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return Err("更新正在安装");
+        }
+        if self.busy.load(Ordering::SeqCst) {
+            self.installing.store(false, Ordering::SeqCst);
+            return Err("歌曲下载完成后再重启更新");
+        }
+        Ok(())
+    }
+    #[cfg(desktop)]
+    pub(crate) fn end_install(&self) {
+        self.installing.store(false, Ordering::SeqCst);
     }
 }
 pub(crate) struct Guard(Arc<AtomicBool>);
@@ -119,14 +159,7 @@ pub async fn download_song(
     if !["netease", "qq"].contains(&source) {
         return Err("不支持的下载平台".into());
     }
-    if state
-        .0
-        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
-        .is_err()
-    {
-        return Err("已有歌曲正在下载".into());
-    }
-    let guard = Guard(state.0.clone());
+    let guard = state.begin_download()?;
     let (info, fallback) = if source == "qq" {
         (
             crate::qq::qq_request(
@@ -247,6 +280,23 @@ mod tests {
         assert_eq!(metadata["audio"]["platform"], "netease");
         assert!(metadata.get("url").is_none());
         assert!(!folder.0.join("scratch").exists());
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn download_and_install_claims_exclude_each_other() {
+        let downloads = Downloads::default();
+        let guard = downloads.begin_download().unwrap();
+        assert!(downloads.begin_download().is_err());
+        // An install may not start while a song is still being written.
+        assert!(downloads.begin_install().is_err());
+        drop(guard);
+        downloads.begin_install().unwrap();
+        // The claim keeps holding downloads off for the whole install window.
+        assert!(downloads.begin_download().is_err());
+        assert!(downloads.begin_install().is_err());
+        downloads.end_install();
+        assert!(downloads.begin_download().is_ok());
     }
 
     #[test]

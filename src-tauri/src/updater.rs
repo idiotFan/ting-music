@@ -10,6 +10,10 @@ mod desktop {
 
     const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
     const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(20 * 60);
+    /// The plugin buffers the whole response before the signature can reject it,
+    /// so a staged package that grows past this is abandoned rather than allowed
+    /// to grow the process without bound.
+    const MAX_PACKAGE_BYTES: u64 = 300 * 1024 * 1024;
 
     #[derive(Clone, PartialEq)]
     enum Phase {
@@ -46,14 +50,37 @@ mod desktop {
         }
         true
     }
+    /// Resolves once the running total passes the cap, and never when the
+    /// download finishes first and drops the sender.
+    async fn oversize(mut received: watch::Receiver<u64>) {
+        if received
+            .wait_for(|bytes| *bytes > MAX_PACKAGE_BYTES)
+            .await
+            .is_err()
+        {
+            std::future::pending::<()>().await;
+        }
+    }
     async fn stage(app: &AppHandle) -> Result<Option<String>, tauri_plugin_updater::Error> {
         let updater = app.updater_builder().timeout(CHECK_TIMEOUT).build()?;
         let Some(mut update) = updater.check().await? else {
             return Ok(None);
         };
         update.timeout = Some(DOWNLOAD_TIMEOUT);
-        // download() verifies the package against the bundled public key.
-        let bytes = update.download(|_, _| {}, || {}).await?;
+        // download() verifies the package against the bundled public key, but only
+        // after the whole body is in memory; dropping the future stops the read.
+        let (progress, watcher) = watch::channel(0u64);
+        let mut total = 0u64;
+        let bytes = tokio::select! {
+            bytes = update.download(
+                |chunk, _| {
+                    total = total.saturating_add(chunk as u64);
+                    let _ = progress.send(total);
+                },
+                || {},
+            ) => bytes?,
+            () = oversize(watcher) => return Ok(None),
+        };
         let version = update.version.clone();
         if let Ok(mut staged) = app.state::<Updates>().staged.lock() {
             *staged = Some((update, bytes));
@@ -92,9 +119,20 @@ mod desktop {
         state: tauri::State<'_, Updates>,
         downloads: tauri::State<'_, Downloads>,
     ) -> Result<(), String> {
-        if downloads.busy() {
-            return Err("歌曲下载完成后再重启更新".into());
+        // The claim is held for the whole install, not just checked once: install()
+        // can end the process without unwinding, so a download started in that
+        // window would be killed mid-write.
+        downloads.begin_install()?;
+        match install(state.inner()).await {
+            Ok(()) => app.restart(),
+            Err(message) => {
+                downloads.end_install();
+                Err(message)
+            }
         }
+    }
+    /// Consumes the staged package; a failed install puts it back for a retry.
+    async fn install(state: &Updates) -> Result<(), String> {
         let (update, bytes) = state
             .staged
             .lock()
@@ -113,7 +151,37 @@ mod desktop {
             }
             return Err("更新安装失败，请确认应用所在位置可写，或手动下载新版本".into());
         }
-        app.restart()
+        Ok(())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[tokio::test]
+        async fn oversize_fires_past_the_cap_and_never_on_a_finished_download() {
+            let (progress, watcher) = watch::channel(0u64);
+            progress.send(MAX_PACKAGE_BYTES).unwrap();
+            assert!(
+                tokio::time::timeout(Duration::from_millis(50), oversize(watcher))
+                    .await
+                    .is_err(),
+                "a package exactly at the cap is still accepted"
+            );
+            let (progress, watcher) = watch::channel(0u64);
+            progress.send(MAX_PACKAGE_BYTES + 1).unwrap();
+            tokio::time::timeout(Duration::from_millis(50), oversize(watcher))
+                .await
+                .expect("a package past the cap aborts the download");
+            // A finished download drops the sender; the abort must never win then.
+            let (progress, watcher) = watch::channel(0u64);
+            drop(progress);
+            assert!(
+                tokio::time::timeout(Duration::from_millis(50), oversize(watcher))
+                    .await
+                    .is_err()
+            );
+        }
     }
 }
 #[cfg(desktop)]

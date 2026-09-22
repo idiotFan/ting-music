@@ -29,11 +29,16 @@ if (existsSync(`${local}/cargo/bin/cargo`)) {
 // Signed updater packages are only produced when the private key is present,
 // so forks and pull requests without the secret still build a normal app.
 const args = process.argv.slice(2);
-if (args[0] === "build") {
+// `bundle` repackages an existing build and must sign exactly like `build`.
+if (["build", "bundle"].includes(args[0])) {
   // The CLI signs with TAURI_SIGNING_PRIVATE_KEY only; accept a key file too.
   const keyFile = env.TAURI_SIGNING_PRIVATE_KEY_PATH || resolve(homedir(), ".tauri/ting-music-updater.key");
-  if (!env.TAURI_SIGNING_PRIVATE_KEY && existsSync(keyFile))
+  if (!env.TAURI_SIGNING_PRIVATE_KEY && existsSync(keyFile)) {
+    // A blank key file is a broken key, not a missing one: failing loudly keeps
+    // it from silently producing an unsigned package.
     env.TAURI_SIGNING_PRIVATE_KEY = readFileSync(keyFile, "utf8").trim();
+    if (!env.TAURI_SIGNING_PRIVATE_KEY) throw new Error(`Updater signing key file is empty: ${keyFile}`);
+  }
   if (env.TAURI_SIGNING_PRIVATE_KEY) {
     env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ??= "";
     args.splice(1, 0, "--config", "src-tauri/tauri.updater.conf.json");

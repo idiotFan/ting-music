@@ -292,24 +292,141 @@ test("连续快速的未提交手势不会让上一次的回弹过渡提前解�
   const page = await context.newPage();
   await setup(page);
   await openPlaylist(page);
-  const settling = () =>
-    page
-      .locator(".library")
-      .evaluate((element) => element.classList.contains("back-swipe-settle"));
-  await swipe(page, { x: 8, y: 400 }, { x: 48, y: 400 });
-  await page.waitForTimeout(150);
-  const second = await swipe(page, { x: 8, y: 400 }, { x: 48, y: 400 });
-  expect(second.settling).toBe(true);
-  // The first gesture's 220ms timer lands here; it must not strip the class
-  // out from under the second gesture's rebound.
-  await page.waitForTimeout(100);
-  expect(await settling()).toBe(true);
-  await expect.poll(settling).toBe(false);
+  // Both gestures, the gap between them and the measurement all live on the
+  // page's own clock: a loaded machine stretches the settle timer and the gap
+  // together, so the verdict never rides on wall-clock precision.
+  const settle = await page.evaluate(async () => {
+    const library = document.querySelector<HTMLElement>(".library")!;
+    const touch = (x: number) =>
+      new Touch({
+        identifier: 7,
+        target: document.body,
+        clientX: x,
+        clientY: 400,
+      });
+    const fire = (type: string, x: number, active: boolean) =>
+      document.dispatchEvent(
+        new TouchEvent(type, {
+          touches: active ? [touch(x)] : [],
+          changedTouches: [touch(x)],
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    // A short edge drag, released below the commit threshold.
+    const nudge = () => {
+      fire("touchstart", 8, true);
+      for (let i = 1; i <= 6; i++) fire("touchmove", 8 + (40 * i) / 6, true);
+      fire("touchend", 48, false);
+    };
+    nudge();
+    const first = performance.now();
+    // Timers fire in expiry order, so this always lands before the first
+    // gesture's 220ms timer however far behind the event loop runs.
+    await new Promise((resolve) =>
+      setTimeout(resolve, 150 - (performance.now() - first)),
+    );
+    const pending = library.classList.contains("back-swipe-settle");
+    nudge();
+    const second = performance.now();
+    const held = library.classList.contains("back-swipe-settle");
+    const cleared = await new Promise<number>((resolve) => {
+      let bail = 0;
+      const done = () => {
+        observer.disconnect();
+        clearTimeout(bail);
+        resolve(performance.now() - second);
+      };
+      const observer = new MutationObserver(() => {
+        if (!library.classList.contains("back-swipe-settle")) done();
+      });
+      observer.observe(library, {
+        attributes: true,
+        attributeFilter: ["class"],
+      });
+      bail = window.setTimeout(done, 1500);
+    });
+    return { pending, held, cleared };
+  });
+  // The first gesture's rebound was still running when the second began…
+  expect(settle.pending).toBe(true);
+  expect(settle.held).toBe(true);
+  // …and the class then lasted the second gesture's own 220ms instead of
+  // being stripped by the first gesture's timer, which was due ~70ms in.
+  expect(settle.cleared).toBeGreaterThan(200);
+  expect(settle.cleared).toBeLessThan(1000);
   await expect(page.locator("#section-title")).toContainText("返回歌单 15");
   expect(
     await page
       .locator(".library")
       .evaluate((element) => (element as HTMLElement).style.transform),
   ).toBe("");
+  await context.close();
+});
+
+test("大幅度的提交手势继续送出当前页，不会先往回弹一段", async ({
+  browser,
+}) => {
+  const context = await browser.newContext(phone);
+  const page = await context.newPage();
+  await setup(page);
+  await openPlaylist(page);
+  // 8 → 300 on a 393px viewport: the finger alone carries the page past the
+  // share of the width that the release increment may not exceed.
+  const released = await swipe(page, { x: 8, y: 400 }, { x: 300, y: 402 });
+  expect(
+    Number(/(-?[\d.]+)px/.exec(released.exit)?.[1]),
+  ).toBeGreaterThanOrEqual(292);
+  expect(released.exitOpacity).toBe("0");
+  await expect(page.locator("#section-title")).toContainText("我的歌单");
+  await context.close();
+});
+
+test("另开一个歌单按全新内容推入，不沿用上一个歌单的滚动深度", async ({
+  browser,
+}) => {
+  const context = await browser.newContext(phone);
+  const page = await context.newPage();
+  await setup(page);
+  await openPlaylist(page);
+  await page.locator(".main-scroll").evaluate((el) => (el.scrollTop = 480));
+  await expect.poll(() => scrollTop(page)).toBeGreaterThan(0);
+  // Leaving through a tab keeps the depth on record; the back button would
+  // scroll the list to the top first by focusing itself.
+  await page.locator('[data-view="favorites"]').tap();
+  await expect(page.locator("#section-title")).toContainText("收藏");
+  await page.locator('[data-view="playlists"]').tap();
+  await expect(page.locator(".playlist-card")).toHaveCount(24);
+  // The tab transition must finish first: an interrupted entrance continues
+  // from the painted frame instead of declaring its own starting offset.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => document.querySelector(".library")!.getAnimations().length,
+      ),
+    )
+    .toBe(0);
+  // Opening the card and reading the entrance in one turn: the animation is
+  // created synchronously by the click, so nothing races its own 300ms.
+  const push = await page.evaluate((key) => {
+    document.querySelector<HTMLElement>(`[data-playlist="${key}"]`)!.click();
+    const effect = document
+      .querySelector(".library")!
+      .getAnimations()
+      .find((candidate) => candidate.effect instanceof KeyframeEffect)
+      ?.effect as KeyframeEffect | undefined;
+    const frames = effect?.getKeyframes() ?? [];
+    return {
+      offset: Number(
+        /(-?[\d.]+)px/.exec(String(frames[0]?.transform ?? ""))?.[1] ?? NaN,
+      ),
+      duration: Number(effect?.getTiming().duration ?? NaN),
+    };
+  }, "netease:115");
+  // A different playlist is genuinely new content, so it claims the full push
+  // rather than the softer revisit implied by the last playlist's scroll.
+  expect(push).toEqual({ offset: 28, duration: 300 });
+  await expect(page.locator("#section-title")).toContainText("返回歌单 16");
+  await expect.poll(() => scrollTop(page)).toBe(0);
   await context.close();
 });

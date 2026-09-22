@@ -23,6 +23,8 @@ while (args.length) {
     if (split < 1 || !targets.has(target)) throw new Error(`Unknown updater target: ${arg}`);
     if (!/^[\w.-]+$/.test(basename(asset))) throw new Error(`Release asset names must be ASCII without spaces: ${basename(asset)}`);
     if (!existsSync(asset) || !existsSync(`${asset}.sig`)) throw new Error(`Missing package or signature: ${asset}`);
+    // A repeated target would silently drop the platform it overwrites.
+    if (platforms[target]) throw new Error(`Duplicate updater target: ${target}`);
     platforms[target] = {
       signature: readFileSync(`${asset}.sig`, 'utf8').trim(),
       url: `https://github.com/idiotFan/ting-music/releases/download/v${version}/${basename(asset)}`,

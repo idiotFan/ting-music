@@ -1694,9 +1694,13 @@ async function loadPlaylist(item: Playlist, append = false) {
     view === "playlist" &&
     selectedPlaylist &&
     playlistKey(selectedPlaylist) === playlistKey(item);
+  // Every fresh open starts at the top, so the depth left behind by another
+  // playlist must not make this content look like somewhere we have been.
+  const fresh = !append && !refreshing;
+  if (fresh) viewScroll.delete("playlist");
   // A fresh open remembers where the detail view was entered from; opening
   // another playlist from a detail view keeps the original return target.
-  if (!append && !refreshing && view !== "playlist") playlistReturnView = view;
+  if (fresh && view !== "playlist") playlistReturnView = view;
   selectedPlaylist = item;
   if (item.internal) {
     librarySerial++;
@@ -1704,7 +1708,7 @@ async function loadPlaylist(item: Playlist, append = false) {
     playlistSongs = internalSongs(item);
     playlistTotal = playlistOffset = playlistSongs.length;
     setView("playlist");
-    if (!append && !refreshing) $(".main-scroll").scrollTop = 0;
+    if (fresh) $(".main-scroll").scrollTop = 0;
     return;
   }
   if (!append) {
@@ -1713,7 +1717,7 @@ async function loadPlaylist(item: Playlist, append = false) {
     playlistTotal = item.trackCount;
   }
   setView("playlist");
-  if (!append && !refreshing) $(".main-scroll").scrollTop = 0;
+  if (fresh) $(".main-scroll").scrollTop = 0;
   const serial = ++librarySerial;
   libraryBusy = true;
   renderSongs();

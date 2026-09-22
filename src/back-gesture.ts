@@ -75,7 +75,12 @@ export function setupBackGesture(active: () => boolean, back: () => void) {
     // same property at once.
     el.classList.remove("back-swipe-settle");
     committing = true;
-    const target = Math.min(dx + RELEASE, window.innerWidth * RELEASE_LIMIT);
+    // A long drag can already sit past the limit; the exit then simply fades
+    // from where the finger left it, never travelling back towards the start.
+    const target = Math.max(
+      dx,
+      Math.min(dx + RELEASE, window.innerWidth * RELEASE_LIMIT),
+    );
     void animateOut(
       el,
       { transform: `translate3d(${target}px, 0, 0)`, opacity: 0 },
