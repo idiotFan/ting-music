@@ -19,4 +19,5 @@ export type PlayerCommand =
   | "lyrics-closed"
   | "lyrics-lock"
   | "show"
-  | "hello";
+  | "hello"
+  | "lyrics-hello";

@@ -44,4 +44,6 @@ void listen<LyricLine>("lyric-line", ({ payload }) => {
   document.querySelector("#float-next")!.textContent = payload.next;
   root.classList.toggle("locked", payload.locked);
 });
-send("hello");
+// The lyrics window says who it is, so main knows it is open however it
+// was opened.
+send("lyrics-hello");

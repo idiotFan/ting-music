@@ -145,6 +145,11 @@ export function setupDesktopBridge(o: Context) {
           void w.show().then(() => w.setFocus());
           return;
         }
+        case "lyrics-hello":
+          floatOpen = true;
+          lastLyricKey = "";
+          broadcast(true);
+          return broadcastLyric();
         case "hello":
           // A helper window just opened: bring it up to date at once.
           lastLyricKey = "";

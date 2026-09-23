@@ -198,6 +198,8 @@ test("an artist's name leads to the artist page, then an album, and back again",
 
   await page.locator('[data-artist-tab="albums"]').click();
   await expect(page.locator(".album-card")).toHaveCount(3);
+  // Cards cannot be multi-selected, so the picker is not offered there.
+  await expect(page.locator("#select-mode")).toBeHidden();
   await page.locator(".album-card").first().click();
   await expect(page.locator(".album-hero")).toContainText("叶惠美");
   await expect(page.locator(".album-hero")).toContainText("2003-07-31");

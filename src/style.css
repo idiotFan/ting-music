@@ -3262,3 +3262,29 @@ input.toggle:focus-visible {
   margin: 12px 0;
   font-size: 13px;
 }
+
+/* A narrow list column (desktop two / three columns) keeps the title legible:
+   secondary actions shrink to their icons, their names stay as labels. */
+.library {
+  container: library / inline-size;
+}
+@container library (max-width: 560px) {
+  #select-mode,
+  #download-all,
+  #enqueue-all,
+  #copy-playlist,
+  #clear-list {
+    font-size: 0;
+    gap: 0;
+    width: 30px;
+    padding: 0;
+  }
+  #select-mode svg,
+  #download-all svg,
+  #enqueue-all svg,
+  #copy-playlist svg,
+  #clear-list svg {
+    width: 15px;
+    height: 15px;
+  }
+}
