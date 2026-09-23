@@ -2897,12 +2897,7 @@ mark {
   line-height: 1.6;
   margin-top: 2px;
 }
-.switch-row input {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--accent);
-  flex-shrink: 0;
-}
+
 .chip-grid {
   display: flex;
   flex-wrap: wrap;
@@ -3041,39 +3036,64 @@ mark {
   gap: 6px;
   flex-shrink: 0;
 }
-input.toggle {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 36px;
-  height: 20px;
-  border-radius: 10px;
-  background: var(--line);
+/* Switches: a real checkbox (kept for focus, keyboard and screen readers)
+   laid invisibly over a drawn track. WebKit draws no pseudo-elements on
+   checkboxes, so the knob is its own element. */
+.toggle {
   position: relative;
-  cursor: pointer;
+  display: inline-block;
+  width: 40px;
+  height: 24px;
   flex-shrink: 0;
-  transition: background 0.18s;
 }
-input.toggle::after {
+.toggle input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+.toggle i {
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  background: var(--line);
+  transition: background 0.18s;
+  pointer-events: none;
+}
+.toggle i::after {
   content: "";
   position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: var(--surface);
-  box-shadow: 0 1px 2px #0003;
+  box-shadow: 0 1px 3px #0003;
   transition: transform 0.18s;
 }
-input.toggle:checked {
+.toggle input:checked + i {
   background: var(--accent);
 }
-input.toggle:checked::after {
+.toggle input:checked + i::after {
   transform: translateX(16px);
 }
-input.toggle:focus-visible {
+.toggle input:focus-visible + i {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+label.setting-row {
+  cursor: pointer;
+}
+@media (prefers-reduced-motion: reduce) {
+  .toggle i,
+  .toggle i::after {
+    transition: none;
+  }
 }
 .scale-steps {
   display: flex;

@@ -77,7 +77,7 @@ export function setupSoundPanel(o: Options) {
     const active =
       sleep.mode === "track" ? "track" : sleep.mode === "off" ? "off" : "";
     dialog.innerHTML = `<button class="dialog-close icon-button" data-sound-close aria-label="关闭音效设置">${icon("X")}</button><h2 id="sound-title">音效</h2>
-<section><label class="switch-row"><span><strong>响度均衡</strong><small>按歌曲自带的响度信息（QQ 音乐、本地文件的 ReplayGain）统一音量，避免忽大忽小。</small></span><input type="checkbox" class="toggle" id="normalize-toggle" ${s.normalize ? "checked" : ""}/></label></section>
+<section><label class="switch-row"><span><strong>响度均衡</strong><small>按歌曲自带的响度信息（QQ 音乐、本地文件的 ReplayGain）统一音量，避免忽大忽小。</small></span><span class="toggle"><input type="checkbox" role="switch" id="normalize-toggle" ${s.normalize ? "checked" : ""}/><i aria-hidden="true"></i></span></label></section>
 ${o.desktop ? `<section><h3>均衡器</h3><div class="chip-grid" role="group" aria-label="均衡器预设">${presets}</div></section>` : ""}
 <section><h3>切歌淡入淡出 <output id="crossfade-value">${s.crossfade ? `${s.crossfade} 秒` : "关闭"}</output></h3><input id="crossfade" type="range" min="0" max="12" step="1" value="${s.crossfade}" aria-label="淡入淡出时长"/><small class="summary">上一首渐弱时下一首渐强；单曲循环时不生效。</small></section>
 <section><h3>睡眠定时 <output id="sleep-state">${sleepLabel()}</output></h3><div class="chip-grid" role="group" aria-label="睡眠定时">${sleeps

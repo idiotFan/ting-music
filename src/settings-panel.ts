@@ -168,10 +168,13 @@ export function setupSettingsPanel(o: Options) {
   let recording: string | undefined;
   let prefs = desktopPrefs();
 
-  const row = (title: string, detail: string, control: string) =>
-    `<div class="setting-row"><span><strong>${title}</strong>${detail ? `<small>${detail}</small>` : ""}</span>${control}</div>`;
+  // A row holding a switch is a <label>, so tapping its text flips it too.
+  const row = (title: string, detail: string, control: string) => {
+    const tag = control.includes('class="toggle"') ? "label" : "div";
+    return `<${tag} class="setting-row"><span><strong>${title}</strong>${detail ? `<small>${detail}</small>` : ""}</span>${control}</${tag}>`;
+  };
   const toggle = (id: string, on: boolean) =>
-    `<input type="checkbox" class="toggle" id="${id}" ${on ? "checked" : ""}/>`;
+    `<span class="toggle"><input type="checkbox" role="switch" id="${id}" ${on ? "checked" : ""}/><i aria-hidden="true"></i></span>`;
 
   function render() {
     const q = o.quality;
