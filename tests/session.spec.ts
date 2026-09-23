@@ -32,6 +32,7 @@ async function fixture(page: Page) {
     data.setUint32(40, wav.byteLength - 44, true);
     const url = URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
     w.__urlCalls = 0;
+    w.__urlIds = [];
     w.__TAURI_INTERNALS__ = {
       invoke: async (cmd: string, args: any = {}) => {
         if (cmd === "account_status")
@@ -39,6 +40,7 @@ async function fixture(page: Page) {
         if (cmd === "search_songs") return { songs, total: songs.length };
         if (cmd === "song_url") {
           w.__urlCalls++;
+          w.__urlIds.push(args.id);
           return { url, level: "standard", bitrate: 128000, format: "wav" };
         }
         if (cmd === "song_lyric") return "[00:00.00]记忆歌词";
@@ -96,7 +98,12 @@ test("the last track comes back after a restart and resumes where it stopped", a
     "data-playback",
     "playing",
   );
-  expect(await page.evaluate(() => (window as any).__urlCalls)).toBe(1);
+  // One stream for the resumed song; the next one may be fetched ahead.
+  expect(
+    await page.evaluate(() =>
+      (window as any).__urlIds.filter((id: number) => id === 2),
+    ),
+  ).toEqual([2]);
   await expect
     .poll(() =>
       page
