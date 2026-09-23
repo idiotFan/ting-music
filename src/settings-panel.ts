@@ -176,7 +176,81 @@ export function setupSettingsPanel(o: Options) {
   const toggle = (id: string, on: boolean) =>
     `<span class="toggle"><input type="checkbox" role="switch" id="${id}" ${on ? "checked" : ""}/><i aria-hidden="true"></i></span>`;
 
+  const phone = document.documentElement.classList.contains("mobile-device");
+  /** Phones: a full-screen page in the iOS grouped-list idiom. */
+  function renderPhone() {
+    const q = o.quality;
+    const cell = (label: string, trailing: string) =>
+      `<div class="cell"><span class="cell-label">${label}</span>${trailing}</div>`;
+    const nav = (label: string, value: string, data: string) =>
+      `<button class="cell nav" ${data}><span class="cell-label">${label}</span><span class="cell-value">${value}</span>${icon("ChevronRight")}</button>`;
+    const action = (label: string, data: string) =>
+      `<button class="cell action" ${data}><span class="cell-label">${label}</span></button>`;
+    const group = (title: string, cells: string[], footer = "") =>
+      `<section class="cell-group"><h3>${title}</h3><div class="cells">${cells.join("")}</div>${footer ? `<p class="cell-footer">${footer}</p>` : ""}</section>`;
+    const toggleCell = (label: string, id: string, on: boolean) =>
+      `<label class="cell"><span class="cell-label">${label}</span>${toggle(id, on)}</label>`;
+    const parts = [
+      `<header class="sheet-nav"><span></span><h2 id="settings-title">设置</h2><button class="sheet-done" data-settings-close>完成</button></header>`,
+      group(
+        "播放",
+        [
+          cell(
+            "音质",
+            `<span class="cell-select"><select id="settings-quality" aria-label="音质">${Object.entries(
+              q.names,
+            )
+              .map(
+                ([v, label]) =>
+                  `<option value="${v}" ${v === q.value() ? "selected" : ""}>${label}</option>`,
+              )
+              .join("")}</select>${icon("ChevronRight")}</span>`,
+          ),
+          nav("音效与睡眠定时", "", "data-open-sound"),
+        ],
+        "音质按账号权限提供，播放区显示实际返回的档位。",
+      ),
+      group("外观", [nav("主题配色", "", "data-open-theme")]),
+    ];
+    if (native)
+      parts.push(
+        group(
+          "本地与下载",
+          [
+            toggleCell(
+              "下载后自动加入本地",
+              "settings-auto-import",
+              autoImport(),
+            ),
+          ],
+          "下载完成的歌曲会出现在「本地」，在线播放时优先用手机里的文件。",
+        ),
+      );
+    parts.push(
+      group(
+        "数据",
+        [
+          action("导出备份", 'data-backup="export"'),
+          action("从备份恢复", 'data-backup="import"'),
+        ],
+        "包含收藏、本机歌单、本地音乐、最近播放与偏好，不含账号登录。",
+      ),
+      group(
+        "关于",
+        [
+          cell(
+            "版本",
+            `<span class="cell-value">${esc(o.version().replace(/^版本\s*/, ""))}</span>`,
+          ),
+          action("导出诊断信息", "data-diagnostics"),
+        ],
+        "诊断信息含版本、系统、曲库数量和最近的提示与错误摘要；文件路径、网址参数与登录凭据已去除。",
+      ),
+    );
+    keepFocus(dialog, () => (dialog.innerHTML = parts.join("")));
+  }
   function render() {
+    if (phone) return renderPhone();
     const q = o.quality;
     const scale = pageScale();
     const parts = [
@@ -327,12 +401,13 @@ export function setupSettingsPanel(o: Options) {
   dialog.addEventListener("click", async (e) => {
     const el = e.target as HTMLElement;
     if (el.closest("[data-settings-close]")) return closeDialog(dialog);
+    // Phones push the sheet on top and come back here; desktop swaps.
     if (el.closest("[data-open-sound]")) {
-      closeDialog(dialog);
+      if (!phone) closeDialog(dialog);
       return o.openSound();
     }
     if (el.closest("[data-open-theme]")) {
-      closeDialog(dialog);
+      if (!phone) closeDialog(dialog);
       return o.openTheme();
     }
     const scale = el.closest<HTMLElement>("[data-scale]");

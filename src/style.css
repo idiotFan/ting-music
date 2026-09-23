@@ -3308,3 +3308,181 @@ label.setting-row {
     height: 15px;
   }
 }
+
+/* ---- Phones: settings as a full-screen grouped list; sheets from below --- */
+.mobile-device #sound-dialog,
+.mobile-device #downloads-dialog {
+  position: fixed;
+  inset: auto 0 var(--mobile-keyboard-inset, 0px);
+  margin: 0 auto;
+  width: min(100%, 520px);
+  max-width: none;
+  max-height: calc(
+    var(--mobile-viewport-height, 100dvh) - env(safe-area-inset-top) - 12px
+  );
+  padding: 24px 20px calc(20px + var(--mobile-bottom-safe, 0px));
+  border-radius: 22px 22px 0 0;
+  border-bottom: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.mobile-device #settings-dialog {
+  --grouped: color-mix(in srgb, var(--ink) 5%, var(--bg));
+  position: fixed;
+  inset: 0;
+  margin: 0;
+  width: 100%;
+  max-width: none;
+  height: var(--mobile-viewport-height, 100dvh);
+  max-height: none;
+  padding: 0 0 calc(24px + env(safe-area-inset-bottom));
+  border: 0;
+  border-radius: 0;
+  background: var(--grouped);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.mobile-device #settings-dialog::backdrop {
+  background: #0000;
+}
+.sheet-nav {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 64px 1fr 64px;
+  align-items: center;
+  min-height: 52px;
+  padding: env(safe-area-inset-top) max(8px, env(safe-area-inset-right)) 0
+    max(8px, env(safe-area-inset-left));
+  background: color-mix(in srgb, var(--grouped) 88%, transparent);
+  backdrop-filter: saturate(1.4) blur(16px);
+  -webkit-backdrop-filter: saturate(1.4) blur(16px);
+  border-bottom: 0.5px solid var(--line);
+}
+.mobile-device #settings-dialog .sheet-nav h2 {
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  font-size: 17px;
+  font-weight: 600;
+  text-align: center;
+}
+.sheet-done {
+  justify-self: end;
+  min-height: 44px;
+  padding: 0 8px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.cell-group {
+  padding: 0 max(16px, env(safe-area-inset-right)) 0
+    max(16px, env(safe-area-inset-left));
+  margin-top: 22px;
+}
+.mobile-device #settings-dialog .cell-group h3 {
+  margin: 0 0 6px 16px;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+.cells {
+  background: var(--surface);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 6px 16px;
+  font-size: 16px;
+  color: var(--ink);
+  text-align: left;
+  border-radius: 0;
+  position: relative;
+}
+.cell + .cell::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 16px;
+  right: 0;
+  border-top: 0.5px solid var(--line);
+}
+button.cell:active,
+label.cell:active {
+  background: var(--hover);
+}
+.cell-label {
+  flex: 1;
+  min-width: 0;
+}
+.cell-value {
+  color: var(--muted);
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 55%;
+}
+.cell.nav > svg,
+.cell-select > svg {
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+.cell.action .cell-label {
+  color: var(--accent);
+}
+.cell-select {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.cell-select select {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+  text-align: right;
+  text-align-last: right;
+  padding: 8px 0;
+}
+.cell-footer {
+  margin: 6px 16px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+/* iOS-sized switch inside the grouped list. */
+.cell .toggle {
+  width: 51px;
+  height: 31px;
+}
+.cell .toggle i {
+  border-radius: 16px;
+}
+.cell .toggle i::after {
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+}
+.cell .toggle input:checked + i::after {
+  transform: translateX(20px);
+}
+.mobile-device #settings-dialog section.cell-group {
+  padding: 0 max(16px, env(safe-area-inset-right)) 0
+    max(16px, env(safe-area-inset-left));
+  border-top: 0;
+}

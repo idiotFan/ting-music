@@ -351,3 +351,38 @@ test("floating lyrics and the mini player are driven from settings", async ({
     )
     .toBe(true);
 });
+
+test("on a phone, settings is a full-screen grouped list with a Done button", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "userAgent", {
+      value:
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148",
+    }),
+  );
+  await setup(page);
+  await page.locator("#settings-button").click();
+  const dialog = page.locator("#settings-dialog");
+  await expect(dialog.locator(".sheet-done")).toHaveText("完成");
+  const box = (await dialog.boundingBox())!;
+  expect(box.width).toBe(390);
+  expect(box.height).toBeGreaterThan(800);
+  // Every tappable row is at least 44 pt tall.
+  for (const height of await dialog
+    .locator(".cell")
+    .evaluateAll((cells) => cells.map((c) => c.getBoundingClientRect().height)))
+    expect(height).toBeGreaterThanOrEqual(44);
+  // The switch flips from its label, and the sound sheet opens on top.
+  await dialog.locator("label.cell", { hasText: "下载后自动加入本地" }).click();
+  expect(
+    await page.evaluate(() => localStorage.getItem("ting.auto-import")),
+  ).toBe("0");
+  await dialog.locator("[data-open-sound]").click();
+  await expect(page.locator("#sound-dialog")).toBeVisible();
+  await expect(dialog).toBeVisible();
+  await page.locator("[data-sound-close]").click();
+  await dialog.locator(".sheet-done").click();
+  await expect(dialog).toBeHidden();
+});
