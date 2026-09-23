@@ -481,7 +481,8 @@ export function setupSettingsPanel(o: Options) {
     prefs = desktopPrefs();
     render();
     openDialog(dialog);
-    animateContent(dialog, { distance: 5 });
+    // The phone page slides in whole; only the desktop sheet eases its rows.
+    if (!phone) animateContent(dialog, { distance: 5 });
     void refreshDownloadPath();
   };
   return { rerender: () => dialog.open && render() };
