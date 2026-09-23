@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "panels",
+  "description": "Mini player and floating lyrics windows",
+  "windows": ["mini", "lyrics"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-size"
+  ]
+}

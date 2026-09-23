@@ -3,37 +3,41 @@ use serde_json::{json, Value};
 use std::{
     path::PathBuf,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
     time::Duration,
 };
 use tauri::Manager;
 
-/// A song download and an update install are mutually exclusive: installing can
-/// end the process without unwinding, so a download started in that window would
-/// be killed mid-write with its scratch directory left behind. Each side claims
-/// its own flag before reading the other's, so a simultaneous pair is rejected
-/// instead of overlapping.
+/// Up to two song downloads run at once (the download queue's concurrency),
+/// and none overlaps an update install: installing can end the process without
+/// unwinding, so a download started in that window would be killed mid-write
+/// with its scratch directory left behind. Each side claims its own counter or
+/// flag before reading the other's, so a simultaneous pair is rejected instead
+/// of overlapping.
+pub(crate) const MAX_DOWNLOADS: usize = 2;
 #[derive(Default)]
 pub struct Downloads {
-    busy: Arc<AtomicBool>,
+    active: Arc<AtomicUsize>,
     installing: Arc<AtomicBool>,
 }
 impl Downloads {
     pub(crate) fn begin_download(&self) -> Result<Guard, &'static str> {
         if self
-            .busy
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .active
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| {
+                (n < MAX_DOWNLOADS).then_some(n + 1)
+            })
             .is_err()
         {
-            return Err("已有歌曲正在下载");
+            return Err("已有两首歌曲正在下载，请稍候");
         }
         if self.installing.load(Ordering::SeqCst) {
-            self.busy.store(false, Ordering::SeqCst);
+            self.active.fetch_sub(1, Ordering::SeqCst);
             return Err("更新正在安装，请稍后再下载");
         }
-        Ok(Guard(self.busy.clone()))
+        Ok(Guard(self.active.clone()))
     }
     /// Claims the install window; the claim is held until the process restarts,
     /// or until `end_install` releases it after a failed install.
@@ -46,7 +50,7 @@ impl Downloads {
         {
             return Err("更新正在安装");
         }
-        if self.busy.load(Ordering::SeqCst) {
+        if self.active.load(Ordering::SeqCst) > 0 {
             self.installing.store(false, Ordering::SeqCst);
             return Err("歌曲下载完成后再重启更新");
         }
@@ -57,16 +61,16 @@ impl Downloads {
         self.installing.store(false, Ordering::SeqCst);
     }
 }
-pub(crate) struct Guard(Arc<AtomicBool>);
+pub(crate) struct Guard(Arc<AtomicUsize>);
 #[cfg(test)]
 impl Guard {
     pub(crate) fn for_test() -> Self {
-        Self(Arc::new(AtomicBool::new(true)))
+        Self(Arc::new(AtomicUsize::new(1)))
     }
 }
 impl Drop for Guard {
     fn drop(&mut self) {
-        self.0.store(false, Ordering::Release);
+        self.0.fetch_sub(1, Ordering::AcqRel);
     }
 }
 pub(crate) struct Scratch(pub(crate) PathBuf);
@@ -83,7 +87,7 @@ fn ensure_writable(folder: &PathBuf) -> std::io::Result<()> {
     Ok(())
 }
 
-fn directory(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn directory(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     #[cfg(target_os = "ios")]
     {
         return Ok(app
@@ -107,6 +111,10 @@ fn directory(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         // Prefer the user's Downloads/Ting folder on every desktop platform.
         // Fall back to app data only when the preferred folder is not writable.
         let mut candidates: Vec<PathBuf> = Vec::new();
+        // A folder the user picked in settings comes first.
+        if let Some(dir) = crate::desktop::chosen_download_dir(app) {
+            candidates.push(dir);
+        }
         if let Ok(dir) = app.path().download_dir() {
             candidates.push(dir.join("Ting"));
         }
@@ -258,7 +266,7 @@ mod tests {
         std::fs::create_dir(&folder.0).unwrap();
         let scratch = Scratch(folder.0.join("scratch"));
         std::fs::create_dir(&scratch.0).unwrap();
-        let busy = Arc::new(AtomicBool::new(true));
+        let busy = Arc::new(AtomicUsize::new(1));
         let result = crate::download_engine::run(
             song.id,
             "netease".into(),
@@ -270,7 +278,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(!busy.load(Ordering::Acquire));
+        assert_eq!(busy.load(Ordering::Acquire), 0);
         let path = PathBuf::from(result["path"].as_str().unwrap());
         assert!(path.is_file());
         assert!(result["bytes"].as_u64().unwrap() > 100_000);
@@ -287,10 +295,14 @@ mod tests {
     fn download_and_install_claims_exclude_each_other() {
         let downloads = Downloads::default();
         let guard = downloads.begin_download().unwrap();
+        // The queue runs two songs at once, never a third.
+        let second = downloads.begin_download().unwrap();
         assert!(downloads.begin_download().is_err());
         // An install may not start while a song is still being written.
         assert!(downloads.begin_install().is_err());
         drop(guard);
+        assert!(downloads.begin_install().is_err());
+        drop(second);
         downloads.begin_install().unwrap();
         // The claim keeps holding downloads off for the whole install window.
         assert!(downloads.begin_download().is_err());

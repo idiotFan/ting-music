@@ -1,5 +1,5 @@
 import { animateContent, openDialog, closeDialog } from "./motion";
-import { readSetting } from "./settings";
+import { readSetting, writeSetting } from "./settings";
 export const themes = [
   {
     id: "sage",
@@ -115,8 +115,22 @@ export const themes = [
     dark: true,
   },
 ];
-let selected = readSetting("ting.theme") || "sage";
-if (!themes.some((t) => t.id === selected)) selected = "sage";
+// Two remembered choices: the light theme and the dark one. Following the
+// system switches between them; otherwise the light slot is simply "the"
+// theme (and may itself be a dark palette, as before).
+const valid = (id: string, dark?: boolean) =>
+  themes.some((t) => t.id === id && (dark === undefined || !!t.dark === dark));
+let lightChoice = readSetting("ting.theme") || "sage";
+if (!valid(lightChoice)) lightChoice = "sage";
+let darkChoice = readSetting("ting.theme-dark") || "midnight";
+if (!valid(darkChoice, true)) darkChoice = "midnight";
+let follow = readSetting("ting.theme-follow") === "1";
+const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
+const wanted = () =>
+  !follow ? lightChoice : systemDark.matches ? darkChoice : lightChoice;
+// Following the system needs a light palette in the light slot.
+if (follow && !valid(lightChoice, false)) lightChoice = "sage";
+let selected = wanted();
 function apply(id: string) {
   const t = themes.find((t) => t.id === id)!;
   const root = document.documentElement;
@@ -136,29 +150,91 @@ function apply(id: string) {
   selected = id;
 }
 apply(selected);
+export const themeFollowsSystem = () => follow;
 export function setupThemes() {
   const dialog = document.createElement("dialog");
   dialog.id = "theme-dialog";
   dialog.setAttribute("aria-labelledby", "theme-title");
-  dialog.innerHTML = `<button class="dialog-close icon-button" id="theme-close" aria-label="关闭主题选择">×</button><h2 id="theme-title">选一种心情</h2><p class="summary">晨绿 + 10 套配色，选择后立即生效。</p><div class="theme-grid">${themes.map((t) => `<button class="theme-choice" data-theme-choice="${t.id}" aria-pressed="false"><span class="theme-preview" style="--swatch-bg:${t.bg};--swatch-surface:${t.surface};--swatch-ink:${t.ink};--swatch-accent:${t.accent}"><i></i><b></b><em></em></span><span>${t.name}</span></button>`).join("")}</div>`;
+  dialog.innerHTML = `<button class="dialog-close icon-button" id="theme-close" aria-label="关闭主题选择">×</button><h2 id="theme-title">选一种心情</h2><p class="summary">晨绿 + 10 套配色，选择后立即生效。</p><label class="switch-row theme-follow"><span><strong>跟随系统深浅色</strong><small>系统切换到深色时换成下方选中的深色配色。</small></span><input type="checkbox" id="theme-follow"/></label><div class="theme-grid">${themes.map((t) => `<button class="theme-choice" data-theme-choice="${t.id}" aria-pressed="false"><span class="theme-preview" style="--swatch-bg:${t.bg};--swatch-surface:${t.surface};--swatch-ink:${t.ink};--swatch-accent:${t.accent}"><i></i><b></b><em></em></span><span>${t.name}</span></button>`).join("")}</div>`;
   document.body.append(dialog);
-  const update = () =>
-    dialog
-      .querySelectorAll<HTMLElement>("[data-theme-choice]")
-      .forEach((b) =>
-        b.setAttribute(
-          "aria-pressed",
-          String(b.dataset.themeChoice === selected),
-        ),
+  let colorTimer = 0;
+  const followBox = dialog.querySelector<HTMLInputElement>("#theme-follow")!;
+  const update = () => {
+    followBox.checked = follow;
+    dialog.querySelectorAll<HTMLElement>("[data-theme-choice]").forEach((b) => {
+      const id = b.dataset.themeChoice!;
+      // Following the system, both remembered choices stay marked.
+      const chosen = follow
+        ? id === lightChoice || id === darkChoice
+        : id === selected;
+      b.setAttribute("aria-pressed", String(chosen));
+      b.dataset.slot =
+        follow && chosen
+          ? id === darkChoice && themes.find((t) => t.id === id)!.dark
+            ? "深色"
+            : "浅色"
+          : "";
+    });
+  };
+  /** Switch to `id` with the same care the picker takes (see below). */
+  function switchTo(id: string, feedback?: HTMLElement) {
+    if (id === selected) return;
+    const root = document.documentElement;
+    clearTimeout(colorTimer);
+    const previous = themes.find((theme) => theme.id === selected)!;
+    const next = themes.find((theme) => theme.id === id)!;
+    if (!!previous.dark === !!next.dark) {
+      root.classList.add("theme-changing");
+      void getComputedStyle(root).backgroundColor;
+      apply(next.id);
+      colorTimer = window.setTimeout(
+        () => root.classList.remove("theme-changing"),
+        280,
       );
+    } else {
+      root.classList.remove("theme-changing");
+      root.classList.add("theme-contrast-switch");
+      apply(next.id);
+      void root.offsetWidth;
+      root.classList.remove("theme-contrast-switch");
+      if (feedback) animateContent(feedback, { distance: 0, duration: 180 });
+    }
+    update();
+  }
+  followBox.addEventListener("change", () => {
+    follow = followBox.checked;
+    writeSetting("ting.theme-follow", follow ? "1" : "0");
+    // A dark palette picked before becomes the dark half of the pair.
+    if (follow && !valid(lightChoice, false)) {
+      darkChoice = lightChoice;
+      lightChoice = "sage";
+      writeSetting("ting.theme-dark", darkChoice);
+      writeSetting("ting.theme", lightChoice);
+    }
+    switchTo(wanted());
+    update();
+  });
+  systemDark.addEventListener("change", () => {
+    if (follow) switchTo(wanted());
+  });
   dialog.querySelector<HTMLButtonElement>("#theme-close")!.onclick = () =>
     closeDialog(dialog);
-  let colorTimer = 0;
   dialog.addEventListener("click", (e) => {
     const b = (e.target as HTMLElement).closest<HTMLElement>(
       "[data-theme-choice]",
     );
-    if (!b || b.dataset.themeChoice === selected) return;
+    if (!b) return;
+    if (follow) {
+      // A dark palette fills the dark slot, a light one the light slot.
+      const picked = themes.find((t) => t.id === b.dataset.themeChoice)!;
+      if (picked.dark) darkChoice = picked.id;
+      else lightChoice = picked.id;
+      writeSetting(picked.dark ? "ting.theme-dark" : "ting.theme", picked.id);
+      switchTo(wanted(), b.querySelector<HTMLElement>(".theme-preview")!);
+      update();
+      return;
+    }
+    if (b.dataset.themeChoice === selected) return;
     const root = document.documentElement;
     clearTimeout(colorTimer);
     const previous = themes.find((theme) => theme.id === selected)!;
@@ -189,6 +265,7 @@ export function setupThemes() {
         duration: 180,
       });
     }
+    lightChoice = selected;
     try {
       localStorage.setItem("ting.theme", selected);
     } catch {}

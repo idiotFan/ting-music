@@ -158,6 +158,16 @@ pub struct Song {
     pub cover: String,
     pub duration: u64,
     pub fee: u64,
+    /// Each credited artist with the id its page is reached by.
+    pub artists: Vec<ArtistRef>,
+    pub album_id: u64,
+    /// Best tier the catalog lists: "hires", "lossless" or "".
+    pub quality: &'static str,
+}
+#[derive(Debug, Serialize, Clone, PartialEq)]
+pub struct ArtistRef {
+    pub id: u64,
+    pub name: String,
 }
 #[derive(Debug, Serialize)]
 pub struct SearchResult {
@@ -216,34 +226,66 @@ pub struct PlaylistTracks {
     pub next_offset: usize,
     pub name: String,
 }
-fn string(v: &Value) -> String {
+pub(crate) fn string(v: &Value) -> String {
     v.as_str().unwrap_or_default().to_owned()
 }
-fn https_url(s: &str) -> String {
+pub(crate) fn https_url(s: &str) -> String {
     s.replacen("http://", "https://", 1)
 }
-fn songs_from(values: &Value) -> Vec<Song> {
+pub(crate) fn songs_from(values: &Value) -> Vec<Song> {
     values
         .as_array()
         .map(|items| {
             items
                 .iter()
                 .filter_map(|s| {
+                    // Old endpoints (album, artist) use ar/al; some use artists/album.
+                    let artists_value = if s["ar"].is_array() {
+                        &s["ar"]
+                    } else {
+                        &s["artists"]
+                    };
+                    let album_value = if s["al"].is_object() {
+                        &s["al"]
+                    } else {
+                        &s["album"]
+                    };
+                    let artists: Vec<ArtistRef> = artists_value
+                        .as_array()
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|x| {
+                                    Some(ArtistRef {
+                                        id: x["id"].as_u64().unwrap_or(0),
+                                        name: x["name"].as_str()?.to_owned(),
+                                    })
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
                     Some(Song {
                         id: s["id"].as_u64()?,
+                        album_id: album_value["id"].as_u64().unwrap_or(0),
+                        quality: if s["hr"].is_object() {
+                            "hires"
+                        } else if s["sq"].is_object() {
+                            "lossless"
+                        } else {
+                            ""
+                        },
                         name: string(&s["name"]),
-                        artist: s["ar"]
-                            .as_array()
-                            .map(|a| {
-                                a.iter()
-                                    .filter_map(|x| x["name"].as_str())
-                                    .collect::<Vec<_>>()
-                                    .join(" / ")
-                            })
-                            .unwrap_or_default(),
-                        album: string(&s["al"]["name"]),
-                        cover: https_url(&string(&s["al"]["picUrl"])),
-                        duration: s["dt"].as_u64().unwrap_or(0),
+                        artist: artists
+                            .iter()
+                            .map(|a| a.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(" / "),
+                        artists,
+                        album: string(&album_value["name"]),
+                        cover: https_url(&string(&album_value["picUrl"])),
+                        duration: s["dt"]
+                            .as_u64()
+                            .or_else(|| s["duration"].as_u64())
+                            .unwrap_or(0),
                         fee: s["fee"].as_u64().unwrap_or(0),
                     })
                 })
@@ -418,7 +460,7 @@ impl Api {
             .await
             .map_err(|_| "网易云返回了无法识别的数据，请稍后重试".into())
     }
-    async fn request(&self, path: &str, data: Value) -> Result<Value, String> {
+    pub(crate) async fn request(&self, path: &str, data: Value) -> Result<Value, String> {
         check(Self::raw(&self.session(), path, data).await?)
     }
     async fn profile_for(session: &Session) -> Result<Option<Profile>, String> {

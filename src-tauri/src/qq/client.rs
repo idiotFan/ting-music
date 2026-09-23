@@ -274,6 +274,120 @@ impl Client {
                 let songs: Vec<_> = rows(&d["body"]["song"]["list"]).iter().map(song).collect();
                 json!({"total":d["meta"]["sum"].as_u64().unwrap_or(songs.len() as u64),"songs":songs})
             }
+            "catalog_search" => {
+                let (kind, key) = match string(&args["kind"]) {
+                    "artist" => (1, "singer"),
+                    "album" => (2, "album"),
+                    "playlist" => (3, "songlist"),
+                    _ => return Err("不支持的搜索类型".into()),
+                };
+                let query = string(&args["query"]);
+                if query.trim().is_empty() || query.chars().count() > 100 || offset > 10_000 {
+                    return Err("请输入 1–100 个字符的搜索词".into());
+                }
+                let d=self.rpc("music.search.SearchCgiService","DoSearchForQQMusicDesktop",json!({"query":query,"num_per_page":30,"page_num":offset/30+1,"search_type":kind}),true,None).await?;
+                let list = rows(&d["body"][key]["list"]);
+                let (artists, albums, playlists): (Vec<Value>, Vec<Value>, Vec<Value>) = match kind
+                {
+                    1 => (list.iter().map(artist_row).collect(), vec![], vec![]),
+                    2 => (vec![], list.iter().map(album_row).collect(), vec![]),
+                    _ => (vec![], vec![], list.iter().map(songlist_row).collect()),
+                };
+                let count = list.len() as u64;
+                // QQ reports no total for catalog tabs; keep paging while pages are full.
+                let total = if count == 30 {
+                    offset + count + 1
+                } else {
+                    offset + count
+                };
+                json!({"artists":artists,"albums":albums,"playlists":playlists,"total":total})
+            }
+            "artist_detail" => {
+                let mid = valid_mid(string(&args["mid"]))?;
+                let info=self.rpc("music.musichallSinger.SingerInfoInter","GetSingerDetail",json!({"singer_mids":[mid],"ex_singer":1,"wiki_singer":0,"group_singer":0,"pic":1,"photos":0}),false,None).await?;
+                let singer = rows(&info["singer_list"])
+                    .first()
+                    .cloned()
+                    .ok_or("没有找到这位歌手")?;
+                let songs = self
+                    .rpc(
+                        "musichall.song_list_server",
+                        "GetSingerSongList",
+                        json!({"singerMid":mid,"order":1,"number":50,"begin":0}),
+                        false,
+                        None,
+                    )
+                    .await?;
+                let mut artist = artist_row(&singer["basic_info"]);
+                artist["alias"] = singer["ex_info"]["foreign_name"].clone();
+                artist["songCount"] = json!(number(&songs["totalNum"]));
+                let pic = https(string(&singer["pic"]["pic"]));
+                if !pic.is_empty() {
+                    artist["avatar"] = json!(pic);
+                }
+                let singer_id = number(&singer["basic_info"]["singer_id"]);
+                let similar = match self
+                    .rpc(
+                        "music.SimilarSingerSvr",
+                        "GetSimilarSingerList",
+                        json!({"singerId":singer_id,"num":12}),
+                        false,
+                        None,
+                    )
+                    .await
+                {
+                    Ok(d) => rows(&d["singerlist"]).iter().map(artist_row).collect(),
+                    Err(_) => Vec::new(),
+                };
+                json!({"artist":artist,"brief":string(&singer["ex_info"]["desc"]),"songs":rows(&songs["songList"]).iter().map(song).collect::<Vec<_>>(),"similar":similar})
+            }
+            "artist_albums" => {
+                let mid = valid_mid(string(&args["mid"]))?;
+                if offset > 10_000 {
+                    return Err("专辑参数无效".into());
+                }
+                let d=self.rpc("music.musichallAlbum.AlbumListServer","GetAlbumList",json!({"singerMid":mid,"order":0,"begin":offset,"num":30,"songNumTag":0,"singerID":0}),false,None).await?;
+                let albums: Vec<Value> = rows(&d["albumList"])
+                    .iter()
+                    .map(|a| {
+                        let mut row = album_row(a);
+                        row["artistMid"] = json!(mid);
+                        row
+                    })
+                    .collect();
+                let total = number(&d["total"]);
+                json!({"more":offset + (albums.len() as u64) < total,"total":total,"albums":albums})
+            }
+            "album_detail" => {
+                let mid = valid_mid(string(&args["mid"]))?;
+                let info = self
+                    .rpc(
+                        "music.musichallAlbum.AlbumInfoServer",
+                        "GetAlbumDetail",
+                        json!({"albumMid":mid}),
+                        false,
+                        None,
+                    )
+                    .await?;
+                let tracks = self
+                    .rpc(
+                        "music.musichallAlbum.AlbumSongList",
+                        "GetAlbumSongList",
+                        json!({"albumMid":mid,"begin":0,"num":200,"order":2}),
+                        false,
+                        None,
+                    )
+                    .await?;
+                let b = &info["basicInfo"];
+                let singers = rows(&info["singer"]["singerList"]);
+                let main = singers.first().cloned().unwrap_or(Value::Null);
+                let songs: Vec<Value> = rows(&tracks["songList"]).iter().map(song).collect();
+                json!({"album":{"source":"qq","id":number(&b["albumID"]),"mid":mid,"name":string(&b["albumName"]),
+                    "artist":singers.iter().map(|x| string(&x["name"])).collect::<Vec<_>>().join(" / "),
+                    "artistId":number(&main["singerID"]),"artistMid":string(&main["mid"]),"cover":album_cover(mid),
+                    "publishTime":date_ms(string(&b["publishDate"])),"trackCount":number(&tracks["totalNum"]).max(songs.len() as u64)},
+                    "description":string(&b["desc"]),"songs":songs})
+            }
             "my_playlists" => {
                 self.require_login()?;
                 let mut list = Vec::new();
@@ -384,12 +498,80 @@ fn playlist(p: &Value, owned: bool) -> Value {
     json!({"id":number(first(p,&["tid","id","dissid"])),"source":"qq","dirid":number(first(p,&["dirId","dirid"])),"name":first(p,&["title","dirName","dissname"]).as_str().unwrap_or("歌单"),"cover":string(first(p,&["picurl","picUrl","cover"])).replacen("http://","https://",1),"trackCount":number(first(p,&["songnum","songNum","song_cnt"])),"creator":first(p,&["nick","nickname"]).as_str().unwrap_or("QQ 音乐"),"owned":owned})
 }
 fn song(s: &Value) -> Value {
-    let artists: Vec<_> = rows(&s["singer"])
+    // Singer / album lists wrap each track as {songInfo: …}.
+    let s = if s["songInfo"].is_object() {
+        &s["songInfo"]
+    } else {
+        s
+    };
+    let singers = rows(&s["singer"]);
+    let artists: Vec<_> = singers.iter().map(|a| string(&a["name"])).collect();
+    let refs: Vec<_> = singers
         .iter()
-        .map(|a| string(&a["name"]))
+        .map(|a| json!({"id":number(&a["id"]),"mid":string(&a["mid"]),"name":string(&a["name"])}))
         .collect();
     let mid = string(&s["album"]["mid"]);
-    json!({"id":number(&s["id"]),"source":"qq","mid":s["mid"],"name":first(s,&["title","name"]),"artist":artists.join(" / "),"album":s["album"]["name"].as_str().unwrap_or(""),"cover":if mid.is_empty(){String::new()}else{format!("https://y.gtimg.cn/music/photo_new/T002R300x300M000{mid}.jpg")},"duration":number(&s["interval"])*1000,"fee":if number(&s["pay"]["pay_play"])>0{1}else{0}})
+    json!({"id":number(&s["id"]),"source":"qq","mid":s["mid"],"name":first(s,&["title","name"]),"artist":artists.join(" / "),"artists":refs,"album":s["album"]["name"].as_str().unwrap_or(""),"albumId":number(&s["album"]["id"]),"albumMid":mid,"gain":s["volume"]["gain"].as_f64().filter(|g| g.is_finite() && (-30.0..=20.0).contains(g)),"quality":if number(&s["file"]["size_hires"])>0{"hires"}else if number(&s["file"]["size_flac"])>0{"lossless"}else{""},"cover":album_cover(mid),"duration":number(&s["interval"])*1000,"fee":if number(&s["pay"]["pay_play"])>0{1}else{0}})
+}
+fn album_cover(mid: &str) -> String {
+    if mid.is_empty() {
+        String::new()
+    } else {
+        format!("https://y.gtimg.cn/music/photo_new/T002R300x300M000{mid}.jpg")
+    }
+}
+fn singer_avatar(mid: &str) -> String {
+    if mid.is_empty() {
+        String::new()
+    } else {
+        format!("https://y.gtimg.cn/music/photo_new/T001R300x300M000{mid}.jpg")
+    }
+}
+fn https(s: &str) -> String {
+    s.replacen("http://", "https://", 1)
+}
+fn artist_row(a: &Value) -> Value {
+    let mid = string(first(a, &["singerMID", "singerMid", "singer_mid", "mid"]));
+    json!({"source":"qq","id":number(first(a,&["singerID","singerId","singer_id","id"])),"mid":mid,"name":string(first(a,&["singerName","name"])),"avatar":singer_avatar(mid),"albumCount":number(&a["albumNum"]),"songCount":number(&a["songNum"]),"alias":string(first(a,&["foreign_name","singerTransName"]))})
+}
+fn album_row(a: &Value) -> Value {
+    let mid = string(first(a, &["albumMID", "albumMid"]));
+    let singers = rows(&a["singer_list"]);
+    let artist = if singers.is_empty() {
+        string(&a["singerName"]).to_owned()
+    } else {
+        singers
+            .iter()
+            .map(|x| string(&x["name"]))
+            .collect::<Vec<_>>()
+            .join(" / ")
+    };
+    let date = string(first(a, &["publicTime", "publishDate"]));
+    json!({"source":"qq","id":number(first(a,&["albumID","albumId"])),"mid":mid,"name":string(first(a,&["albumName","name"])),"artist":artist,"artistId":number(&a["singerID"]),"artistMid":string(&a["singerMID"]),"cover":album_cover(mid),"publishTime":date_ms(date),"trackCount":number(first(a,&["song_count","totalNum"]))})
+}
+/// "2003-07-31" as Unix milliseconds (UTC midnight); 0 when unparseable.
+fn date_ms(date: &str) -> u64 {
+    let parts: Vec<i64> = date.split('-').filter_map(|p| p.parse().ok()).collect();
+    let [y, m, d] = parts[..] else { return 0 };
+    if !(1..=12).contains(&m) || !(1..=31).contains(&d) || y < 1900 {
+        return 0;
+    }
+    // Days from civil (Howard Hinnant).
+    let (y, m) = if m <= 2 { (y - 1, m + 9) } else { (y, m - 3) };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * m + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    ((era * 146097 + doe - 719468) * 86_400_000).max(0) as u64
+}
+fn songlist_row(p: &Value) -> Value {
+    json!({"source":"qq","id":number(&p["dissid"]),"name":string(&p["dissname"]),"cover":https(string(&p["imgurl"])),"trackCount":number(&p["song_count"]),"creator":string(&p["creator"]["name"]),"owned":false})
+}
+fn valid_mid(mid: &str) -> Result<&str, String> {
+    if mid.is_empty() || mid.len() > 32 || !mid.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return Err("QQ 音乐标识无效".into());
+    }
+    Ok(mid)
 }
 fn levels(level: &str) -> Result<&'static [&'static str], String> {
     match level {
@@ -557,6 +739,99 @@ mod tests {
         assert_eq!(p["dirid"], 201);
         assert_eq!(p["owned"], true);
         assert_eq!(p["trackCount"], 50);
+    }
+    #[test]
+    fn catalog_rows_and_dates() {
+        assert_eq!(date_ms("1970-01-02"), 86_400_000);
+        assert_eq!(date_ms("2003-07-31"), 1_059_609_600_000);
+        assert_eq!(date_ms("bad"), 0);
+        let a = artist_row(
+            &json!({"singerID":4558,"singerMID":"0025NhlN2yWrP4","singerName":"周杰伦","albumNum":43,"songNum":1012}),
+        );
+        assert_eq!(a["mid"], "0025NhlN2yWrP4");
+        assert!(a["avatar"]
+            .as_str()
+            .unwrap()
+            .contains("T001R300x300M0000025NhlN2yWrP4"));
+        let al = album_row(
+            &json!({"albumID":8220,"albumMID":"000MkMni19ClKG","albumName":"叶惠美","singer_list":[{"name":"周杰伦"}],"publicTime":"2003-07-31","song_count":11}),
+        );
+        assert_eq!(al["trackCount"], 11);
+        assert_eq!(al["artist"], "周杰伦");
+        let wrapped = song(
+            &json!({"songInfo":{"id":1,"mid":"m","title":"晴天","singer":[{"id":4558,"mid":"s","name":"周杰伦"}],"album":{"id":8220,"mid":"a","name":"叶惠美"},"interval":10}}),
+        );
+        assert_eq!(wrapped["albumMid"], "a");
+        assert_eq!(wrapped["artists"][0]["mid"], "s");
+        assert!(valid_mid("abc/../x").is_err());
+    }
+    #[tokio::test]
+    #[ignore = "public read-only QQ catalog smoke test"]
+    async fn live_qq_catalog() {
+        let mut c = Client::new(Value::Null, "1234567890".into()).unwrap();
+        let none = Value::Null;
+        let found = c
+            .execute(
+                "catalog_search",
+                &json!({"query":"周杰伦","kind":"artist"}),
+                &none,
+            )
+            .await
+            .unwrap()["result"]
+            .take();
+        let mid = found["artists"][0]["mid"].as_str().unwrap().to_owned();
+        let page = c
+            .execute("artist_detail", &json!({"mid":mid}), &none)
+            .await
+            .unwrap()["result"]
+            .take();
+        assert!(!rows(&page["songs"]).is_empty());
+        assert!(!rows(&page["similar"]).is_empty(), "similar singers");
+        assert!(
+            !string(&page["similar"][0]["mid"]).is_empty()
+                && !string(&page["similar"][0]["name"]).is_empty()
+        );
+        let albums = c
+            .execute("artist_albums", &json!({"mid":mid}), &none)
+            .await
+            .unwrap()["result"]
+            .take();
+        let album = albums["albums"][0]["mid"].as_str().unwrap().to_owned();
+        let detail = c
+            .execute("album_detail", &json!({"mid":album}), &none)
+            .await
+            .unwrap()["result"]
+            .take();
+        assert!(!rows(&detail["songs"]).is_empty());
+        for kind in ["album", "playlist"] {
+            let r = c
+                .execute(
+                    "catalog_search",
+                    &json!({"query":"周杰伦","kind":kind}),
+                    &none,
+                )
+                .await
+                .unwrap()["result"]
+                .take();
+            assert!(
+                !rows(
+                    &r[if kind == "album" {
+                        "albums"
+                    } else {
+                        "playlists"
+                    }]
+                )
+                .is_empty(),
+                "{kind}"
+            );
+        }
+        eprintln!(
+            "{} · {} songs · {} albums · {} tracks",
+            page["artist"]["name"],
+            rows(&page["songs"]).len(),
+            albums["total"],
+            rows(&detail["songs"]).len()
+        );
     }
     #[test]
     fn fallback_requires_complete_recording_identity() {

@@ -53,8 +53,11 @@ async function setup(
         invoke: async (cmd: string, args: any) => {
           w.__calls.push({ cmd, args });
           if (nativeMedia && cmd === "plugin:event|listen") {
-            w.__mediaCallback = args.handler;
-            return 1;
+            // Route by event name, as Tauri does, so other listeners coexist.
+            w.__eventNames[args.handler] = args.event;
+            if (args.event === "system-media-action")
+              w.__mediaCallback = args.handler;
+            return args.handler;
           }
           if (nativeMedia && cmd === "system_media_init")
             return nativeMedia === "android" ? "android" : "windows";
@@ -152,10 +155,16 @@ async function setup(
           });
           Object.defineProperty(window, "MediaMetadata", { value: undefined });
         }
+        w.__callbacks = [];
+        w.__eventNames = {};
         w.__TAURI_INTERNALS__.transformCallback = (fn: any) => {
-          w.__nativeEvent = fn;
-          return 1;
+          w.__callbacks.push(fn);
+          return w.__callbacks.length;
         };
+        w.__nativeEvent = (message: any) =>
+          w.__callbacks.forEach((fn: any, i: number) => {
+            if (w.__eventNames[i + 1] === message.event) fn(message);
+          });
         w.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
       }
       Object.defineProperty(window, "isTauri", { value: true });
@@ -1100,7 +1109,8 @@ test("native transport owns the system session and drives queue, pause, seek and
       .filter((c: any) => c.cmd === "song_url")
       .map((c: any) => c.args.id),
   );
-  expect(reads).toEqual([1, 2, 1]);
+  // The third song's stream may be fetched ahead of time; ignore that one.
+  expect(reads.filter((id: number) => id !== 3)).toEqual([1, 2, 1]);
 });
 
 test("a fresh user gesture after NotAllowedError restores playback and keeps system metadata", async ({
@@ -1251,5 +1261,6 @@ test("Android uses native transport when its WebView has no web media API", asyn
       .filter((c: any) => c.cmd === "song_url")
       .map((c: any) => c.args.id),
   );
-  expect(reads).toEqual([1, 2]);
+  // The third song's stream may be fetched ahead of time; ignore that one.
+  expect(reads.filter((id: number) => id !== 3)).toEqual([1, 2]);
 });

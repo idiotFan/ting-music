@@ -59,3 +59,55 @@ test("shuffle never revives removed current track or leaks songs from replaced q
     state.start(next.song, next);
   }
 });
+
+test("peek promises exactly what next delivers, in order and in shuffle", () => {
+  const state = new PlaybackQueue(songs);
+  state.start(songs[0]);
+  assert.equal(state.peek(1, "sequence", true).song.id, 2);
+  assert.equal(state.historyIndex, 0);
+  for (let i = 0; i < 6; i++) {
+    const promised = state.peek(1, "shuffle", true);
+    const next = state.next(1, "shuffle", true);
+    assert.equal(promised.song.id, next.song.id);
+    state.start(next.song, next);
+  }
+});
+
+test("play next goes straight after the current song, even after going back", () => {
+  const state = new PlaybackQueue(songs);
+  state.start(songs[0]);
+  state.start(songs[1]);
+  const back = state.next(-1, "sequence");
+  state.start(back.song, back);
+  state.playNext([songs[3]]);
+  assert.deepEqual(
+    state.songs.map((s) => s.id),
+    [1, 4, 2, 3],
+  );
+  assert.equal(state.next(1, "sequence").song.id, 4);
+  const shuffled = new PlaybackQueue(songs);
+  shuffled.start(songs[0]);
+  shuffled.playNext([songs[2]]);
+  assert.equal(shuffled.next(1, "shuffle").song.id, 3);
+});
+
+test("move reorders and clear keeps only the playing song", () => {
+  const state = new PlaybackQueue(songs);
+  state.start(songs[1]);
+  state.move("netease:4", 0);
+  assert.deepEqual(
+    state.songs.map((s) => s.id),
+    [4, 1, 2, 3],
+  );
+  state.move("netease:4", 99);
+  assert.deepEqual(
+    state.songs.map((s) => s.id),
+    [1, 2, 3, 4],
+  );
+  state.clear();
+  assert.deepEqual(
+    state.songs.map((s) => s.id),
+    [2],
+  );
+  assert.equal(state.next(1, "sequence", true), undefined);
+});

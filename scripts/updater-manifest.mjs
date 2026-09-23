@@ -2,14 +2,23 @@
 // Usage: node scripts/updater-manifest.mjs --out <latest.json> [--notes <text>] <target>=<asset> ...
 // Each <asset> is the file exactly as it will be named on the release, with the
 // Tauri signature beside it as <asset>.sig. Targets: darwin-aarch64,
-// windows-x86_64, linux-x86_64-appimage, linux-x86_64-deb.
+// darwin-x86_64, windows-x86_64, linux-x86_64-appimage, linux-x86_64-deb,
+// linux-aarch64-appimage, linux-aarch64-deb.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const { version } = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
-const targets = new Set(['darwin-aarch64', 'windows-x86_64', 'linux-x86_64-appimage', 'linux-x86_64-deb']);
+const targets = new Set([
+  'darwin-aarch64',
+  'darwin-x86_64',
+  'windows-x86_64',
+  'linux-x86_64-appimage',
+  'linux-x86_64-deb',
+  'linux-aarch64-appimage',
+  'linux-aarch64-deb',
+]);
 const args = process.argv.slice(2);
 let out, notes = `听 · Ting ${version}`;
 const platforms = {};

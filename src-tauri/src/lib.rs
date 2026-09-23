@@ -2,6 +2,9 @@
 mod android_credentials;
 #[cfg(target_os = "android")]
 mod android_platform;
+mod catalog;
+#[cfg_attr(mobile, path = "desktop_mobile.rs")]
+mod desktop;
 mod download;
 mod download_engine;
 mod http;
@@ -172,6 +175,14 @@ pub fn run() {
     let builder = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    desktop::shortcut_pressed(app, shortcut, event.state())
+                })
+                .build(),
+        )
+        .manage(desktop::Desktop::default())
         .manage(updater::Updates::default());
     builder
         .manage(LyricsWindow::default())
@@ -197,6 +208,7 @@ pub fn run() {
             #[cfg(desktop)]
             {
                 updater::start(app.handle());
+                desktop::setup(app.handle())?;
                 if let Some(window) = app.get_webview_window("main") {
                     if let Some(memory) = window_memory::load(app.handle()) {
                         let lyrics = window_memory::restore(&window, &memory);
@@ -219,6 +231,10 @@ pub fn run() {
             sync::sync_library,
             qq::qq_request,
             search_songs,
+            catalog::catalog_search,
+            catalog::artist_detail,
+            catalog::artist_albums,
+            catalog::album_detail,
             song_url,
             song_lyric,
             account_status,
@@ -238,31 +254,67 @@ pub fn run() {
             updater::update_ready,
             updater::update_install,
             local::local_import,
-            local::local_restore
+            local::local_import_folder,
+            local::local_scan,
+            local::local_forget_folder,
+            local::local_restore,
+            local::local_lyric,
+            local::local_store,
+            desktop::desktop_prefs,
+            desktop::tray_update,
+            desktop::mini_player,
+            desktop::float_lyrics,
+            desktop::float_lyrics_lock,
+            desktop::download_dir,
+            desktop::backup_save,
+            desktop::backup_open,
+            desktop::diagnostics
         ])
         .build(tauri::generate_context!())
         .expect("Ting could not start")
         .run(|app, event| {
-            // Saved on the close button and on Quit alike; one write, no timers.
             #[cfg(desktop)]
-            use tauri::Manager;
-            #[cfg(desktop)]
-            // macOS quits through Exit alone (Cmd+Q, AppleScript); other
-            // platforms close the window first, when the size is still real.
-            if let tauri::RunEvent::ExitRequested { .. }
-            | tauri::RunEvent::Exit
-            | tauri::RunEvent::WindowEvent {
-                event: tauri::WindowEvent::CloseRequested { .. },
-                ..
-            } = &event
             {
-                let lyrics = app
-                    .state::<LyricsWindow>()
-                    .added
-                    .lock()
-                    .ok()
-                    .and_then(|added| *added);
-                window_memory::save(app, lyrics);
+                use tauri::Manager;
+                let remember = || {
+                    let lyrics = app
+                        .state::<LyricsWindow>()
+                        .added
+                        .lock()
+                        .ok()
+                        .and_then(|added| *added);
+                    window_memory::save(app, lyrics);
+                };
+                match &event {
+                    // Saved on the close button and on Quit alike; one write,
+                    // no timers. macOS quits through Exit alone (Cmd+Q,
+                    // AppleScript); other platforms close the window first.
+                    tauri::RunEvent::WindowEvent {
+                        label,
+                        event: tauri::WindowEvent::CloseRequested { api, .. },
+                        ..
+                    } if label == "main" => {
+                        remember();
+                        if desktop::closes_to_tray(app) {
+                            // Playback carries on; the tray brings it back.
+                            api.prevent_close();
+                            if let Some(w) = app.get_webview_window("main") {
+                                let _ = w.hide();
+                            }
+                        } else {
+                            // Helper windows must not keep a closed app alive.
+                            for label in ["mini", "lyrics"] {
+                                if let Some(w) = app.get_webview_window(label) {
+                                    let _ = w.close();
+                                }
+                            }
+                        }
+                    }
+                    tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => remember(),
+                    #[cfg(target_os = "macos")]
+                    tauri::RunEvent::Reopen { .. } => desktop::show_main(app),
+                    _ => {}
+                }
             }
             #[cfg(mobile)]
             let _ = (app, event);

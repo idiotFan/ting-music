@@ -57,6 +57,58 @@ export class PlaybackQueue {
     this.shuffleBag = [];
   }
 
+  /** What next() would return, without moving: for preloading and crossfades. */
+  peek(delta, mode, automatic = false) {
+    if (mode === "shuffle" && !this.shuffleBag.length && this.songs.length) {
+      // Draw the bag now so the real next() picks the song peek() promised.
+      const keys = this.songs.map(songKey);
+      this.shuffleBag = shuffledIds(keys, this.currentKey);
+    }
+    const probe = Object.assign(Object.create(PlaybackQueue.prototype), this, {
+      history: [...this.history],
+      shuffleBag: [...this.shuffleBag],
+    });
+    return probe.next(delta, mode, automatic);
+  }
+
+  /** Puts songs straight after the playing one ("下一首播放"). */
+  playNext(songs) {
+    const keys = new Set(songs.map(songKey));
+    const rest = this.songs.filter((s) => !keys.has(songKey(s)));
+    const at = rest.findIndex((s) => songKey(s) === this.currentKey);
+    const index = at >= 0 ? at + 1 : (this.detachedIndex ?? 0);
+    this.songs = [
+      ...rest.slice(0, index),
+      ...uniqueSongs(songs),
+      ...rest.slice(index),
+    ];
+    // An explicit "next" beats whatever the history or shuffle had in mind.
+    this.history = this.history.slice(0, this.historyIndex + 1);
+    this.shuffleBag = [
+      ...uniqueSongs(songs).map(songKey),
+      ...this.shuffleBag.filter((k) => !keys.has(k)),
+    ];
+  }
+
+  /** Moves one song to a new position (drag and drop in the queue). */
+  move(key, toIndex) {
+    const from = this.songs.findIndex((s) => songKey(s) === key);
+    if (from < 0) return;
+    const songs = [...this.songs];
+    const [song] = songs.splice(from, 1);
+    songs.splice(Math.max(0, Math.min(toIndex, songs.length)), 0, song);
+    this.songs = songs;
+  }
+
+  /** Empties the queue but keeps the playing song, so playback carries on. */
+  clear() {
+    this.songs = this.songs.filter((s) => songKey(s) === this.currentKey);
+    this.history = this.currentKey ? [this.currentKey] : [];
+    this.historyIndex = this.history.length - 1;
+    this.shuffleBag = [];
+    this.detachedIndex = null;
+  }
+
   next(delta, mode, automatic = false) {
     if (!this.songs.length) return undefined;
     const byKey = new Map(this.songs.map((song) => [songKey(song), song]));

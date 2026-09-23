@@ -24,6 +24,16 @@ export type Song = {
   localPath?: string;
   coverPath?: string;
   missing?: boolean;
+  /** Credited artists and the album, as the platform identifies them. */
+  artists?: { id: number; mid?: string; name: string }[];
+  albumId?: number;
+  albumMid?: string;
+  /** Best tier the catalog lists for this track: "hires" | "lossless". */
+  quality?: string;
+  /** For a downloaded file: the platform track it came from. */
+  origin?: { source: Source; id: number };
+  /** Loudness correction in dB (ReplayGain, or the platform's own figure). */
+  gain?: number;
 };
 export type Playlist = {
   source?: Source;
@@ -183,6 +193,72 @@ export function setFavoriteSongs(songs: Song[]) {
     favoriteCollection(uniqueSongs(songs.filter(validSong))),
   ]);
 }
+/** Every playlist kept on this machine (favorites included), for a backup. */
+export function exportLibrary() {
+  return {
+    playlists: internal.map((p) => ({ ...p, songs: [...p.songs] })),
+    favorites: favoriteSongs().filter(validSong),
+  };
+}
+/**
+ * Merges a backup's playlists into this library: unknown playlists are added,
+ * playlists this machine already has gain the songs they are missing. Nothing
+ * is removed. Goes through the same outbox as any edit, so iCloud sync sees it.
+ */
+export function importLibrary(data: {
+  playlists?: unknown;
+  favorites?: unknown;
+}) {
+  const incoming = (Array.isArray(data.playlists) ? data.playlists : [])
+    .filter(
+      (p) =>
+        p &&
+        p.internal === true &&
+        Number.isSafeInteger(p.id) &&
+        p.id > 0 &&
+        typeof p.name === "string" &&
+        Array.isArray(p.songs),
+    )
+    .map((p) => ({
+      ...p,
+      owned: true,
+      creator: "本机",
+      name: String(p.name).slice(0, 60),
+      songs: uniqueSongs(p.songs.filter(validSong)),
+    })) as SavedPlaylist[];
+  const favorites = Array.isArray(data.favorites)
+    ? uniqueSongs((data.favorites as Song[]).filter(validSong))
+    : [];
+  startSyncLibrary();
+  const next = internal.map((p) => ({ ...p, songs: [...p.songs] }));
+  let added = 0,
+    songs = 0;
+  const merge = (target: SavedPlaylist, extra: Song[]) => {
+    const before = target.songs.length;
+    target.songs = uniqueSongs([...target.songs, ...extra]);
+    target.trackCount = target.songs.length;
+    songs += target.songs.length - before;
+  };
+  for (const p of incoming) {
+    const mine = next.find((x) => x.id === p.id);
+    if (mine) merge(mine, p.songs);
+    else {
+      next.push({ ...p, trackCount: p.songs.length });
+      if (p.id !== FAVORITES_ID) added++;
+      songs += p.songs.length;
+    }
+  }
+  if (favorites.length) {
+    let fav = next.find((x) => x.id === FAVORITES_ID);
+    if (!fav) {
+      fav = favoriteCollection([]);
+      next.push(fav);
+    }
+    merge(fav, favorites);
+  }
+  commit(next);
+  return { playlists: added, songs };
+}
 export function syncDevice(): string | undefined {
   return backendDevice;
 }
@@ -218,6 +294,100 @@ export function acceptSyncLibrary(
   pending = remaining;
   internal = next;
   return changed;
+}
+function newPlaylistId(): number {
+  const random = crypto.getRandomValues(new Uint32Array(2));
+  let id = (random[0] & 0x1fffff) * 0x100000000 + random[1];
+  if (!id) id = 1;
+  while (id === FAVORITES_ID || internal.some((p) => p.id === id))
+    id = id >= FAVORITES_ID - 1 ? 1 : id + 1;
+  return id;
+}
+/** A platform playlist copied into a local, freely editable one. */
+export function copyToInternal(name: string, songs: Song[]): Playlist {
+  const kept = uniqueSongs(songs.filter(validSong));
+  if (!kept.length) throw new Error("歌单里没有可复制的歌曲");
+  const playlist: SavedPlaylist = {
+    internal: true,
+    id: newPlaylistId(),
+    name: name.slice(0, 60) || "复制的歌单",
+    cover: "",
+    creator: "本机",
+    owned: true,
+    trackCount: kept.length,
+    songs: kept,
+  };
+  commit([...internal, playlist]);
+  const { songs: _songs, ...listed } = playlist;
+  return { ...listed, cover: kept[0]?.cover || "" };
+}
+// Cover choices for playlists kept on this machine: the first song's cover
+// (default), a 2×2 grid of the first four, or a picture of the user's own.
+// Kept per device, outside the synced library.
+type CoverChoice = { mode: "first" | "grid" | "image"; image?: string };
+const COVERS = "ting.playlist-covers";
+let covers: Record<string, CoverChoice> = read(COVERS, {});
+export function coverChoice(id: number): CoverChoice {
+  const c = covers[String(id)];
+  return c && ["first", "grid", "image"].includes(c.mode)
+    ? c
+    : { mode: "first" };
+}
+export function setCoverChoice(id: number, choice: CoverChoice) {
+  if (choice.mode === "first") delete covers[String(id)];
+  else covers[String(id)] = choice;
+  localStorage.setItem(COVERS, JSON.stringify(covers));
+  // Covers are this device's own; the synced library does not change.
+  window.dispatchEvent(new Event("ting:covers"));
+}
+/** What a playlist card shows: one picture, or up to four for a grid. */
+export function playlistArt(p: Playlist): string[] {
+  if (!p.internal) return p.cover ? [p.cover] : [];
+  const choice = coverChoice(p.id);
+  if (choice.mode === "image" && choice.image) return [choice.image];
+  const found = internal.find((x) => x.id === p.id);
+  const pictures = [
+    ...new Set(
+      [...(found?.songs || []), ...localMembers(p.id)]
+        .map((s) => s.cover)
+        .filter(Boolean),
+    ),
+  ];
+  return choice.mode === "grid" && pictures.length >= 4
+    ? pictures.slice(0, 4)
+    : pictures.slice(0, 1);
+}
+/** A picked image, squared and shrunk so it stays small in storage. */
+export function shrinkImage(file: File, size = 320): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = size;
+      const side = Math.min(image.width, image.height);
+      canvas
+        .getContext("2d")!
+        .drawImage(
+          image,
+          (image.width - side) / 2,
+          (image.height - side) / 2,
+          side,
+          side,
+          0,
+          0,
+          size,
+          size,
+        );
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/jpeg", 0.85));
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("无法读取这张图片"));
+    };
+    image.src = url;
+  });
 }
 export function internalPlaylists(): Playlist[] {
   return internal
@@ -381,6 +551,12 @@ type Options = {
   changed: (p?: Playlist) => Promise<void>;
   toast: (message: string) => void;
   selected: () => Playlist | undefined;
+  /** Puts a song straight after the playing one. */
+  playNext?: (song: Song) => void;
+  /** Queues a song for download (desktop and phones, not the browser). */
+  download?: (song: Song) => void;
+  /** Opens the artist (by credit index) or album page of a song. */
+  browse?: (song: Song, target: { artist: number } | "album") => void;
 };
 export function setupLibrary(o: Options) {
   const dialog = document.createElement("dialog");
@@ -531,11 +707,7 @@ export function setupLibrary(o: Options) {
       if (!name) return;
       void write(
         async () => {
-          const random = crypto.getRandomValues(new Uint32Array(2));
-          let id = (random[0] & 0x1fffff) * 0x100000000 + random[1];
-          if (!id) id = 1;
-          while (id === FAVORITES_ID || internal.some((p) => p.id === id))
-            id = id >= FAVORITES_ID - 1 ? 1 : id + 1;
+          const id = newPlaylistId();
           commit([
             ...internal,
             {
@@ -754,7 +926,21 @@ export function setupLibrary(o: Options) {
     const editable = !!p?.owned;
     screen(
       song.name,
-      `<p class="summary">${esc(song.artist)} · ${isLocalSong(song) ? "本地音乐" : song.source === "qq" ? "QQ音乐" : "网易云"}</p><div class="library-actions"><button id="song-add" class="outline">加入歌单…</button>${isLocalSong(song) ? '<button id="song-forget" class="outline">从本地音乐库移除…</button>' : ""}${
+      `<p class="summary">${esc(song.artist)} · ${isLocalSong(song) ? "本地音乐" : song.source === "qq" ? "QQ音乐" : "网易云"}</p><div class="library-actions"><button id="song-add" class="outline">加入歌单…</button>${o.playNext && !song.missing ? '<button id="song-next" class="outline">下一首播放</button>' : ""}${o.download && !isLocalSong(song) && !song.localUrl ? '<button id="song-download" class="outline">下载到本机</button>' : ""}${
+        o.browse && !song.localUrl?.startsWith("blob:")
+          ? `<div class="browse-actions">${song.artist
+              .split(/\s*\/\s*/)
+              .filter(Boolean)
+              .slice(0, 4)
+              .map(
+                (name, i) =>
+                  `<button class="outline" data-browse="${i}">歌手 · ${esc(name)}</button>`,
+              )
+              .join(
+                "",
+              )}${song.album ? `<button class="outline" data-browse="album">专辑 · ${esc(song.album)}</button>` : ""}</div>`
+          : ""
+      }${isLocalSong(song) ? '<button id="song-forget" class="outline">从本地音乐库移除…</button>' : ""}${
         editable
           ? `<button id="song-remove" class="outline">从此歌单移除…</button><p class="summary">调整顺序${p!.source === "qq" && !p!.internal ? " · 仅本机，重开后保留" : p!.internal ? " · 保存在本机" : " · 同步到网易云"}</p><div class="move-actions">${[
               ["up", "上移"],
@@ -771,6 +957,29 @@ export function setupLibrary(o: Options) {
       }</div>`,
     );
     q("#song-add").onclick = () => void choose(song);
+    dialog
+      .querySelector<HTMLButtonElement>("#song-next")
+      ?.addEventListener("click", () => {
+        close();
+        o.playNext?.(song);
+      });
+    dialog
+      .querySelector<HTMLButtonElement>("#song-download")
+      ?.addEventListener("click", () => {
+        close();
+        o.download?.(song);
+      });
+    dialog.querySelectorAll<HTMLButtonElement>("[data-browse]").forEach(
+      (b) =>
+        (b.onclick = () => {
+          const target = b.dataset.browse!;
+          close();
+          o.browse?.(
+            song,
+            target === "album" ? "album" : { artist: Number(target) },
+          );
+        }),
+    );
     if (isLocalSong(song))
       q("#song-forget").onclick = () => {
         screen(
@@ -814,9 +1023,61 @@ export function setupLibrary(o: Options) {
   function manage(p: Playlist) {
     screen(
       "管理歌单",
-      `<p class="summary">${esc(p.name)} · ${playlistLabel(p)}<br>歌曲的加入、移除、排序可从每首歌右侧的“…”操作。</p>${p.internal ? `<form id="rename-form"><label for="playlist-name">歌单名称</label><input id="playlist-name" maxlength="60" value="${esc(p.name)}" required/><button class="outline">保存名称</button></form><button id="delete-playlist" class="quiet">删除本机歌单…</button>` : p.source === "qq" ? '<p class="summary">增删歌曲同步到 QQ；排序只保存在本机。</p><button id="reset-order" class="outline">恢复 QQ 原始顺序</button>' : '<p class="summary">增删歌曲和排序同步到网易云。</p>'}`,
+      `<p class="summary">${esc(p.name)} · ${playlistLabel(p)}<br>歌曲的加入、移除、排序可从每首歌右侧的“…”操作。</p>${
+        p.internal
+          ? `<form id="rename-form"><label for="playlist-name">歌单名称</label><input id="playlist-name" maxlength="60" value="${esc(p.name)}" required/><button class="outline">保存名称</button></form><div class="cover-choice"><span>封面</span><div class="chip-grid" role="group" aria-label="歌单封面">${[
+              ["first", "第一首"],
+              ["grid", "四宫格"],
+              ["image", "选择图片…"],
+            ]
+              .map(
+                ([mode, label]) =>
+                  `<button data-cover="${mode}" aria-pressed="${coverChoice(p.id).mode === mode}">${label}</button>`,
+              )
+              .join(
+                "",
+              )}</div><input id="cover-file" type="file" accept="image/*" hidden/></div><button id="delete-playlist" class="quiet">删除本机歌单…</button>`
+          : p.source === "qq"
+            ? '<p class="summary">增删歌曲同步到 QQ；排序只保存在本机。</p><button id="reset-order" class="outline">恢复 QQ 原始顺序</button>'
+            : '<p class="summary">增删歌曲和排序同步到网易云。</p>'
+      }`,
     );
     if (p.internal) {
+      const file = q<HTMLInputElement>("#cover-file");
+      dialog.querySelectorAll<HTMLButtonElement>("[data-cover]").forEach(
+        (b) =>
+          (b.onclick = () => {
+            const mode = b.dataset.cover as CoverChoice["mode"];
+            if (mode === "image") return file.click();
+            setCoverChoice(p.id, { mode });
+            dialog
+              .querySelectorAll("[data-cover]")
+              .forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+            if (mode === "grid" && playlistArt(p).length < 4)
+              o.toast("歌单里有 4 首带封面的歌曲后显示四宫格");
+          }),
+      );
+      file.onchange = async () => {
+        const picked = file.files?.[0];
+        if (!picked) return;
+        try {
+          setCoverChoice(p.id, {
+            mode: "image",
+            image: await shrinkImage(picked),
+          });
+          dialog
+            .querySelectorAll("[data-cover]")
+            .forEach((x) =>
+              x.setAttribute(
+                "aria-pressed",
+                String(x.getAttribute("data-cover") === "image"),
+              ),
+            );
+          o.toast("已更换歌单封面");
+        } catch (e) {
+          o.toast(e instanceof Error ? e.message : String(e));
+        }
+      };
       q<HTMLFormElement>("#rename-form").onsubmit = (e) => {
         e.preventDefault();
         const name = q<HTMLInputElement>("#playlist-name").value.trim();
@@ -851,5 +1112,124 @@ export function setupLibrary(o: Options) {
         );
     }
   }
-  return { create: () => create(), songMenu, manage };
+  /** Adds many songs at once; returns how many a platform playlist refused. */
+  async function addMany(songs: Song[], p: Playlist) {
+    if (p.internal) {
+      const online = songs.filter((s) => !isLocalSong(s) && validSong(s));
+      const files = songs.filter(isLocalSong);
+      if (online.length)
+        updateInternal(p, (x) => ({
+          ...x,
+          songs: uniqueSongs([...x.songs, ...online]),
+        }));
+      if (files.length)
+        setLocalMembers(p.id, uniqueSongs([...localMembers(p.id), ...files]));
+      window.dispatchEvent(new Event("ting:library-change"));
+      return 0;
+    }
+    // A platform playlist takes only that platform's songs; versions on the
+    // other platform need the per-song matching the single-song flow offers.
+    const same = songs.filter(
+      (s) =>
+        !isLocalSong(s) &&
+        !s.localUrl &&
+        (s.source || "netease") === (p.source || "netease"),
+    );
+    for (const song of same) await edit(p, song, "add");
+    return songs.length - same.length;
+  }
+  /** "加入歌单" for a multi-selection. */
+  async function chooseMany(songs: Song[]) {
+    const hasLocal = songs.some(isLocalSong);
+    screen(
+      `把 ${songs.length} 首加入歌单`,
+      `<p class="summary">${hasLocal ? "本地音乐只能加入本机歌单；" : ""}加入网易云或 QQ 歌单时，只加入该平台的歌曲。</p><div class="target-filters" role="group" aria-label="目标歌单平台"><button data-target-filter="internal">本机</button><button data-target-filter="netease">网易云</button><button data-target-filter="qq">QQ音乐</button></div><div id="playlist-targets"></div><p id="target-status" class="summary">正在读取你的歌单…</p>`,
+    );
+    const token = generation;
+    const targets: Playlist[] = [...internalPlaylists()];
+    let targetSource = "internal";
+    function render() {
+      dialog
+        .querySelectorAll<HTMLElement>("[data-target-filter]")
+        .forEach((b) =>
+          b.setAttribute(
+            "aria-pressed",
+            String(b.dataset.targetFilter === targetSource),
+          ),
+        );
+      q("#playlist-targets").innerHTML = targets
+        .map((p, i) => ({ p, i }))
+        .filter(({ p }) =>
+          targetSource === "internal"
+            ? p.internal
+            : !p.internal && (p.source || "netease") === targetSource,
+        )
+        .map(
+          ({ p, i }) =>
+            `<button class="playlist-target" data-target="${i}"><strong>${esc(p.name)}</strong><span>${playlistLabel(p)}</span></button>`,
+        )
+        .join("");
+      dialog.querySelectorAll<HTMLButtonElement>("[data-target]").forEach(
+        (b) =>
+          (b.onclick = () => {
+            const p = targets[Number(b.dataset.target)];
+            let skipped = 0;
+            void write(
+              async () => {
+                skipped = await addMany(songs, p);
+              },
+              `已加入「${p.name}」`,
+              p,
+            ).then(() => {
+              if (skipped)
+                o.toast(
+                  `已加入「${p.name}」，${skipped} 首来自其他平台或本机的歌曲未加入`,
+                );
+            });
+          }),
+      );
+    }
+    dialog.querySelectorAll<HTMLButtonElement>("[data-target-filter]").forEach(
+      (b) =>
+        (b.onclick = () => {
+          targetSource = b.dataset.targetFilter!;
+          render();
+        }),
+    );
+    render();
+    const errors: string[] = [];
+    await Promise.all(
+      o.sources().map(async (source) => {
+        try {
+          let offset = 0,
+            more = true;
+          while (more) {
+            const data = await o.cloud<{
+              playlists: Playlist[];
+              more: boolean;
+              nextOffset?: number;
+            }>("my_playlists", { offset }, source);
+            if (token !== generation) return;
+            targets.push(
+              ...data.playlists
+                .filter((p) => p.owned)
+                .map((p) => ({ ...p, source })),
+            );
+            render();
+            more = data.more;
+            const next = data.nextOffset ?? offset + data.playlists.length;
+            if (next <= offset && more) break;
+            offset = next;
+          }
+        } catch (e) {
+          errors.push(String(e));
+        }
+      }),
+    );
+    if (token !== generation) return;
+    q("#target-status").textContent = errors.length
+      ? errors.join("；")
+      : "仅显示自己创建的歌单。";
+  }
+  return { create: () => create(), songMenu, manage, chooseMany };
 }

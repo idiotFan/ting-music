@@ -1,0 +1,199 @@
+/* The mini player and floating lyrics windows (see mini.ts, float-lyrics.ts). */
+:root {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
+    sans-serif;
+  color: var(--ink);
+  font-synthesis: none;
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+button {
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  display: inline-grid;
+  place-items: center;
+  font: inherit;
+}
+svg {
+  width: 18px;
+  height: 18px;
+}
+body.mini {
+  background: var(--surface);
+}
+.mini-card {
+  position: relative;
+  height: 100vh;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 10px 14px 14px;
+  border: 1px solid var(--line);
+}
+.mini-cover {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+.mini-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.mini-text {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.mini-text strong,
+.mini-text small {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mini-text strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.mini-text small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.mini-buttons {
+  display: flex;
+  align-items: center;
+}
+.mini-buttons button {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+}
+.mini-buttons button:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+#mini-toggle {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+#mini-toggle:hover {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+.mini-close {
+  width: 26px !important;
+  height: 26px !important;
+  color: var(--muted);
+  margin-left: 2px;
+}
+.mini-close svg {
+  width: 14px;
+  height: 14px;
+}
+.mini-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--line);
+}
+.mini-progress b {
+  display: block;
+  height: 100%;
+  width: calc(var(--p, 0) * 100%);
+  background: var(--accent);
+  transition: width 0.5s linear;
+}
+body.float-lyrics {
+  background: transparent;
+}
+.float-strip {
+  height: 100vh;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 4px;
+  padding: 8px 24px;
+  border-radius: 14px;
+  transition: background 0.2s;
+  text-align: center;
+}
+.float-strip:hover:not(.locked .float-strip) {
+  background: #00000055;
+}
+#float-line {
+  margin: 0;
+  font-size: var(--float-size, 30px);
+  font-weight: 700;
+  line-height: 1.25;
+  color: #fff;
+  text-shadow:
+    0 1px 3px #000c,
+    0 0 12px color-mix(in srgb, var(--accent) 70%, transparent);
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#float-next {
+  margin: 0;
+  font-size: calc(var(--float-size, 30px) * 0.55);
+  color: #ffffffcc;
+  text-shadow: 0 1px 3px #000c;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 1em;
+}
+.float-tools {
+  position: fixed;
+  top: 6px;
+  right: 10px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.float-strip:hover .float-tools {
+  opacity: 1;
+}
+.locked .float-tools {
+  display: none;
+}
+.float-tools button {
+  min-width: 28px;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #fff;
+  background: #0006;
+}
+.float-tools svg {
+  width: 14px;
+  height: 14px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mini-progress b {
+    transition: none;
+  }
+}

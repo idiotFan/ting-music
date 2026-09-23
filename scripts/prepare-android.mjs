@@ -36,6 +36,28 @@ if (!gradle.includes('testInstrumentationRunner =')) {
     'defaultConfig {\n        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"');
   writeFileSync(appGradle, gradle);
 }
+// Release APKs are signed with Ting's own key when the environment provides
+// it (CI secrets, see docs/ANDROID-SIGNING.md); without it the release build
+// stays unsigned and the debug build keeps the debug key, as before.
+if (!gradle.includes('create("ting")')) {
+  gradle = gradle
+    .replace('    buildTypes {',
+      '    signingConfigs {\n' +
+      '        create("ting") {\n' +
+      '            val store = System.getenv("TING_ANDROID_KEYSTORE")\n' +
+      '            if (store != null && file(store).exists()) {\n' +
+      '                storeFile = file(store)\n' +
+      '                storePassword = System.getenv("TING_ANDROID_KEYSTORE_PASSWORD")\n' +
+      '                keyAlias = System.getenv("TING_ANDROID_KEY_ALIAS")\n' +
+      '                keyPassword = System.getenv("TING_ANDROID_KEY_PASSWORD")\n' +
+      '            }\n' +
+      '        }\n' +
+      '    }\n    buildTypes {')
+    .replace('        getByName("release") {\n',
+      '        getByName("release") {\n' +
+      '            if (System.getenv("TING_ANDROID_KEYSTORE") != null) signingConfig = signingConfigs.getByName("ting")\n');
+  writeFileSync(appGradle, gradle);
+}
 writeFileSync(resolve(root, 'src-tauri/gen/android/app/ting-credentials.pro'),
   '-keep class com.ting.music.demo.CredentialPlugin { *; }\n' +
   '-keep class com.ting.music.demo.CredentialArgs { *; }\n' +
