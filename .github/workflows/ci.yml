@@ -57,7 +57,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run tauri -- build -- --locked
       - name: Upload macOS app artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: Ting-0.9.7-build-90701-macOS
           path: |
@@ -70,7 +70,7 @@ jobs:
         run: npm audit --audit-level=high
       - name: Upload browser diagnostics on failure
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: browser-diagnostics
           path: |
@@ -106,7 +106,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run tauri -- build --target x86_64-apple-darwin -- --locked
       - name: Upload Intel app artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: Ting-0.9.7-build-90701-macOS-Intel
           path: |
@@ -158,7 +158,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run tauri -- build -- --locked
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: Ting-0.9.7-build-90701-${{ runner.os }}${{ runner.arch == 'ARM64' && '-ARM64' || '' }}
           path: |
@@ -191,7 +191,7 @@ jobs:
           npm run tauri -- android init
       - name: Build debug APK
         run: CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 npm run tauri -- android build --debug --target aarch64 --apk --ci -- --locked
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: Ting-0.9.7-build-90701-Android
           path: src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
@@ -217,7 +217,7 @@ jobs:
           rm -f "$TING_ANDROID_KEYSTORE"
           echo "built=true" >> "$GITHUB_OUTPUT"
       - if: steps.release_apk.outputs.built == 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: Ting-0.9.7-build-90701-Android-Release
           path: src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
