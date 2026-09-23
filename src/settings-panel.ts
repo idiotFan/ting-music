@@ -157,6 +157,7 @@ export function setupSettingsPanel(o: Options) {
     native && !document.documentElement.classList.contains("mobile-device");
   const dialog = document.createElement("dialog");
   dialog.id = "settings-dialog";
+  dialog.dataset.presentation = "page";
   dialog.setAttribute("aria-labelledby", "settings-title");
   document.body.append(dialog);
   dialog.addEventListener("cancel", (e) => {

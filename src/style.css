@@ -3356,9 +3356,7 @@ label.setting-row {
   min-height: 52px;
   padding: env(safe-area-inset-top) max(8px, env(safe-area-inset-right)) 0
     max(8px, env(safe-area-inset-left));
-  background: color-mix(in srgb, var(--grouped) 88%, transparent);
-  backdrop-filter: saturate(1.4) blur(16px);
-  -webkit-backdrop-filter: saturate(1.4) blur(16px);
+  background: var(--grouped);
   border-bottom: 0.5px solid var(--line);
 }
 .mobile-device #settings-dialog .sheet-nav h2 {

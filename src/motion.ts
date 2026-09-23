@@ -269,11 +269,17 @@ function hiddenDialogTransform() {
     : "translate3d(0, 10px, 0) scale(.965)";
 }
 
+/** A full-screen page on a phone arrives opaque, the way iOS presents one:
+ *  fading it would show the screen beneath flashing through. */
+const opaquePage = (dialog: HTMLDialogElement) =>
+  dialog.dataset.presentation === "page" &&
+  document.documentElement.classList.contains("mobile-device");
+
 export function openDialog(dialog: HTMLDialogElement): void {
   const state = stateFor(dialog);
   if (dialog.open && !state.closing) return;
   const current = dialog.open ? getComputedStyle(dialog) : undefined;
-  const opacity = current?.opacity ?? "0";
+  const opacity = opaquePage(dialog) ? "1" : (current?.opacity ?? "0");
   const transform = current?.transform ?? hiddenDialogTransform();
   stop(state.animation);
   state.animation = undefined;
@@ -319,9 +325,13 @@ export function closeDialog(dialog: HTMLDialogElement): void {
     dialog,
     [
       { opacity, transform },
-      { opacity: 0, transform: hiddenDialogTransform() },
+      {
+        opacity: opaquePage(dialog) ? 1 : 0,
+        transform: hiddenDialogTransform(),
+      },
     ],
-    MOTION.t2,
+    // A whole screen needs a little longer to leave than a small sheet.
+    opaquePage(dialog) ? MOTION.t3 : MOTION.t2,
     () => {
       state.animation = undefined;
       state.closing = false;

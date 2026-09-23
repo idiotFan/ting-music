@@ -365,6 +365,8 @@ test("on a phone, settings is a full-screen grouped list with a Done button", as
   await setup(page);
   await page.locator("#settings-button").click();
   const dialog = page.locator("#settings-dialog");
+  // The page slides up opaque; a fade would flash the screen beneath.
+  expect(await dialog.evaluate((d) => getComputedStyle(d).opacity)).toBe("1");
   await expect(dialog.locator(".sheet-done")).toHaveText("完成");
   // No focus ring on Done: a touch screen holds focus on the sheet itself.
   expect(await page.evaluate(() => document.activeElement?.id)).toBe(
