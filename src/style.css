@@ -3486,3 +3486,8 @@ label.cell:active {
     max(16px, env(safe-area-inset-left));
   border-top: 0;
 }
+/* A sheet holding focus for a touch screen draws no ring of its own. */
+dialog:focus,
+dialog:focus-visible {
+  outline: none;
+}

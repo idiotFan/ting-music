@@ -366,6 +366,10 @@ test("on a phone, settings is a full-screen grouped list with a Done button", as
   await page.locator("#settings-button").click();
   const dialog = page.locator("#settings-dialog");
   await expect(dialog.locator(".sheet-done")).toHaveText("完成");
+  // No focus ring on Done: a touch screen holds focus on the sheet itself.
+  expect(await page.evaluate(() => document.activeElement?.id)).toBe(
+    "settings-dialog",
+  );
   const box = (await dialog.boundingBox())!;
   expect(box.width).toBe(390);
   expect(box.height).toBeGreaterThan(800);

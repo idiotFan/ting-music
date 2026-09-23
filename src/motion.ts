@@ -279,7 +279,16 @@ export function openDialog(dialog: HTMLDialogElement): void {
   state.animation = undefined;
   state.closing = false;
   // showModal/close still own top-layer, focus trapping and focus restoration.
-  if (!dialog.open) dialog.showModal();
+  if (!dialog.open) {
+    dialog.showModal();
+    // A touch screen has no keyboard focus to show: WebKit would ring the
+    // first button (the sheet's close / Done) as if tabbed to. Hold focus on
+    // the sheet itself; Tab still walks its controls in order.
+    if (document.documentElement.classList.contains("mobile-device")) {
+      dialog.tabIndex = -1;
+      dialog.focus({ preventScroll: true });
+    }
+  }
   dialog.dataset.motion = "open";
   state.animation = run(
     dialog,
