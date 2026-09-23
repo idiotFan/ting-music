@@ -149,15 +149,17 @@ test("crossfading starts the next song before the last one ends, fading it in", 
   });
   // A 4 s song with a 2 s crossfade hands over around the 2 s mark.
   expect(Date.now() - started).toBeLessThan(3800);
-  const volumes: number[] = await page.evaluate(
-    () => (window as any).__volumes,
-  );
-  expect(volumes.some((v) => v > 0 && v < 0.6)).toBe(true);
+  // Short songs keep crossfading into each other, so check the shape: the
+  // incoming song starts low and climbs back to the slider's level.
   await expect
-    .poll(async () =>
-      (await page.evaluate(() => (window as any).__volumes)).at(-1),
-    )
-    .toBeCloseTo(0.7, 2);
+    .poll(async () => {
+      const volumes: number[] = await page.evaluate(
+        () => (window as any).__volumes,
+      );
+      const low = volumes.findIndex((v) => v > 0 && v < 0.6);
+      return low >= 0 && volumes.slice(low).some((v) => v > 0.69);
+    })
+    .toBe(true);
 });
 
 test("stop after this song pauses at its end instead of moving on", async ({

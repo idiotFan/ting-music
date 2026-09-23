@@ -331,8 +331,9 @@ test("shuffle traverses the queue without repeats, follows history and advances 
   await expect(page.locator("#now-name")).toHaveText(second!);
   await expect(page.locator("#duration")).toHaveText("0:20");
   await page.locator("#seek").fill("19.8");
+  // CI runners have no audio device; "ended" can take several seconds there.
   await expect(page.locator("#now-name")).not.toHaveText(second!, {
-    timeout: 5000,
+    timeout: 10000,
   });
   const third = await page.locator("#now-name").textContent();
   expect(new Set([first, second, third]).size).toBe(3);
@@ -735,7 +736,9 @@ test("removing playing item preserves automatic successor", async ({
   await page.locator('[data-view="queue"]').click();
   await page.locator('[data-remove="netease:1"]').click();
   await page.locator("#seek").fill("19.9");
-  await expect(page.locator("#now-name")).toHaveText("我的歌曲 2");
+  await expect(page.locator("#now-name")).toHaveText("我的歌曲 2", {
+    timeout: 10000,
+  });
   await expect(page.locator("#queue-count")).toHaveText("2");
 });
 
