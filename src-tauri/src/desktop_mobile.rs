@@ -22,11 +22,11 @@ pub fn tray_update(title: String, playing: bool) {
     let _ = (title, playing);
 }
 #[tauri::command]
-pub fn mini_player() -> Result<bool, String> {
+pub async fn mini_player() -> Result<bool, String> {
     Err("手机上没有迷你播放器".into())
 }
 #[tauri::command]
-pub fn float_lyrics(show: bool) -> Result<bool, String> {
+pub async fn float_lyrics(show: bool) -> Result<bool, String> {
     let _ = show;
     Err("手机上没有桌面歌词".into())
 }

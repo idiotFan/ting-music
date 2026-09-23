@@ -145,7 +145,17 @@ pub fn parse_gain(text: &str) -> Option<f64> {
 /// Every audio file under `root`, skipping hidden entries (our own `.ting-*`
 /// scratch folders among them), within fixed depth and count limits.
 pub fn walk(root: &Path, found: &mut Vec<PathBuf>) {
-    fn visit(dir: &Path, depth: usize, found: &mut Vec<PathBuf>) {
+    walk_new(root, &Default::default(), found)
+}
+/// Like `walk`, but files already known are skipped before they count
+/// toward the limit, so a large library never hides new songs.
+pub fn walk_new(root: &Path, known: &std::collections::HashSet<String>, found: &mut Vec<PathBuf>) {
+    fn visit(
+        dir: &Path,
+        depth: usize,
+        known: &std::collections::HashSet<String>,
+        found: &mut Vec<PathBuf>,
+    ) {
         if depth > SCAN_DEPTH || found.len() >= SCAN_LIMIT {
             return;
         }
@@ -167,13 +177,14 @@ pub fn walk(root: &Path, found: &mut Vec<PathBuf>) {
             };
             let path = entry.path();
             if kind.is_dir() {
-                visit(&path, depth + 1, found);
-            } else if kind.is_file() && is_audio(&path) {
+                visit(&path, depth + 1, known, found);
+            } else if kind.is_file() && is_audio(&path) && !known.contains(&*path.to_string_lossy())
+            {
                 found.push(path);
             }
         }
     }
-    visit(root, 0, found);
+    visit(root, 0, known, found);
 }
 
 fn admit(app: &tauri::AppHandle, path: &str) -> bool {
@@ -312,12 +323,15 @@ pub async fn local_scan(
     let tracks = tauri::async_runtime::spawn_blocking(move || {
         let known: std::collections::HashSet<String> = known.into_iter().collect();
         let mut found = Vec::new();
+        // Each root gets its own allowance, so the download folder is never
+        // crowded out by a large remembered folder.
         for root in roots {
-            walk(Path::new(&root), &mut found);
+            let mut here = Vec::new();
+            walk_new(Path::new(&root), &known, &mut here);
+            found.extend(here);
         }
         found.sort();
         found.dedup();
-        found.retain(|p| !known.contains(&*p.to_string_lossy()));
         describe_all(&app, found)
     })
     .await
@@ -352,8 +366,14 @@ pub fn local_forget_folder(app: tauri::AppHandle, folder: String) -> Vec<String>
 #[tauri::command]
 pub fn local_restore(app: tauri::AppHandle, paths: Vec<String>) -> Result<Vec<String>, String> {
     let mut missing = Vec::new();
-    for path in paths.iter().take(SCAN_LIMIT * 2) {
-        if Path::new(path).is_file() {
+    for path in &paths {
+        let file = Path::new(path);
+        // Only audio files are ever re-admitted: the page's list cannot open
+        // anything else on disk to the web view.
+        if !is_audio(file) || !file.is_absolute() {
+            continue;
+        }
+        if file.is_file() {
             admit(&app, path);
         } else {
             missing.push(path.clone());

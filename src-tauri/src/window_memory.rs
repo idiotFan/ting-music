@@ -15,6 +15,10 @@ pub struct Memory {
     pub maximized: bool,
     /// Logical width the lyrics pane added, when it was open at close.
     pub lyrics: Option<f64>,
+    /// Width and height are logical points (older files stored pixels), so a
+    /// window closed on a Retina screen reopens the same size on any other.
+    #[serde(default)]
+    pub logical: bool,
 }
 
 fn file(app: &AppHandle) -> Option<PathBuf> {
@@ -30,17 +34,19 @@ pub fn capture(window: &WebviewWindow, lyrics: Option<f64>) -> Option<Memory> {
     }
     let maximized = window.is_maximized().ok()?;
     let position = window.outer_position().ok()?;
-    let size = window.inner_size().ok()?;
-    if size.width == 0 || size.height == 0 {
+    let scale = window.scale_factor().ok()?;
+    let size = window.inner_size().ok()?.to_logical::<f64>(scale);
+    if size.width < 1.0 || size.height < 1.0 {
         return None;
     }
     Some(Memory {
         x: position.x,
         y: position.y,
-        width: size.width,
-        height: size.height,
+        width: size.width.round() as u32,
+        height: size.height.round() as u32,
         maximized,
         lyrics,
+        logical: true,
     })
 }
 
@@ -48,9 +54,20 @@ pub fn save(app: &AppHandle, lyrics: Option<f64>) {
     let Some(window) = app.get_webview_window("main") else {
         return;
     };
-    let Some(memory) = capture(&window, lyrics) else {
+    let Some(mut memory) = capture(&window, lyrics) else {
         return;
     };
+    // A maximized window keeps the size it had before, so un-maximizing
+    // after the next launch returns to it rather than to full screen.
+    if memory.maximized {
+        if let Some(before) = load(app).filter(|m| m.logical) {
+            memory = Memory {
+                maximized: true,
+                lyrics,
+                ..before
+            };
+        }
+    }
     let Some(path) = file(app) else { return };
     if let Ok(json) = serde_json::to_vec(&memory) {
         let _ = std::fs::write(path, json);
@@ -80,7 +97,11 @@ pub fn visible(memory: &Memory, monitors: &[(PhysicalPosition<i32>, PhysicalSize
 /// seed the pane state with.
 pub fn restore(window: &WebviewWindow, memory: &Memory) -> Option<f64> {
     let scale = window.scale_factor().unwrap_or(1.0);
-    let logical = PhysicalSize::new(memory.width, memory.height).to_logical::<f64>(scale);
+    let logical = if memory.logical {
+        tauri::LogicalSize::new(memory.width as f64, memory.height as f64)
+    } else {
+        PhysicalSize::new(memory.width, memory.height).to_logical::<f64>(scale)
+    };
     let (min_w, min_h) = (
         if memory.lyrics.is_some() {
             720.0
@@ -123,6 +144,7 @@ mod tests {
             height: 720,
             maximized: false,
             lyrics: None,
+            logical: true,
         }
     }
     #[test]

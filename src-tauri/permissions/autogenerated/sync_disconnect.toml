@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sync-disconnect"
+description = "Enables the sync_disconnect command without any pre-configured scope."
+commands.allow = ["sync_disconnect"]
+
+[[permission]]
+identifier = "deny-sync-disconnect"
+description = "Denies the sync_disconnect command without any pre-configured scope."
+commands.deny = ["sync_disconnect"]

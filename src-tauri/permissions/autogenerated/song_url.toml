@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-song-url"
+description = "Enables the song_url command without any pre-configured scope."
+commands.allow = ["song_url"]
+
+[[permission]]
+identifier = "deny-song-url"
+description = "Denies the song_url command without any pre-configured scope."
+commands.deny = ["song_url"]

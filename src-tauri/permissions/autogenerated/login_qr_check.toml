@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-login-qr-check"
+description = "Enables the login_qr_check command without any pre-configured scope."
+commands.allow = ["login_qr_check"]
+
+[[permission]]
+identifier = "deny-login-qr-check"
+description = "Denies the login_qr_check command without any pre-configured scope."
+commands.deny = ["login_qr_check"]

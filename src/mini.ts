@@ -1,8 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { icon } from "./dom";
-import "./themes";
+import { esc } from "./esc";
+import { followThemeChanges } from "./themes";
 import "./panels.css";
+
+followThemeChanges();
 import type { PlayerCommand, PlayerState } from "./panel-state";
 
 /**
@@ -37,7 +40,7 @@ void listen<PlayerState>("player-state", ({ payload: s }) => {
   if (cover.dataset.src !== s.cover) {
     cover.dataset.src = s.cover;
     cover.innerHTML = s.cover
-      ? `<img src="${s.cover.replace(/"/g, "&quot;")}" alt="" referrerpolicy="no-referrer" data-tauri-drag-region/>`
+      ? `<img src="${esc(s.cover)}" alt="" referrerpolicy="no-referrer" data-tauri-drag-region/>`
       : icon("Music2");
   }
   const glyph = s.playing ? "Pause" : "Play";

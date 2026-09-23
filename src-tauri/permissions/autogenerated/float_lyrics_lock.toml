@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-float-lyrics-lock"
+description = "Enables the float_lyrics_lock command without any pre-configured scope."
+commands.allow = ["float_lyrics_lock"]
+
+[[permission]]
+identifier = "deny-float-lyrics-lock"
+description = "Denies the float_lyrics_lock command without any pre-configured scope."
+commands.deny = ["float_lyrics_lock"]

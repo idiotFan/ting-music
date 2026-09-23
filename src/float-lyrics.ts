@@ -1,8 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { icon } from "./dom";
-import "./themes";
+import { followThemeChanges } from "./themes";
 import "./panels.css";
+
+followThemeChanges();
 import type { LyricLine, PlayerCommand } from "./panel-state";
 
 /**

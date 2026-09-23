@@ -102,3 +102,21 @@ export const icon = (name: string) => {
   }
   return iconCache.get(name)!;
 };
+
+/**
+ * Re-renders `box` without losing keyboard focus: the focused control is
+ * found again by its data-* attributes (or id) after the markup changes.
+ */
+export function keepFocus(box: HTMLElement, rerender: () => void) {
+  const active = document.activeElement as HTMLElement | null;
+  if (!active || !box.contains(active)) return rerender();
+  const attributes = [...active.attributes].filter(
+    (a) => a.name.startsWith("data-") || a.name === "id",
+  );
+  rerender();
+  if (!attributes.length) return;
+  const selector = attributes
+    .map((a) => `[${a.name}="${CSS.escape(a.value)}"]`)
+    .join("");
+  box.querySelector<HTMLElement>(selector)?.focus({ preventScroll: true });
+}

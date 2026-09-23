@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-system-media-init"
+description = "Enables the system_media_init command without any pre-configured scope."
+commands.allow = ["system_media_init"]
+
+[[permission]]
+identifier = "deny-system-media-init"
+description = "Denies the system_media_init command without any pre-configured scope."
+commands.deny = ["system_media_init"]

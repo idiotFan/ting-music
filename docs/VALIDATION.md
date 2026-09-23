@@ -1,3 +1,17 @@
+## 0.9.8 功能（版本号仍为 0.9.7）· 2026-09-23
+
+按 [0.9.8 规划](ROADMAP-0.9.8.md) 实现六个阶段。自动化结果如下；标「未实机」的项目只在浏览器模拟和本机编译里验证过。
+
+- 后端：新增 `catalog.rs`（网易云歌手 / 专辑 / 目录搜索）与 QQ 的四个目录操作，两平台用 ignored 联网测试实测通过（周杰伦：热门歌曲、专辑、相似歌手、专辑曲目）。实测网易云（m801.music.126.net）、QQ（isure.stream.qqmusic.qq.com）音源和 Tauri asset 协议都返回 CORS 头，因此均衡器可以接 Web Audio。
+- 本地与下载：`local.rs` 读取下载旁注的来源、按文件夹递归扫描（隐藏目录跳过，每个根目录单独限额 5000）、`.lrc` / 内嵌歌词、手机导入复制到应用内；`local_restore` 只放行绝对路径的音频文件。下载并发改为最多两首，仍与更新安装互斥。
+- 桌面：托盘 / 菜单栏、关闭到托盘、迷你播放器、透明悬浮歌词（`macOSPrivateApi`）、全局快捷键、自选下载目录、备份读写。辅助窗口通过应用清单只获授 `mini_player` / `float_lyrics` / `float_lyrics_lock` 三个命令。建窗改为异步，避开 Windows 同步建窗死锁。
+- 窗口记忆改存逻辑尺寸，最大化时保留之前的普通尺寸。
+- 前端：拆出 dom、account、catalog、downloads、sound、sound-panel、settings-panel、desktop-bridge、backup、diagnostics 等模块；二维码库改为登录时才加载，主包 334 KB → 175 KB（gzip 118 KB → 59 KB）。
+- 依赖：lucide 1.x、TypeScript 7、Vite 8、Tauri CLI 2.11.5 / tauri 2.11.6；npm audit 0 个漏洞；cargo audit 0 个漏洞，8 条提示均为 Tauri 在 Linux 上间接依赖的 glib / unic（无法在本项目层面替换）。reqwest、RustCrypto 系列的大版本更新会改接口且无用户收益，暂不升级。
+- 审查：三路只读审查（Rust 后端、播放与导航、界面与数据安全）共报告 1 高 7 中若干低问题，全部修复，包括睡眠淡出被切歌取消、Windows 建窗死锁、恶意备份可放行任意文件、返回加载中的歌手页空白、卡片网格不刷新、筛选后补齐队列混入被筛掉的歌、诊断脱敏遗漏路径与 JSON 凭据等。
+- 回归：Playwright 新增 catalog / downloads / sound / settings 四组共 27 项，Node 新增目录模型、队列与脱敏测试，Rust 新增本地扫描、日期、窗口记忆等单元测试。
+- 未实机：Windows / Linux 的托盘、悬浮歌词透明、全局快捷键；Intel Mac 与 Linux ARM 仅通过 CI 构建；手机端复制导入与下载目录自动入库未在 iPhone / Android 上操作过；正式签名 APK 需要先配置 [签名 secret](ANDROID-SIGNING.md)。
+
 ## 0.9.7 本地音乐入库与窗口记忆 · 2026-09-22
 
 公开版本维持 0.9.7。

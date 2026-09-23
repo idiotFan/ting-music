@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-playlist-tracks"
+description = "Enables the playlist_tracks command without any pre-configured scope."
+commands.allow = ["playlist_tracks"]
+
+[[permission]]
+identifier = "deny-playlist-tracks"
+description = "Denies the playlist_tracks command without any pre-configured scope."
+commands.deny = ["playlist_tracks"]

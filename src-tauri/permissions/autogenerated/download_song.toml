@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-download-song"
+description = "Enables the download_song command without any pre-configured scope."
+commands.allow = ["download_song"]
+
+[[permission]]
+identifier = "deny-download-song"
+description = "Denies the download_song command without any pre-configured scope."
+commands.deny = ["download_song"]

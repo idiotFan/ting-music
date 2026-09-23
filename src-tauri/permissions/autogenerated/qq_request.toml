@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-qq-request"
+description = "Enables the qq_request command without any pre-configured scope."
+commands.allow = ["qq_request"]
+
+[[permission]]
+identifier = "deny-qq-request"
+description = "Denies the qq_request command without any pre-configured scope."
+commands.deny = ["qq_request"]

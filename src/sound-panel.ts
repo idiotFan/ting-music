@@ -16,6 +16,8 @@ type Options = {
   reload: () => void;
   /** Loudness of the playing song, for turning normalisation on mid-song. */
   currentGain: () => number | undefined;
+  /** The sleep mode changed (repeat-one must not loop past "本曲播完"). */
+  sleepChanged: () => void;
 };
 type Sleep =
   { mode: "off" } | { mode: "time"; endsAt: number } | { mode: "track" };
@@ -96,18 +98,21 @@ ${o.desktop ? `<section><h3>均衡器</h3><div class="chip-grid" role="group" ar
       const minutes = Number(value);
       sleep = { mode: "time", endsAt: Date.now() + minutes * 60000 };
       sleepTimer = window.setTimeout(expire, minutes * 60000);
-      tick = window.setInterval(render, 30000);
+      // Only the countdown text changes; a full redraw would steal focus.
+      tick = window.setInterval(() => {
+        renderButton();
+        const state = dialog.querySelector("#sleep-state");
+        if (state) state.textContent = sleepLabel();
+      }, 30000);
     }
     render();
+    o.sleepChanged();
     if (sleep.mode !== "off") o.toast(`睡眠定时：${sleepLabel()}`);
   }
   function expire() {
     clearInterval(tick);
     // A slow fade, then pause: waking to a sudden stop is worse than none.
-    o.sound.fadeOut(8, () => {
-      o.audio.pause();
-      o.sound.resetFade();
-    });
+    o.sound.sleepOut(8, () => o.audio.pause());
     sleep = { mode: "off" };
     render();
   }
@@ -154,6 +159,7 @@ ${o.desktop ? `<section><h3>均衡器</h3><div class="chip-grid" role="group" ar
       if (sleep.mode !== "track") return false;
       sleep = { mode: "off" };
       render();
+      o.sleepChanged();
       return true;
     },
     get armedForTrackEnd() {

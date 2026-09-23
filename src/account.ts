@@ -2,8 +2,9 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { $ } from "./dom";
 import { esc, type Source } from "./library";
 import { animateContent, openDialog, closeDialog } from "./motion";
-import { makeLoginQr, verifyOriginalQr, qrPngForSharing } from "./qr";
 import { mountPhoneLogin, type PhoneLoginResult } from "./phone-login";
+// QR encoding / decoding and the SMS form load only when someone signs in.
+const qrTools = () => import("./qr");
 import { mobileDevice, credentialNotice, loginInstructions } from "./platform";
 
 /**
@@ -208,8 +209,11 @@ async function startLogin() {
     const maxSize = Math.min(340, $("#account-content").clientWidth);
     const qr =
       source === "qq"
-        ? await verifyOriginalQr(data.image!, maxSize)
-        : { src: await makeLoginQr(data.url!, maxSize), payload: data.url! };
+        ? await (await qrTools()).verifyOriginalQr(data.image!, maxSize)
+        : {
+            src: await (await qrTools()).makeLoginQr(data.url!, maxSize),
+            payload: data.url!,
+          };
     // QR pixels must be aligned after the enclosing entrance has settled.
     // Aligning against a moving/scaled dialog leaves a permanent subpixel offset.
     await Promise.allSettled(
@@ -381,7 +385,9 @@ export function setupAccount(context: Context) {
     const serial = loginSerial;
     button.disabled = true;
     try {
-      const dataUrl = await qrPngForSharing(qr.src, qr.dataset.payload!);
+      const dataUrl = await (
+        await qrTools()
+      ).qrPngForSharing(qr.src, qr.dataset.payload!);
       if (serial !== loginSerial) return;
       if (mobileDevice && isTauri())
         await invoke("share_login_qr", { dataUrl });

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-artist-detail"
+description = "Enables the artist_detail command without any pre-configured scope."
+commands.allow = ["artist_detail"]
+
+[[permission]]
+identifier = "deny-artist-detail"
+description = "Denies the artist_detail command without any pre-configured scope."
+commands.deny = ["artist_detail"]

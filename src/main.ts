@@ -18,15 +18,8 @@ import { $, icon } from "./dom";
 import { setupDownloads, type DownloadResult } from "./downloads";
 import { setupSound } from "./sound";
 import { setupSoundPanel } from "./sound-panel";
-import { setupSettingsPanel } from "./settings-panel";
-import { backupName, createBackup, restoreBackup } from "./backup";
-import {
-  record as recordDiagnostic,
-  recent as recentDiagnostics,
-} from "./diagnostics";
-import { emit, listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { LyricLine, PlayerCommand, PlayerState } from "./panel-state";
+import { setupDesktopBridge } from "./desktop-bridge";
+import { record as recordDiagnostic } from "./diagnostics";
 import {
   chooseAccount,
   openAccount,
@@ -840,7 +833,7 @@ function renderSelection() {
   document.body.classList.toggle("selecting", selecting);
   $("#selection-bar").hidden = !selecting;
   if (!selecting) return;
-  $("#selection-count").textContent = `已选 ${selection.size} 首`;
+  $("#selection-count").textContent = `已选 ${selectedSongs().length} 首`;
   const inQueue = view === "queue" && queueTab === "queue";
   $('[data-sel="remove"]').hidden = !inQueue;
   $('[data-sel="download"]').hidden = !isTauri();
@@ -968,6 +961,13 @@ function renderDetailHeader() {
   const more = box.querySelector<HTMLElement>("[data-toggle-brief]");
   if (brief && more) more.hidden = brief.scrollHeight <= brief.clientHeight + 1;
 }
+/** A short fingerprint of some markup, to skip redrawing identical cards. */
+function hashText(text: string) {
+  let hash = 5381;
+  for (let i = 0; i < text.length; i++)
+    hash = ((hash << 5) + hash + text.charCodeAt(i)) | 0;
+  return `${text.length}.${hash >>> 0}`;
+}
 /** Artist, album and playlist cards: search tabs and the artist's albums. */
 function renderCards(stagger: boolean) {
   const box = $("#catalog-grid");
@@ -988,6 +988,7 @@ function renderCards(stagger: boolean) {
   gridCards = cards;
   const loading = busy || libraryBusy;
   if (!cards.length) {
+    delete box.dataset.signature;
     const labels = { artist: "歌手", album: "专辑", playlist: "歌单" };
     renderState(
       box,
@@ -1003,7 +1004,7 @@ function renderCards(stagger: boolean) {
   const markup = cards
     .map((card, i) => cardMarkup(card, i, markQuery()))
     .join("");
-  const signature = `${view}:${searchKind}:${artistState?.tab}:${markup.length}:${cards.length}`;
+  const signature = `${view}:${searchKind}:${artistState?.tab}:${localTab}:${hashText(markup)}`;
   if (box.dataset.signature === signature) return;
   const previous = box.querySelectorAll(".catalog-card").length;
   box.dataset.signature = signature;
@@ -1409,6 +1410,11 @@ function goBack() {
     } else if (crumb.view === "artist") artistState = crumb.artist;
     else if (crumb.view === "album") albumState = crumb.album;
     setView(crumb.view, true);
+    // A page left while still loading (or after a failure) loads again.
+    if (crumb.view === "artist" && artistState && !artistState.page)
+      void fillArtist(artistState);
+    if (crumb.view === "album" && albumState && !albumState.page)
+      void fillAlbum(albumState);
   } finally {
     navigatingBack = false;
   }
@@ -1430,15 +1436,23 @@ async function openArtist(ref: ArtistRef) {
   // Re-entering "artist" from "artist" is still a new page arriving.
   setView("artist", true);
   $(".main-scroll").scrollTop = 0;
-  const state = artistState;
+  await fillArtist(artistState);
+}
+/** Loads an artist page's data; also used when going back to one that
+ *  never finished loading. The data is kept even if the user moved on. */
+async function fillArtist(state: ArtistState) {
   const serial = ++librarySerial;
   libraryBusy = true;
   renderSongs();
   try {
-    const page = await loadArtist(cloud, ref, locals);
-    if (serial !== librarySerial || artistState !== state) return;
+    const page = await loadArtist(cloud, state.ref, locals);
     state.page = page;
-    state.ref = { ...ref, ...refOf(page.artist)!, source: ref.source };
+    state.ref = {
+      ...state.ref,
+      ...refOf(page.artist)!,
+      source: state.ref.source,
+    };
+    if (serial !== librarySerial || artistState !== state) return;
     saveSession({ artist: refOf(state.ref) });
   } catch (e) {
     if (serial !== librarySerial) return;
@@ -1490,6 +1504,8 @@ async function loadArtistAlbumPage(append = false) {
 function setArtistTab(tab: ArtistState["tab"]) {
   if (!artistState || artistState.tab === tab) return;
   artistState.tab = tab;
+  selecting = false;
+  selection.clear();
   $("#error").hidden = true;
   suppressRowStagger = false;
   renderSongs();
@@ -1505,20 +1521,22 @@ async function openAlbum(ref: AlbumRef) {
   viewScroll.delete("album");
   setView("album", true);
   $(".main-scroll").scrollTop = 0;
-  const state = albumState;
+  await fillAlbum(albumState);
+}
+async function fillAlbum(state: AlbumState) {
   const serial = ++librarySerial;
   libraryBusy = true;
   renderSongs();
   try {
-    const page = await loadAlbum(cloud, ref, locals);
-    if (serial !== librarySerial || albumState !== state) return;
+    const page = await loadAlbum(cloud, state.ref, locals);
     state.page = page;
     state.ref = {
-      ...ref,
+      ...state.ref,
       ...refOf(page.album)!,
-      source: ref.source,
+      source: state.ref.source,
       artist: page.album.artist,
     };
+    if (serial !== librarySerial || albumState !== state) return;
     saveSession({ album: refOf(state.ref) });
   } catch (e) {
     if (serial !== librarySerial) return;
@@ -1769,8 +1787,19 @@ function setSearchKind(kind: SearchKind) {
   $(".main-scroll").scrollTop = 0;
   void search(($("#search") as HTMLInputElement).value || query);
 }
-/** Fetches every remaining page of the open online playlist. */
-async function fetchRestOfPlaylist(): Promise<boolean> {
+let wholeFetch: { item: Playlist; promise: Promise<boolean> } | undefined;
+/** Fetches every remaining page of the open online playlist; callers asking
+ *  at the same time share one fetch instead of cancelling each other. */
+function fetchRestOfPlaylist(): Promise<boolean> {
+  const item = selectedPlaylist;
+  if (wholeFetch && wholeFetch.item === item) return wholeFetch.promise;
+  const promise = fetchRestOnce().finally(() => {
+    if (wholeFetch?.promise === promise) wholeFetch = undefined;
+  });
+  if (item) wholeFetch = { item, promise };
+  return promise;
+}
+async function fetchRestOnce(): Promise<boolean> {
   const item = selectedPlaylist;
   if (!item || item.internal) return true;
   while (
@@ -1841,6 +1870,10 @@ function toggleFavorite(song: Song) {
 }
 let downloading = false;
 function updateDownloadButton() {
+  // Per song: another song downloading must not disable this one.
+  downloading = ["waiting", "active"].includes(
+    downloadQueue?.statusOf(current) || "",
+  );
   const saved = !!downloadedCopy(current);
   $("#download-current").toggleAttribute(
     "disabled",
@@ -1901,8 +1934,8 @@ function updateNow(song: Song) {
   });
   updateFavorite();
   playback.refresh();
-  broadcast(true);
-  lastLyricKey = "";
+  bridge.broadcast(true);
+  bridge.resetLyric();
 }
 function renderLyrics(markup: string) {
   const box = $("#lyrics");
@@ -1928,11 +1961,16 @@ async function play(
   const serial = ++playSerial;
   resumeAfterLoad = shouldResume;
   preparingPlayback = true;
-  // A crossfade already set the incoming fade; anything else starts at full.
-  if (!crossfading) sound.resetFade();
+  // A crossfade already set the incoming fade; anything else starts at full
+  // and silences a tail still fading out from an earlier crossfade.
+  if (!crossfading) {
+    sound.resetFade();
+    sound.stopTail();
+  }
   crossfading = false;
   prefetchKey = "";
   warm.removeAttribute("src");
+  warm.load();
   playlistToRemember = playlistContext
     ? {
         item: playlistContext,
@@ -2116,8 +2154,10 @@ function skip(delta: number, automatic = false, shouldResume = true) {
   else updateTransport();
 }
 function syncAudioLoop() {
+  // "本曲播完后停止" needs the song to end, even in repeat-one.
   audio.loop =
     playbackMode === "repeat" &&
+    !soundPanel?.armedForTrackEnd &&
     playbackQueue.songs.some((song) => songKey(song) === songKey(current));
 }
 function renderPlaybackMode() {
@@ -2310,6 +2350,8 @@ document.addEventListener("click", (e) => {
     if (tab === queueTab) return;
     queueTab = tab;
     listFilter = "";
+    selecting = false;
+    selection.clear();
     document
       .querySelectorAll<HTMLElement>("[data-queue-tab]")
       .forEach((b) =>
@@ -2324,6 +2366,8 @@ document.addEventListener("click", (e) => {
     const tab = localTabButton.dataset.localTab as typeof localTab;
     if (tab === localTab) return;
     localTab = tab;
+    selecting = false;
+    selection.clear();
     document
       .querySelectorAll<HTMLElement>("[data-local-tab]")
       .forEach((b) =>
@@ -2751,6 +2795,7 @@ $("#volume").oninput = () => {
 };
 $("#mute").onclick = () => {
   audio.muted = !audio.muted;
+  if (audio.muted) sound.stopTail();
   updateVolume();
 };
 let seekDragging = false;
@@ -2818,6 +2863,14 @@ function updateVolume() {
   }
 }
 audio.addEventListener("volumechange", updateVolume);
+// The slider shows the saved volume from the first frame (a saved 1.0 fires
+// no volumechange at all).
+updateVolume();
+// Pausing silences an outgoing crossfade too; a song change pauses while
+// preparing and keeps its tail.
+audio.addEventListener("pause", () => {
+  if (!preparingPlayback) sound.stopTail();
+});
 let mediaErrorShown = "degraded" in mediaBackend && mediaBackend.degraded;
 if (mediaErrorShown) toast("系统媒体控制暂不可用，可继续使用应用内播放按钮");
 window.addEventListener("system-media-error", () => {
@@ -3017,212 +3070,26 @@ const soundPanel = setupSoundPanel({
     );
   },
   currentGain: () => current?.gain ?? downloadedCopy(current)?.gain,
+  sleepChanged: () => syncAudioLoop(),
 });
-// ---- Desktop windows: mini player, floating lyrics, tray -----------------
-const nativeDesktop = isTauri() && !mobileDevice;
-let floatOpen = false,
-  floatLocked = false,
-  stateTimer = 0,
-  trayKey = "";
-function playerState(): PlayerState {
-  return {
-    title: current?.name || "",
-    artist: current?.artist || "",
-    cover: current?.cover || "",
-    playing: preparingPlayback ? resumeAfterLoad : !audio.paused,
-    position: audio.currentTime || 0,
-    duration: Number.isFinite(audio.duration) ? audio.duration : 0,
-    hasSong: !!current,
-  };
-}
-/** Tells the helper windows and the tray what is playing; cheap when idle. */
-function broadcast(now = false) {
-  if (!nativeDesktop) return;
-  const send = () => {
-    stateTimer = 0;
-    const state = playerState();
-    void emit("player-state", state).catch(() => {});
-    const key = `${state.title}|${state.artist}|${state.playing}`;
-    if (key !== trayKey) {
-      trayKey = key;
-      void invoke("tray_update", {
-        title: state.hasSong ? `${state.title} · ${state.artist}` : "",
-        playing: state.playing,
-      }).catch(() => {});
-    }
-  };
-  if (now) {
-    clearTimeout(stateTimer);
-    send();
-  } else if (!stateTimer) stateTimer = window.setTimeout(send, 700);
-}
-let lastLyricKey = "";
-function broadcastLyric() {
-  if (!floatOpen) return;
-  const line: LyricLine = {
-    text: lyrics[activeLine]?.text || (current ? current.name : ""),
-    next: lyrics[activeLine + 1]?.text || "",
-    locked: floatLocked,
-  };
-  const key = JSON.stringify(line);
-  if (key === lastLyricKey) return;
-  lastLyricKey = key;
-  void emit("lyric-line", line).catch(() => {});
-}
-async function toggleFloatLyrics() {
-  try {
-    floatOpen = await invoke<boolean>("float_lyrics", { show: !floatOpen });
-    if (!floatOpen) floatLocked = false;
-    lastLyricKey = "";
-  } catch (e) {
-    toast(String(e));
-  }
-}
-function lockFloatLyrics(locked: boolean) {
-  floatLocked = locked;
-  void invoke("float_lyrics_lock", { locked }).catch((e) => toast(String(e)));
-  lastLyricKey = "";
-  broadcastLyric();
-  if (locked) toast("桌面歌词已锁定，可在托盘菜单或设置中解锁");
-}
-if (nativeDesktop) {
-  audio.addEventListener("play", () => broadcast(true));
-  audio.addEventListener("pause", () => broadcast(true));
-  audio.addEventListener("timeupdate", () => {
-    broadcast();
-    broadcastLyric();
-  });
-  listen<PlayerCommand>("player-command", ({ payload }) => {
-    switch (payload) {
-      case "toggle":
-        return toggle();
-      case "previous":
-        return skip(-1);
-      case "next":
-        return skip(1);
-      case "volume-up":
-      case "volume-down":
-        sound.setVolume(
-          sound.volume + (payload === "volume-up" ? 0.05 : -0.05),
-        );
-        audio.muted = false;
-        return updateVolume();
-      case "lyrics":
-        // The tray and shortcut toggle; while locked, the first press unlocks.
-        if (floatOpen && floatLocked) return lockFloatLyrics(false);
-        return void toggleFloatLyrics();
-      case "lyrics-lock":
-        return lockFloatLyrics(!floatLocked);
-      case "lyrics-closed":
-        floatOpen = false;
-        floatLocked = false;
-        return;
-      case "show": {
-        const w = getCurrentWindow();
-        void w.show().then(() => w.setFocus());
-        return;
-      }
-      case "hello":
-        // A helper window just opened: bring it up to date at once.
-        lastLyricKey = "";
-        broadcast(true);
-        return broadcastLyric();
-    }
-  }).catch(() => {
-    /* Without the event bridge the helper windows simply stay idle. */
-  });
-}
-// ---- Backups and diagnostics ------------------------------------------------
-function saveInBrowser(name: string, text: string) {
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(
-    new Blob([text], { type: "application/json" }),
-  );
-  link.download = name;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(link.href), 5000);
-}
-async function saveFile(name: string, text: string, what: string) {
-  if (!isTauri()) return saveInBrowser(name, text);
-  try {
-    const path = await invoke<string>("backup_save", { name, content: text });
-    if (path) toast(`${what}已保存：${path}`);
-  } catch (e) {
-    toast(String(e));
-  }
-}
-function pickText(): Promise<string> {
-  return new Promise((resolve) => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "application/json,.json";
-    input.onchange = () => {
-      const file = input.files?.[0];
-      if (!file) return resolve("");
-      void file.text().then(resolve, () => resolve(""));
-    };
-    input.click();
-  });
-}
-async function importBackupFile() {
-  try {
-    const text = nativeDesktop
-      ? await invoke<string>("backup_open")
-      : await pickText();
-    if (!text) return;
-    const result = restoreBackup(text);
-    toast(
-      `已恢复：新增歌单 ${result.playlists} 个、歌曲 ${result.songs} 首、本地音乐 ${result.locals} 首，正在重新载入…`,
-    );
-    window.setTimeout(() => location.reload(), 1600);
-  } catch (e) {
-    toast(e instanceof Error ? e.message : String(e));
-  }
-}
-async function exportDiagnostics() {
-  let info: unknown = {};
-  try {
-    info = isTauri() ? await invoke("diagnostics") : {};
-  } catch {}
-  const report = {
-    app: "ting",
-    kind: "diagnostics",
-    createdAt: new Date().toISOString(),
-    info,
-    userAgent: navigator.userAgent,
-    platform: {
-      mobile: mobileDevice,
-      mac: platform.mac,
-      ios: platform.ios,
-      android: platform.android,
-    },
-    library: {
-      favorites: favorites.length,
-      locals: locals.length,
-      queue: playbackQueue.songs.length,
-      playlists: internalPlaylists().length,
-      signedIn: signedInSources(),
-    },
-    sound: {
-      normalize: sound.normalize,
-      eq: sound.preset,
-      crossfade: sound.crossfade,
-    },
-    recent: recentDiagnostics(),
-  };
-  await saveFile(
-    `ting-diagnostics-${new Date().toISOString().slice(0, 10)}.json`,
-    JSON.stringify(report, null, 2),
-    "诊断信息",
-  );
-}
-let appVersion = "";
-if (isTauri())
-  void invoke<{ version: string }>("diagnostics")
-    .then((d) => (appVersion = d.version))
-    .catch(() => {});
-setupSettingsPanel({
+const bridge = setupDesktopBridge({
+  audio,
+  sound,
   toast,
+  current: () => current,
+  playing: () => (preparingPlayback ? resumeAfterLoad : !audio.paused),
+  lyric: (offset) => lyrics[activeLine + offset]?.text,
+  toggle,
+  skip: (delta) => skip(delta),
+  volumeChanged: updateVolume,
+  openSound: () => soundPanel.open(),
+  counts: () => ({
+    favorites: favorites.length,
+    locals: locals.length,
+    queue: playbackQueue.songs.length,
+    playlists: internalPlaylists().length,
+    signedIn: signedInSources(),
+  }),
   quality: {
     value: () => quality,
     names: qualityNames,
@@ -3232,30 +3099,19 @@ setupSettingsPanel({
       select.dispatchEvent(new Event("change"));
     },
   },
-  openSound: () => soundPanel.open(),
-  openTheme: () => $("#theme-button").click(),
-  exportBackup: () =>
-    saveFile(backupName(), JSON.stringify(createBackup(), null, 1), "备份"),
-  importBackup: importBackupFile,
-  exportDiagnostics,
   localsChanged: () => {
     locals = localSongs();
     renderSongs();
     updateDownloadButton();
   },
-  floatLyrics: {
-    open: () => floatOpen,
-    toggle: () => void toggleFloatLyrics(),
-    locked: () => floatLocked,
-    lock: lockFloatLyrics,
-  },
-  miniPlayer: () => void invoke("mini_player").catch((e) => toast(String(e))),
-  version: () => (appVersion ? `版本 ${appVersion}` : "版本信息仅在应用内可见"),
 });
+
 renderSongs();
 void initialize();
 
 async function initialize() {
+  // From navigation start to a usable page, kept for 诊断信息.
+  recordDiagnostic("startup", `界面可用 ${Math.round(performance.now())} ms`);
   renderPlaybackMode();
   renderAccount();
   ($("#quality") as HTMLSelectElement).value = quality;
@@ -3605,7 +3461,10 @@ function playSelection(song: Song) {
   const startOffset = playlistOffset,
     expected = playlistTotal;
   void play(song, view === "queue" ? undefined : list(), 0, true, false, item);
-  if (!item || item.internal || startOffset >= expected) return;
+  // A filtered or re-sorted list plays as shown; the rest of the playlist
+  // would arrive unfiltered, so it is not appended.
+  const arranged = !!listFilter.trim() || currentSort() !== "default";
+  if (!item || item.internal || arranged || startOffset >= expected) return;
   const serial = queueFillSerial;
   queueExpected = expected;
   syncRows();
@@ -3694,9 +3553,6 @@ const downloadQueue = setupDownloads({
         : undefined,
   changed: (song, status, detail) => {
     const mine = !!current && songKey(current) === songKey(song);
-    downloading =
-      !!current &&
-      ["waiting", "active"].includes(downloadQueue?.statusOf(current) || "");
     updateDownloadButton();
     if (!mine) return;
     $("#download-info").hidden = false;

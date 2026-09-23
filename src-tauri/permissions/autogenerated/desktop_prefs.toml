@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-desktop-prefs"
+description = "Enables the desktop_prefs command without any pre-configured scope."
+commands.allow = ["desktop_prefs"]
+
+[[permission]]
+identifier = "deny-desktop-prefs"
+description = "Denies the desktop_prefs command without any pre-configured scope."
+commands.deny = ["desktop_prefs"]

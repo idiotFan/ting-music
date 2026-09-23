@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-artist-albums"
+description = "Enables the artist_albums command without any pre-configured scope."
+commands.allow = ["artist_albums"]
+
+[[permission]]
+identifier = "deny-artist-albums"
+description = "Denies the artist_albums command without any pre-configured scope."
+commands.deny = ["artist_albums"]

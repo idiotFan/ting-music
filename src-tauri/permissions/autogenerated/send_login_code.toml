@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-send-login-code"
+description = "Enables the send_login_code command without any pre-configured scope."
+commands.allow = ["send_login_code"]
+
+[[permission]]
+identifier = "deny-send-login-code"
+description = "Denies the send_login_code command without any pre-configured scope."
+commands.deny = ["send_login_code"]

@@ -106,9 +106,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => show_main(app),
             "quit" => app.exit(0),
-            "mini" => {
-                let _ = toggle_mini(app);
-            }
+            "mini" => spawn_mini(app),
             "lyrics" => command(app, "lyrics"),
             action => command(app, action),
         });
@@ -166,9 +164,7 @@ pub fn shortcut_pressed(app: &AppHandle, shortcut: &Shortcut, state: ShortcutSta
         .get(&shortcut.id())
         .cloned();
     match action.as_deref() {
-        Some("mini") => {
-            let _ = toggle_mini(app);
-        }
+        Some("mini") => spawn_mini(app),
         Some(action) => command(app, action),
         None => {}
     }
@@ -215,6 +211,14 @@ pub fn tray_update(app: AppHandle, title: String, playing: bool) {
     }
 }
 
+/// Windows deadlocks when a window is built inside a synchronous handler
+/// (menu, shortcut, sync command); build it off that thread instead.
+fn spawn_mini(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let _ = toggle_mini(&app);
+    });
+}
 fn toggle_mini(app: &AppHandle) -> tauri::Result<bool> {
     if let Some(w) = app.get_webview_window("mini") {
         w.close()?;
@@ -240,14 +244,14 @@ fn toggle_mini(app: &AppHandle) -> tauri::Result<bool> {
     Ok(true)
 }
 #[tauri::command]
-pub fn mini_player(app: AppHandle) -> Result<bool, String> {
+pub async fn mini_player(app: AppHandle) -> Result<bool, String> {
     toggle_mini(&app).map_err(|_| "无法打开迷你播放器".into())
 }
 
 /// Floating lyrics: a transparent strip above everything. When locked, clicks
 /// pass straight through it to whatever is underneath.
 #[tauri::command]
-pub fn float_lyrics(app: AppHandle, show: bool) -> Result<bool, String> {
+pub async fn float_lyrics(app: AppHandle, show: bool) -> Result<bool, String> {
     if let Some(w) = app.get_webview_window("lyrics") {
         if !show {
             w.close().map_err(|_| "无法关闭桌面歌词")?;

@@ -1,5 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { $, icon } from "./dom";
+import { $, icon, keepFocus } from "./dom";
 import { esc } from "./library";
 import { animateContent, closeDialog, openDialog } from "./motion";
 import { pageScale, SCALES, setPageScale } from "./page-scale";
@@ -120,8 +120,10 @@ export function acceleratorOf(e: KeyboardEvent): string | undefined {
     e.altKey ? "Alt" : "",
     e.shiftKey ? "Shift" : "",
   ].filter(Boolean);
-  // A global shortcut without a modifier would swallow ordinary typing.
-  if (!mods.length && !/^F\d/.test(key)) return undefined;
+  // A global shortcut must include Cmd/Ctrl (or Control on a Mac); Shift or
+  // Option alone would swallow ordinary typing in every other app.
+  const strong = mods.includes("CmdOrCtrl") || mods.includes("Control");
+  if (!strong && !/^F\d/.test(key)) return undefined;
   return [...mods, key].join("+");
 }
 
@@ -250,9 +252,9 @@ export function setupSettingsPanel(o: Options) {
       );
     parts.push(
       `<section><h3>数据</h3>${row("备份与恢复", "收藏、本机歌单、本地音乐、最近播放与偏好；不含账号登录", `<span class="row-buttons"><button class="outline" data-backup="export">导出</button><button class="outline" data-backup="import">导入</button></span>`)}</section>`,
-      `<section><h3>关于</h3>${row("听 · Ting", esc(o.version()), `<button class="outline" data-diagnostics>导出诊断信息</button>`)}<small class="summary">诊断信息只含版本、系统和最近的错误摘要，地址与登录凭据已去除。</small></section>`,
+      `<section><h3>关于</h3>${row("听 · Ting", esc(o.version()), `<button class="outline" data-diagnostics>导出诊断信息</button>`)}<small class="summary">诊断信息含版本、系统、曲库数量和最近的提示与错误摘要；文件路径、网址参数与登录凭据已去除。</small></section>`,
     );
-    dialog.innerHTML = parts.join("");
+    keepFocus(dialog, () => (dialog.innerHTML = parts.join("")));
   }
 
   async function refreshDownloadPath() {
@@ -282,7 +284,7 @@ export function setupSettingsPanel(o: Options) {
   }
 
   dialog.addEventListener("keydown", (e) => {
-    if (!recording) return;
+    if (!recording || e.key === "Tab") return;
     e.preventDefault();
     e.stopPropagation();
     if (e.key === "Escape") return stopRecording();
@@ -396,6 +398,7 @@ export function setupSettingsPanel(o: Options) {
   window.addEventListener("ting:scale", () => dialog.open && render());
 
   $("#settings-button").onclick = () => {
+    recording = undefined;
     prefs = desktopPrefs();
     render();
     openDialog(dialog);

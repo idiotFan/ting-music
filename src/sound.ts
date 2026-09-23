@@ -24,17 +24,21 @@ const setting = (key: string, fallback: string) => readSetting(key, fallback);
 export function setupSound(audio: HTMLAudioElement, desktop: boolean) {
   let user = clamp(Number(setting("ting.volume", "0.7")) || 0.7);
   let normalize = setting("ting.normalize", "0") === "1";
+  const known = (name: string) => Object.hasOwn(EQ_PRESETS, name);
   let preset = setting("ting.eq", "flat");
-  if (!EQ_PRESETS[preset] || !desktop) preset = "flat";
+  if (!known(preset) || !desktop) preset = "flat";
   let crossfade = clamp(Number(setting("ting.crossfade", "0")) || 0, 0, 12);
+  // Song-change fades and the sleep timer's fade are separate factors, so a
+  // song ending mid-way through the sleep fade cannot cancel it.
   let trackGain = 1,
-    fade = 1;
+    fade = 1,
+    sleep = 1;
   let context: AudioContext | undefined;
   let filters: BiquadFilterNode[] = [];
   const routed = new WeakSet<HTMLMediaElement>();
 
   function apply() {
-    const next = clamp(user * trackGain * fade);
+    const next = clamp(user * trackGain * fade * sleep);
     if (Math.abs(audio.volume - next) > 0.0005) audio.volume = next;
   }
   /** Platform or ReplayGain loudness in dB; unknown songs count as typical. */
@@ -67,6 +71,23 @@ export function setupSound(audio: HTMLAudioElement, desktop: boolean) {
     clearInterval(ramp);
     fade = 1;
     apply();
+  }
+  let sleepRamp = 0;
+  function sleepOut(seconds: number, done: () => void) {
+    clearInterval(sleepRamp);
+    const start = performance.now(),
+      span = seconds * 1000;
+    sleepRamp = window.setInterval(() => {
+      const t = clamp((performance.now() - start) / span);
+      sleep = 1 - t;
+      apply();
+      if (t >= 1) {
+        clearInterval(sleepRamp);
+        done();
+        sleep = 1;
+        apply();
+      }
+    }, 40);
   }
 
   // The equaliser is only ever built on request: once an element feeds an
@@ -116,29 +137,31 @@ export function setupSound(audio: HTMLAudioElement, desktop: boolean) {
   // the next one fades in on the main element.
   const tail = new Audio();
   tail.preload = "auto";
+  let tailTimer = 0;
   function playTail(src: string, time: number) {
+    stopTail();
     if (context && routed.has(audio)) route(tail);
     tail.src = src;
     tail.currentTime = time;
     tail.volume = audio.volume;
+    tail.muted = audio.muted;
     void tail.play().catch(() => {});
     const start = performance.now(),
       from = tail.volume,
       span = crossfade * 1000;
-    const timer = window.setInterval(() => {
+    tailTimer = window.setInterval(() => {
       const t = clamp((performance.now() - start) / span);
       tail.volume = from * (1 - t);
-      if (t >= 1) {
-        clearInterval(timer);
-        tail.pause();
-        tail.removeAttribute("src");
-        tail.load();
-      }
+      if (t >= 1) stopTail();
     }, 40);
   }
+  /** Silences the outgoing song at once (pause, another pick, mute). */
   function stopTail() {
+    clearInterval(tailTimer);
+    if (!tail.getAttribute("src")) return;
     tail.pause();
     tail.removeAttribute("src");
+    tail.load();
   }
 
   return {
@@ -164,7 +187,7 @@ export function setupSound(audio: HTMLAudioElement, desktop: boolean) {
     },
     /** Returns true when the current song must reload to be equalised. */
     setPreset(name: string): boolean {
-      if (!desktop || !EQ_PRESETS[name]) return false;
+      if (!desktop || !known(name)) return false;
       preset = name;
       writeSetting("ting.eq", name);
       if (name === "flat") {
@@ -198,9 +221,8 @@ export function setupSound(audio: HTMLAudioElement, desktop: boolean) {
       apply();
       rampFade(1, seconds);
     },
-    fadeOut(seconds: number, done: () => void) {
-      rampFade(0, seconds, done);
-    },
+    /** The sleep timer's slow fade; restores full level after `done`. */
+    sleepOut,
     resetFade,
   };
 }

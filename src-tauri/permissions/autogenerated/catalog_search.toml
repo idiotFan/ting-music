@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-catalog-search"
+description = "Enables the catalog_search command without any pre-configured scope."
+commands.allow = ["catalog_search"]
+
+[[permission]]
+identifier = "deny-catalog-search"
+description = "Denies the catalog_search command without any pre-configured scope."
+commands.deny = ["catalog_search"]

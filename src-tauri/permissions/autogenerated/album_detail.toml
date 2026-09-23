@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-album-detail"
+description = "Enables the album_detail command without any pre-configured scope."
+commands.allow = ["album_detail"]
+
+[[permission]]
+identifier = "deny-album-detail"
+description = "Denies the album_detail command without any pre-configured scope."
+commands.deny = ["album_detail"]

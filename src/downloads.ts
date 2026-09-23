@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { $, icon } from "./dom";
+import { $, icon, keepFocus } from "./dom";
 import { esc, type Song } from "./library";
 import { songKey } from "./model.mjs";
 import { animateContent, closeDialog, openDialog } from "./motion";
@@ -117,6 +117,9 @@ export function setupDownloads(o: Options) {
   function render() {
     renderButton();
     if (!dialog.open) return;
+    keepFocus(dialog, draw);
+  }
+  function draw() {
     const c = counts();
     const rows = items
       .map(
@@ -204,6 +207,8 @@ export function setupDownloads(o: Options) {
       added++;
     }
     if (added) {
+      // Asking for a download is also asking the queue to run.
+      paused = false;
       persist();
       render();
       pump();

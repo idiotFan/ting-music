@@ -551,9 +551,11 @@ fn album_row(a: &Value) -> Value {
 }
 /// "2003-07-31" as Unix milliseconds (UTC midnight); 0 when unparseable.
 fn date_ms(date: &str) -> u64 {
-    let parts: Vec<i64> = date.split('-').filter_map(|p| p.parse().ok()).collect();
+    // "2003-07-31", possibly followed by a time ("2003-07-31 00:00:00").
+    let day = date.split([' ', 'T']).next().unwrap_or("");
+    let parts: Vec<i64> = day.split('-').filter_map(|p| p.parse().ok()).collect();
     let [y, m, d] = parts[..] else { return 0 };
-    if !(1..=12).contains(&m) || !(1..=31).contains(&d) || y < 1900 {
+    if !(1..=12).contains(&m) || !(1..=31).contains(&d) || !(1900..=9999).contains(&y) {
         return 0;
     }
     // Days from civil (Howard Hinnant).
@@ -745,6 +747,8 @@ mod tests {
         assert_eq!(date_ms("1970-01-02"), 86_400_000);
         assert_eq!(date_ms("2003-07-31"), 1_059_609_600_000);
         assert_eq!(date_ms("bad"), 0);
+        assert_eq!(date_ms("2003-07-31 12:00:00"), 1_059_609_600_000);
+        assert_eq!(date_ms("99999999999999-01-01"), 0);
         let a = artist_row(
             &json!({"singerID":4558,"singerMID":"0025NhlN2yWrP4","singerName":"周杰伦","albumNum":43,"songNum":1012}),
         );

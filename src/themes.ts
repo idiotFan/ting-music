@@ -151,6 +151,22 @@ function apply(id: string) {
 }
 apply(selected);
 export const themeFollowsSystem = () => follow;
+/** For the helper windows: follow the main window's choices as they change. */
+export function followThemeChanges() {
+  const refresh = () => {
+    lightChoice = readSetting("ting.theme") || "sage";
+    if (!valid(lightChoice)) lightChoice = "sage";
+    darkChoice = readSetting("ting.theme-dark") || "midnight";
+    if (!valid(darkChoice, true)) darkChoice = "midnight";
+    follow = readSetting("ting.theme-follow") === "1";
+    if (follow && !valid(lightChoice, false)) lightChoice = "sage";
+    apply(wanted());
+  };
+  window.addEventListener("storage", (e) => {
+    if (e.key?.startsWith("ting.theme")) refresh();
+  });
+  systemDark.addEventListener("change", refresh);
+}
 export function setupThemes() {
   const dialog = document.createElement("dialog");
   dialog.id = "theme-dialog";

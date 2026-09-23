@@ -17,18 +17,18 @@
   "dependencies": {
     "@tauri-apps/api": "^2",
     "jsqr": "^1.4.0",
-    "lucide": "^0.468.0",
+    "lucide": "^1.47.0",
     "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "@playwright/test": "^1.51.0",
-    "@tauri-apps/cli": "^2",
+    "@tauri-apps/cli": "^2.11.5",
     "@types/pngjs": "^6.0.5",
     "@types/qrcode": "^1.5.6",
     "pngjs": "^7.0.0",
-    "prettier": "3.9.7",
-    "typescript": "^5.8.3",
-    "vite": "^6.3.0"
+    "prettier": "^3.9.8",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0"
   },
   "description": "A compact Tauri music player for NetEase Cloud Music and QQ Music"
 }

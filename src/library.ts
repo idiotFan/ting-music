@@ -1,5 +1,6 @@
 import { MOTION, animateContent, openDialog, closeDialog } from "./motion";
 import { songKey, uniqueSongs, formatTime } from "./model.mjs";
+import { songArtists } from "./catalog-model.mjs";
 import { changes, type Batch } from "./library-sync-model";
 import {
   isLocalSong,
@@ -334,9 +335,16 @@ export function coverChoice(id: number): CoverChoice {
     : { mode: "first" };
 }
 export function setCoverChoice(id: number, choice: CoverChoice) {
-  if (choice.mode === "first") delete covers[String(id)];
-  else covers[String(id)] = choice;
-  localStorage.setItem(COVERS, JSON.stringify(covers));
+  const next = { ...covers };
+  if (choice.mode === "first") delete next[String(id)];
+  else next[String(id)] = choice;
+  // Written first, applied after: a full disk leaves the old cover showing.
+  try {
+    localStorage.setItem(COVERS, JSON.stringify(next));
+  } catch {
+    throw new Error("本机存储空间不足，封面未保存");
+  }
+  covers = next;
   // Covers are this device's own; the synced library does not change.
   window.dispatchEvent(new Event("ting:covers"));
 }
@@ -532,14 +540,8 @@ function move(songs: Song[], song: Song, action: string): Song[] {
   next.splice(to, 0, ...next.splice(from, 1));
   return next;
 }
-export const esc = (v: string) =>
-  v.replace(
-    /[&<>"']/g,
-    (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-        c
-      ]!,
-  );
+export { esc } from "./esc";
+import { esc } from "./esc";
 type Options = {
   cloud: <T>(
     command: string,
@@ -928,9 +930,8 @@ export function setupLibrary(o: Options) {
       song.name,
       `<p class="summary">${esc(song.artist)} · ${isLocalSong(song) ? "本地音乐" : song.source === "qq" ? "QQ音乐" : "网易云"}</p><div class="library-actions"><button id="song-add" class="outline">加入歌单…</button>${o.playNext && !song.missing ? '<button id="song-next" class="outline">下一首播放</button>' : ""}${o.download && !isLocalSong(song) && !song.localUrl ? '<button id="song-download" class="outline">下载到本机</button>' : ""}${
         o.browse && !song.localUrl?.startsWith("blob:")
-          ? `<div class="browse-actions">${song.artist
-              .split(/\s*\/\s*/)
-              .filter(Boolean)
+          ? `<div class="browse-actions">${songArtists(song)
+              .map((a) => a.name)
               .slice(0, 4)
               .map(
                 (name, i) =>
@@ -1049,7 +1050,11 @@ export function setupLibrary(o: Options) {
           (b.onclick = () => {
             const mode = b.dataset.cover as CoverChoice["mode"];
             if (mode === "image") return file.click();
-            setCoverChoice(p.id, { mode });
+            try {
+              setCoverChoice(p.id, { mode });
+            } catch (e) {
+              return o.toast(e instanceof Error ? e.message : String(e));
+            }
             dialog
               .querySelectorAll("[data-cover]")
               .forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
@@ -1098,6 +1103,8 @@ export function setupLibrary(o: Options) {
             async () => {
               commit(internal.filter((x) => x.id !== p.id));
               dropLocalMembers(p.id);
+              if (coverChoice(p.id).mode !== "first")
+                setCoverChoice(p.id, { mode: "first" });
             },
             "已删除本机歌单",
             p,

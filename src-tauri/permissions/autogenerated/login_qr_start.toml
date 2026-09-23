@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-login-qr-start"
+description = "Enables the login_qr_start command without any pre-configured scope."
+commands.allow = ["login_qr_start"]
+
+[[permission]]
+identifier = "deny-login-qr-start"
+description = "Denies the login_qr_start command without any pre-configured scope."
+commands.deny = ["login_qr_start"]
