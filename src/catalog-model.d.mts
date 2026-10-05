@@ -17,6 +17,7 @@ export function namesArtist(
   artist: { name?: string; alias?: string } | undefined,
 ): boolean;
 export const SORTS: string[];
+export const pinyinOrder: Intl.Collator;
 export function arrange<T>(songs: T[], filter?: string, sort?: string): T[];
 export function albumsOf<T extends { album: string; cover: string }>(
   songs: T[],
