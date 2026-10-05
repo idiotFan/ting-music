@@ -22,7 +22,7 @@
 - **自适应布局**：窄窗口单栏；拉宽后列表 / 播放器两栏，大封面居中；打开歌词成三栏，每栏宽度可拖拽并记忆；平板与手机横屏同样适配。
 - **11 套主题**并可跟随系统深浅色，系统媒体控制（macOS / iOS 控制中心、Windows SMTC、Linux MPRIS、Android MediaSession），本地音频离线播放。
 
-**当前版本 0.9.8**（iOS 构建 90801，Android versionCode 9008）。macOS 需 15+ Apple Silicon；iOS 16+ 为开发签名真机版；Windows / Linux / Android 由 CI 构建。
+**当前版本 0.9.9**（iOS 构建 90901，Android versionCode 9009）。macOS 需 15+ Apple Silicon；iOS 16+ 为开发签名真机版；Windows / Linux / Android 由 CI 构建。
 
 ## 功能细节
 
