@@ -31,6 +31,9 @@ button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
+html[data-input="pointer"] button:focus-visible {
+  outline: none;
+}
 svg {
   width: 18px;
   height: 18px;

@@ -178,6 +178,43 @@ test("desktop settings keep their close button visible and return from theme and
   await expect(dialog).toBeHidden();
 });
 
+test("mouse reopen removes inherited keyboard rings and Tab restores visible focus", async ({
+  page,
+}) => {
+  await setup(page);
+  const opener = page.locator("#settings-button");
+  const dialog = page.locator("#settings-dialog");
+  await opener.focus();
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => getComputedStyle(document.activeElement!).outlineStyle,
+    ),
+  ).toBe("solid");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  for (let i = 0; i < 2; i++) {
+    await opener.click();
+    await expect(dialog).toBeVisible();
+    const close = dialog.locator("[data-settings-close]");
+    expect(
+      await close.evaluate((el) => getComputedStyle(el).outlineStyle),
+    ).toBe("none");
+    expect(
+      await dialog.evaluate((el) => getComputedStyle(el).outlineStyle),
+    ).toBe("none");
+    await page.keyboard.press("Tab");
+    expect(
+      await page.evaluate(
+        () => getComputedStyle(document.activeElement!).outlineStyle,
+      ),
+    ).toBe("solid");
+    await close.click();
+    await expect(dialog).toBeHidden();
+  }
+});
+
 test("a failed stream shows play instead of pause and play retries the source", async ({
   page,
 }) => {

@@ -95,6 +95,9 @@ select:focus-visible,
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+html[data-input="pointer"] :is(button, a, [tabindex]):focus-visible {
+  outline: none;
+}
 svg {
   width: 18px;
   height: 18px;
@@ -3571,6 +3574,6 @@ label.cell:active {
 }
 /* A sheet holding focus for a touch screen draws no ring of its own. */
 dialog:focus,
-dialog:focus-visible {
+dialog[tabindex]:focus-visible {
   outline: none;
 }
