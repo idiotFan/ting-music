@@ -1,3 +1,11 @@
+## 0.9.8 发布 · 2026-10-05
+
+用户明确要求发布 0.9.8。公开版本 0.9.8，Apple 构建号 90801，Android versionCode 9008。
+
+- 内容：0.9.8 功能（见下一节）加代码质量整改与长列表性能优化（PR #19）：3000 首收藏排序 260–340 ms → 约 83 ms、点收藏约 280 ms → 约 45 ms；Rust 正则与 WEAPI 公钥只构建一次、锁中毒可恢复、clippy 零警告；Linux 启动先调用 `XInitThreads()`，修复打开迷你播放器 / 桌面歌词时的 xcb 断言崩溃；新增 HTML 转义回归测试。
+- 验证：CI 七项（macOS Apple Silicon 全量回归、macOS Intel、Windows、Linux x64 / ARM64、Android arm64、凭据扫描）通过。Linux 真机桌面版实测曲库、排序筛选、队列、本机歌单、重启复原、托盘、迷你播放器与桌面歌词。
+- 未实机：Linux WebKitGTK 经 asset 协议播放本地音频报 `MEDIA_ERR_SRC_NOT_SUPPORTED`（0.9.7 同样），Linux 上播放与进度未实测；macOS / Windows 的实际播放与 0.9.7 → 0.9.8 自更新需在本机确认；本版不含 iOS 开发签名包。
+
 ## 0.9.8 功能（版本号仍为 0.9.7）· 2026-09-23
 
 按 [0.9.8 规划](ROADMAP-0.9.8.md) 实现六个阶段。自动化结果如下；标「未实机」的项目只在浏览器模拟和本机编译里验证过。
