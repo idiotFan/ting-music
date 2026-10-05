@@ -2,7 +2,7 @@
 :root {
   font-family:
     -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
-    sans-serif;
+    "Noto Sans CJK SC", "WenQuanYi Zen Hei", sans-serif;
   color: var(--ink);
   font-synthesis: none;
 }
@@ -25,6 +25,11 @@ button {
   display: inline-grid;
   place-items: center;
   font: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 svg {
   width: 18px;
@@ -86,16 +91,20 @@ body.mini {
   height: 34px;
   border-radius: 50%;
 }
-.mini-buttons button:hover {
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
+@media (hover: hover) and (pointer: fine) {
+  .mini-buttons button:hover {
+    background: color-mix(in srgb, var(--ink) 6%, transparent);
+  }
 }
 #mini-toggle {
   color: var(--on-accent);
   background: var(--accent);
 }
-#mini-toggle:hover {
-  background: var(--accent);
-  filter: brightness(1.08);
+@media (hover: hover) and (pointer: fine) {
+  #mini-toggle:hover {
+    background: var(--accent);
+    filter: brightness(1.08);
+  }
 }
 .mini-close {
   width: 26px !important;

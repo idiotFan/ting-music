@@ -255,7 +255,7 @@ export function setupSettingsPanel(o: Options) {
     const q = o.quality;
     const scale = pageScale();
     const parts = [
-      `<button class="dialog-close icon-button" data-settings-close aria-label="关闭设置">${icon("X")}</button><h2 id="settings-title">设置</h2>`,
+      `<header class="settings-header"><h2 id="settings-title">设置</h2><button class="dialog-close icon-button" data-settings-close aria-label="关闭设置">${icon("X")}</button></header>`,
       `<section><h3>播放</h3>${row(
         "音质",
         "按账号权限提供，播放区显示实际返回的档位",
@@ -402,15 +402,8 @@ export function setupSettingsPanel(o: Options) {
   dialog.addEventListener("click", async (e) => {
     const el = e.target as HTMLElement;
     if (el.closest("[data-settings-close]")) return closeDialog(dialog);
-    // Phones push the sheet on top and come back here; desktop swaps.
-    if (el.closest("[data-open-sound]")) {
-      if (!phone) closeDialog(dialog);
-      return o.openSound();
-    }
-    if (el.closest("[data-open-theme]")) {
-      if (!phone) closeDialog(dialog);
-      return o.openTheme();
-    }
+    if (el.closest("[data-open-sound]")) return o.openSound();
+    if (el.closest("[data-open-theme]")) return o.openTheme();
     const scale = el.closest<HTMLElement>("[data-scale]");
     if (scale) {
       setPageScale(Number(scale.dataset.scale));

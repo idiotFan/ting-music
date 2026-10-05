@@ -1,7 +1,7 @@
 :root {
   font-family:
     -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
-    sans-serif;
+    "Noto Sans CJK SC", "WenQuanYi Zen Hei", sans-serif;
   font-size: 14px;
   color: var(--ink);
   background: var(--bg);
@@ -15,9 +15,9 @@
   --green: var(--accent);
   --on-accent: #fff;
   --error: #9b443d;
-  --tint: color-mix(in srgb, var(--accent) 6%, var(--surface));
-  --hover: color-mix(in srgb, var(--accent) 8%, var(--surface));
-  --selected: color-mix(in srgb, var(--accent) 4.5%, var(--surface));
+  --tint: color-mix(in srgb, var(--accent) 4%, var(--surface));
+  --hover: color-mix(in srgb, var(--ink) 4%, var(--surface));
+  --selected: color-mix(in srgb, var(--accent) 9%, var(--surface));
   --accent-hover: color-mix(in srgb, var(--accent) 86%, var(--ink));
   /* Match the override rules that previously masked these (account dialog). */
   --text-title: 21px;
@@ -58,9 +58,30 @@ button {
   align-items: center;
   justify-content: center;
   gap: 6px;
+  -webkit-tap-highlight-color: transparent;
 }
-button:hover:not(:disabled) {
-  background: var(--hover);
+@media (hover: hover) and (pointer: fine) {
+  html:not(.mobile-device)
+    :is(
+      .icon-button,
+      .outline,
+      .quiet,
+      .search-submit,
+      .account-button,
+      .playlist-card,
+      .playlist-target,
+      .match-choice,
+      .catalog-card,
+      .best-match,
+      .sheet-done,
+      .cell,
+      .shortcut-key
+    ):hover:not(:disabled) {
+    background: var(--hover);
+  }
+  html:not(.mobile-device) nav button:hover:not(:disabled) {
+    color: var(--ink);
+  }
 }
 button:disabled {
   opacity: 0.4;
@@ -226,7 +247,7 @@ svg {
   width: 30px;
   height: 30px;
   padding: 5px;
-  border-radius: 6px;
+  border-radius: 50%;
   color: var(--muted);
   flex-shrink: 0;
 }
@@ -363,9 +384,11 @@ input[type="range"]:disabled {
   background: var(--green);
   color: var(--on-accent);
 }
-.play-toggle:hover:not(:disabled),
-.primary:hover:not(:disabled) {
-  background: var(--accent-hover);
+@media (hover: hover) and (pointer: fine) {
+  html:not(.mobile-device) .play-toggle:hover:not(:disabled),
+  html:not(.mobile-device) .primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
 }
 .play-toggle svg {
   width: 20px;
@@ -373,14 +396,12 @@ input[type="range"]:disabled {
   fill: currentColor;
 }
 .mode-button.active {
-  background: var(--tint);
   color: var(--accent);
 }
 .lyrics-toggle {
   font-size: 15px;
 }
 .lyrics-toggle[aria-expanded="true"] {
-  background: var(--tint);
   color: var(--accent);
 }
 .player-options {
@@ -406,7 +427,7 @@ input[type="range"]:disabled {
   color: var(--muted);
 }
 #quality {
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   background: var(--tint);
   color: var(--accent);
   padding: 4px 6px;
@@ -479,12 +500,17 @@ main {
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   background: var(--tint);
-  border-radius: 8px;
-  padding: 5px 8px;
+  border-radius: 12px;
+  padding: 7px 10px;
   width: 100%;
   color: var(--muted);
+}
+#search-form:focus-within,
+.list-filter:focus-within,
+.list-sort:focus-within {
+  border-color: var(--accent);
 }
 #search {
   border: 0;
@@ -540,7 +566,7 @@ main {
   }
 }
 .section-top h2 {
-  font-size: 14px;
+  font-size: 17px;
   font-weight: 600;
   margin: 0;
   min-width: 0;
@@ -557,14 +583,15 @@ main {
 .outline,
 .quiet,
 .primary {
-  border-radius: 6px;
+  border-radius: 9px;
   font-size: 12px;
   padding: 6px 8px;
   white-space: nowrap;
   flex-shrink: 0;
 }
 .outline {
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
+  background: var(--tint);
   color: var(--accent);
 }
 .outline svg {
@@ -591,16 +618,18 @@ main {
   align-items: center;
   min-height: 66px;
   padding: 8px;
-  border-bottom: 1px solid var(--line);
-  border-radius: 7px;
+  border-bottom: 1px solid transparent;
+  border-radius: 10px;
   cursor: pointer;
   /* Rows off screen skip layout and paint (a 300-song queue costs the same as
      a screenful); the intrinsic size keeps the scrollbar honest. */
   content-visibility: auto;
   contain-intrinsic-size: auto 66px;
 }
-.song-row:hover {
-  background: var(--hover);
+@media (hover: hover) and (pointer: fine) {
+  html:not(.mobile-device) .song-row:hover:not(.selected):not(.checked) {
+    background: var(--hover);
+  }
 }
 .song-row.playing .song-title {
   color: var(--accent);
@@ -690,13 +719,13 @@ main {
 }
 .playlist-card {
   width: 100%;
-  padding: 9px 6px;
+  padding: 12px 8px;
   text-align: left;
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr);
   grid-template-rows: auto auto;
   gap: 4px 12px;
-  border-radius: 7px;
+  border-radius: 10px;
 }
 .playlist-card img {
   grid-row: 1/3;
@@ -977,7 +1006,7 @@ main {
 }
 .source-badge {
   font-size: 10px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: 3px;
   padding: 0 3px;
   color: var(--muted);
@@ -1081,7 +1110,25 @@ main {
 }
 .library-actions {
   display: grid;
-  gap: 10px;
+  gap: 4px;
+}
+#library-dialog .library-actions > button,
+#library-dialog .browse-actions > button {
+  justify-content: flex-start;
+  text-align: left;
+  padding: 12px;
+  border: 0;
+  background: transparent;
+}
+@media (hover: hover) and (pointer: fine) {
+  html:not(.mobile-device) #library-dialog .library-actions button:hover {
+    background: var(--hover);
+  }
+}
+#library-dialog .browse-actions {
+  padding-block: 8px;
+  margin-block: 4px;
+  border-block: 1px solid var(--line);
 }
 .library-actions .summary {
   margin-bottom: 0;
@@ -1174,7 +1221,7 @@ main {
   margin-left: 0;
 }
 .song-row {
-  border-radius: 5px;
+  border-radius: 10px;
 }
 .song-row.selected {
   box-shadow: none;
@@ -1215,22 +1262,29 @@ main {
 .theme-choice {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  padding: 7px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
+  gap: 9px;
+  padding: 9px;
+  border-radius: 12px;
+  border: 1px solid transparent;
   font-size: 12px;
 }
 .theme-choice[aria-pressed="true"] {
   border-color: var(--accent);
-  background: var(--tint);
+}
+@media (hover: hover) and (pointer: fine) {
+  html:not(.mobile-device) .theme-choice:hover {
+    border-color: var(--muted);
+  }
+  html:not(.mobile-device) .theme-choice[aria-pressed="true"]:hover {
+    border-color: var(--accent);
+  }
 }
 .theme-preview {
   display: block;
   position: relative;
   width: 100%;
-  height: 44px;
-  border-radius: 4px;
+  height: 52px;
+  border-radius: 7px;
   background: var(--swatch-bg);
   overflow: hidden;
 }
@@ -1775,7 +1829,7 @@ button.brand:active {
 .mobile-device .song-duration {
   display: none;
 }
-.mobile-device .song-row:not(.selected):hover {
+.mobile-device .song-row:not(.selected):not(.checked):hover {
   background: transparent;
 }
 .mobile-device .row-actions {
@@ -2281,7 +2335,7 @@ button,
   transition-duration: 0s;
 }
 /* A tap leaves :hover behind on touch devices; only the press should read. */
-.mobile-device .song-row:hover:not(:active):not(.selected) {
+.mobile-device .song-row:hover:not(:active):not(.selected):not(.checked) {
   background: none;
 }
 .icon-button > svg,
@@ -2379,11 +2433,12 @@ button,
   text-align: left;
   white-space: nowrap;
 }
-.meta-link:hover:not(:disabled) {
-  background: none;
-  color: var(--accent);
-  text-decoration: underline;
-  text-underline-offset: 2px;
+@media (hover: hover) and (pointer: fine) {
+  html:not(.mobile-device) .meta-link:hover:not(:disabled) {
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
 }
 .meta-link:focus-visible {
   outline: 2px solid var(--accent);
@@ -2425,9 +2480,9 @@ mark {
   text-align: left;
   padding: 10px;
   margin: 0 0 8px;
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   border-radius: 10px;
-  background: var(--surface);
+  background: var(--tint);
 }
 .best-match .catalog-art {
   width: 56px;
@@ -2611,10 +2666,10 @@ mark {
   display: flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
   padding: 0 8px;
-  background: var(--surface);
+  background: var(--tint);
   color: var(--muted);
   min-width: 0;
 }
@@ -2965,58 +3020,80 @@ mark {
   color: var(--ink);
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 24px 20px 18px;
-  width: min(480px, calc(100vw - 28px));
+  border-radius: 20px;
+  padding: 0;
+  width: min(540px, calc(100vw - 28px));
   max-height: calc(100dvh - 24px);
   overflow: auto;
+  box-shadow: 0 24px 80px #00000024;
 }
-#settings-dialog::backdrop {
-  background: #263a2b66;
+dialog::backdrop,
+#settings-dialog::backdrop,
+#account-dialog::backdrop,
+#theme-dialog::backdrop,
+.sheet-dialog::backdrop {
+  background: color-mix(in srgb, var(--ink) 30%, transparent);
+}
+body:has(:is(#theme-dialog, #sound-dialog)[open]) #settings-dialog::backdrop {
+  background: transparent;
+}
+.settings-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.settings-header .dialog-close {
+  position: static;
+  flex-shrink: 0;
 }
 #settings-dialog h2 {
-  font-size: 18px;
-  margin: 0 0 6px;
+  font-size: 21px;
+  margin: 0;
 }
 #settings-dialog section {
-  padding: 10px 0 12px;
+  padding: 18px 24px;
   border-top: 1px solid var(--line);
 }
 #settings-dialog section:first-of-type {
   border-top: 0;
 }
 #settings-dialog h3 {
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  color: var(--muted);
+  font-size: 13px;
+  color: var(--accent);
   font-weight: 600;
-  margin: 0 0 4px;
+  margin: 0 0 10px;
 }
 .setting-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 8px 0;
+  padding: 10px 0;
 }
 .setting-row > span:first-child {
   min-width: 0;
 }
 .setting-row strong {
   display: block;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
 }
 .setting-row small {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   line-height: 1.55;
   margin-top: 2px;
   overflow-wrap: anywhere;
 }
 .setting-row select {
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   background: var(--tint);
   color: var(--ink);
   border-radius: 7px;
@@ -3099,14 +3176,22 @@ label.setting-row {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  justify-content: flex-end;
-  max-width: 230px;
+  justify-content: flex-start;
+  width: 100%;
+}
+.setting-row:has(.scale-steps) {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.setting-row:has(.scale-steps) > span {
+  flex-basis: 100%;
 }
 .scale-steps button {
-  font-size: 11px;
-  padding: 4px 7px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--tint);
   color: var(--muted);
 }
 .scale-steps button[aria-pressed="true"] {
