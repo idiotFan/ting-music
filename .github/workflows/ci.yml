@@ -158,6 +158,18 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run tauri -- build -- --locked
+      - name: Verify Debian package metadata
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          architecture="${{ runner.arch == 'ARM64' && 'arm64' || 'amd64' }}"
+          for package in src-tauri/target/release/bundle/deb/*.deb; do
+            test "$(dpkg-deb -f "$package" Package)" = ting
+            test "$(dpkg-deb -f "$package" Version)" = "$version"
+            test "$(dpkg-deb -f "$package" Architecture)" = "$architecture"
+            dpkg-deb --contents "$package" > /dev/null
+          done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Ting-0.9.9-build-90901-${{ runner.os }}${{ runner.arch == 'ARM64' && '-ARM64' || '' }}
