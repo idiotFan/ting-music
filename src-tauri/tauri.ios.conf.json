@@ -3,7 +3,7 @@
     "iOS": {
       "minimumSystemVersion": "16.0",
       "infoPlist": "Info.ios.plist",
-      "bundleVersion": "90801"
+      "bundleVersion": "90901"
     }
   },
   "app": {
