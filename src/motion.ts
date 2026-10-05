@@ -28,6 +28,19 @@ type DialogMotion = {
   closing: boolean;
 };
 const dialogs = new WeakMap<HTMLDialogElement, DialogMotion>();
+document.addEventListener(
+  "pointerdown",
+  () => (document.documentElement.dataset.input = "pointer"),
+  true,
+);
+document.addEventListener(
+  "keydown",
+  (event) => {
+    if (!["Shift", "Control", "Alt", "Meta"].includes(event.key))
+      document.documentElement.dataset.input = "keyboard";
+  },
+  true,
+);
 
 function stop(animation?: Animation) {
   if (!animation) return;
@@ -286,11 +299,12 @@ export function openDialog(dialog: HTMLDialogElement): void {
   state.closing = false;
   // showModal/close still own top-layer, focus trapping and focus restoration.
   if (!dialog.open) {
+    const keyboardFocus = document.documentElement.dataset.input === "keyboard";
     dialog.showModal();
-    // A touch screen has no keyboard focus to show: WebKit would ring the
-    // first button (the sheet's close / Done) as if tabbed to. Hold focus on
-    // the sheet itself; Tab still walks its controls in order.
-    if (document.documentElement.classList.contains("mobile-device")) {
+    if (
+      document.documentElement.classList.contains("mobile-device") ||
+      !keyboardFocus
+    ) {
       dialog.tabIndex = -1;
       dialog.focus({ preventScroll: true });
     }

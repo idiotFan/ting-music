@@ -623,11 +623,14 @@ function syncRows() {
     const id = row.dataset.song!,
       selected = id === songKey(current);
     row.classList.toggle("playing", selected);
-    row.classList.toggle("selected", id === selectedSongId);
+    row.classList.toggle("selected", !selecting && id === selectedSongId);
     row.classList.toggle("checked", selecting && selection.has(id));
     row
       .querySelector(".song-title")
-      ?.setAttribute("aria-pressed", String(id === selectedSongId));
+      ?.setAttribute(
+        "aria-pressed",
+        String(selecting ? selection.has(id) : id === selectedSongId),
+      );
     const fav = row.querySelector<HTMLButtonElement>("[data-favorite]")!;
     const liked = favoriteIds.has(id);
     fav.classList.toggle("is-favorite", liked);
@@ -692,10 +695,13 @@ function selectSong(id: string) {
     const row = document.querySelector<HTMLElement>(
       `[data-song="${CSS.escape(key)}"]`,
     );
-    row?.classList.toggle("selected", key === id);
+    row?.classList.toggle("selected", !selecting && key === id);
     row
       ?.querySelector(".song-title")
-      ?.setAttribute("aria-pressed", String(key === id));
+      ?.setAttribute(
+        "aria-pressed",
+        String(selecting ? selection.has(key) : key === id),
+      );
   }
 }
 // Set by setView so a view transition never plays twice: once as the library
@@ -1723,8 +1729,11 @@ function updateFavorite() {
     !!current && favorites.some((s) => songKey(s) === songKey(current)),
   );
 }
+function transportPlaying() {
+  return !audio.error && (preparingPlayback ? resumeAfterLoad : !audio.paused);
+}
 function updateTransport() {
-  const playing = preparingPlayback ? resumeAfterLoad : !audio.paused;
+  const playing = transportPlaying();
   if ($("#toggle").dataset.playing !== String(playing)) {
     $("#toggle").innerHTML = icon(playing ? "Pause" : "Play");
     $("#toggle").dataset.playing = String(playing);
@@ -1958,6 +1967,8 @@ async function play(
       toast("轻点播放按钮继续播放");
       return;
     }
+    resumeAfterLoad = false;
+    audio.pause();
     systemMedia.clear();
     $("#track-tag").textContent = "播放未成功";
     if (!audio.getAttribute("src") && !lyrics.length)
@@ -2031,7 +2042,7 @@ function toggle() {
   }
   resumeAfterLoad = audio.paused;
   if (audio.paused) {
-    if (!audio.getAttribute("src"))
+    if (!audio.getAttribute("src") || audio.error)
       void play(current, undefined, resumePosition ?? 0);
     else {
       if (current && !systemMedia.active) systemMedia.select(current);
@@ -2820,6 +2831,9 @@ audio.addEventListener("ended", () => {
 });
 audio.addEventListener("error", () => {
   if (audio.getAttribute("src")) {
+    resumeAfterLoad = false;
+    audio.pause();
+    updateTransport();
     $("#track-tag").textContent = "音频加载失败";
     toast("音频加载失败，可能已过期或格式不受支持；重新选择歌曲可重试。");
   }
@@ -2906,7 +2920,7 @@ const bridge = setupDesktopBridge({
   sound,
   toast,
   current: () => current,
-  playing: () => (preparingPlayback ? resumeAfterLoad : !audio.paused),
+  playing: transportPlaying,
   lyric: (offset) => lyrics[activeLine + offset]?.text,
   toggle,
   skip: (delta) => skip(delta),
