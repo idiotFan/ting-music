@@ -2,8 +2,20 @@
 use super::client::{hash33, normalize_credential, number, string, Client};
 use crate::http;
 use base64::{engine::general_purpose::STANDARD, Engine};
+use regex::Regex;
 use reqwest::{Response, Url};
 use serde_json::{json, Value};
+use std::sync::LazyLock;
+
+static WX_UUID: LazyLock<Regex> = LazyLock::new(|| pattern(r#"uuid=([A-Za-z0-9_-]+)"#));
+static WX_ERRCODE: LazyLock<Regex> = LazyLock::new(|| pattern(r"window\.wx_errcode\s*=\s*(\d+)"));
+static WX_CODE: LazyLock<Regex> = LazyLock::new(|| pattern(r"window\.wx_code\s*=\s*'([^']+)'"));
+static PTUI_CALLBACK: LazyLock<Regex> = LazyLock::new(|| pattern(r"ptuiCB\((.*?)\)"));
+static QUOTED_ARG: LazyLock<Regex> = LazyLock::new(|| pattern(r"'((?:\\.|[^'])*)'"));
+
+fn pattern(source: &str) -> Regex {
+    Regex::new(source).expect("valid login response pattern")
+}
 
 fn millis() -> u128 {
     std::time::SystemTime::now()
@@ -31,9 +43,8 @@ fn location_query(value: &str, key: &str) -> Result<String, String> {
         .filter(|v| !v.is_empty())
         .ok_or_else(|| "QQ 授权响应缺少必要参数".into())
 }
-fn capture<'a>(text: &'a str, pattern: &str) -> Result<String, String> {
-    regex::Regex::new(pattern)
-        .unwrap()
+fn capture(text: &str, pattern: &Regex) -> Result<String, String> {
+    pattern
         .captures(text)
         .and_then(|c| c.get(1))
         .map(|m| m.as_str().to_string())
@@ -77,10 +88,29 @@ impl Client {
                 (response, sig, "image/png")
             }
             "wx" => {
-                let response=self.http.get("https://open.weixin.qq.com/connect/qrconnect").query(&[("appid","wx48db31d50e334801"),("redirect_uri","https://y.qq.com/portal/wx_redirect.html?login_type=2&surl=https://y.qq.com/"),("response_type","code"),("scope","snsapi_login"),("state","STATE"),("href","https://y.qq.com/mediastyle/music_v17/src/css/popup_wechat.css#wechat_redirect")]).send().await.map_err(|_|"微信二维码请求失败")?;
+                let response = self
+                    .http
+                    .get("https://open.weixin.qq.com/connect/qrconnect")
+                    .query(&[
+                        ("appid", "wx48db31d50e334801"),
+                        (
+                            "redirect_uri",
+                            "https://y.qq.com/portal/wx_redirect.html?login_type=2&surl=https://y.qq.com/",
+                        ),
+                        ("response_type", "code"),
+                        ("scope", "snsapi_login"),
+                        ("state", "STATE"),
+                        (
+                            "href",
+                            "https://y.qq.com/mediastyle/music_v17/src/css/popup_wechat.css#wechat_redirect",
+                        ),
+                    ])
+                    .send()
+                    .await
+                    .map_err(|_| "微信二维码请求失败")?;
                 let html = String::from_utf8(http::bytes(response, 1024 * 1024).await?)
                     .map_err(|_| "微信二维码响应格式错误")?;
-                let id = capture(&html, r#"uuid=([A-Za-z0-9_-]+)"#)?;
+                let id = capture(&html, &WX_UUID)?;
                 let response = self
                     .http
                     .get(format!("https://open.weixin.qq.com/connect/qrcode/{id}"))
@@ -96,9 +126,10 @@ impl Client {
         if image.len() < 100 {
             return Err("二维码图片不完整，请刷新".into());
         }
-        Ok(
-            json!({"result":{"image":format!("data:{mime};base64,{}",STANDARD.encode(image))},"pending":{"type":kind,"identifier":identifier}}),
-        )
+        Ok(json!({
+            "result": {"image":format!("data:{mime};base64,{}",STANDARD.encode(image))},
+            "pending": {"type":kind,"identifier":identifier},
+        }))
     }
     pub(super) async fn check_login(&mut self, pending: &Value) -> Result<Value, String> {
         let identifier = string(&pending["identifier"]);
@@ -122,14 +153,14 @@ impl Client {
                 };
                 let text = String::from_utf8(http::bytes(response, 65536).await?)
                     .map_err(|_| "微信登录响应格式错误")?;
-                let code = capture(&text, r"window\.wx_errcode\s*=\s*(\d+)")?
+                let code = capture(&text, &WX_ERRCODE)?
                     .parse()
                     .map_err(|_| "微信登录状态无效")?;
                 let state = login_state(code)?;
                 if state != 803 {
                     return Ok(json!({"result":{"code":state}}));
                 }
-                let code = capture(&text, r"window\.wx_code\s*=\s*'([^']+)'")?;
+                let code = capture(&text, &WX_CODE)?;
                 self.rpc(
                     "music.login.LoginServer",
                     "Login",
@@ -296,7 +327,13 @@ impl Client {
         if code != 0 {
             let c = &self.credential;
             let kind = number(&c["login_type"]);
-            let mut param = json!({"openid":string(&c["openid"]),"refresh_token":string(&c["refresh_token"]),"musickey":key,"refresh_key":string(&c["refresh_key"]),"loginMode":2});
+            let mut param = json!({
+                "openid": string(&c["openid"]),
+                "refresh_token": string(&c["refresh_token"]),
+                "musickey": key,
+                "refresh_key": string(&c["refresh_key"]),
+                "loginMode": 2,
+            });
             if kind == 1 {
                 param["str_musicid"] = json!(uin);
                 param["unionid"] = json!(string(&c["unionid"]));
@@ -325,9 +362,8 @@ impl Client {
     }
 }
 fn parse_qq_callback(text: &str) -> Result<Vec<String>, String> {
-    let body = capture(text, r"ptuiCB\((.*?)\)")?;
-    let args: Vec<_> = regex::Regex::new(r"'((?:\\.|[^'])*)'")
-        .unwrap()
+    let body = capture(text, &PTUI_CALLBACK)?;
+    let args: Vec<_> = QUOTED_ARG
         .captures_iter(&body)
         .map(|c| c[1].replace("\\'", "'"))
         .collect();

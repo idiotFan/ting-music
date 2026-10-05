@@ -264,6 +264,7 @@ fn update(
     // Acknowledge only after local durability; cloud failures must not lose edits.
     save(path, &local)?;
     let mut warning = None;
+    #[cfg_attr(not(any(target_os = "macos", target_os = "ios")), allow(unused_mut))]
     let mut pending = false;
     if exchange {
         if let Some(bookmark) = local.bookmark.clone() {
@@ -354,7 +355,11 @@ mod tests {
         let root = std::env::temp_dir().join(format!("ting-sync-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&root).unwrap();
         let path = root.join("state.json");
-        let batch:Batch=serde_json::from_value(serde_json::json!({"id":uuid::Uuid::new_v4().to_string(),"changes":[{"id":9,"create":true,"name":"离线歌单","add":[],"order":[]}]})).unwrap();
+        let batch: Batch = serde_json::from_value(serde_json::json!({
+            "id": uuid::Uuid::new_v4().to_string(),
+            "changes": [{"id":9,"create":true,"name":"离线歌单","add":[],"order":[]}],
+        }))
+        .unwrap();
         let first = update(&path, vec![batch.clone()], false, None).unwrap();
         assert_eq!(first.playlists.len(), 1);
         assert_eq!(first.ack, vec![batch.id.clone()]);

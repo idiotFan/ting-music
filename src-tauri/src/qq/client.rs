@@ -3,9 +3,16 @@
 use crate::http;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::{json, Value};
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, sync::LazyLock};
 use unicode_casefold::UnicodeCaseFold;
 use unicode_normalization::UnicodeNormalization;
+
+static VERSION_TAG: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(
+        r"(?i)(\blive\b|\bremix\b|\bremaster\w*\b|\bacoustic\b|\binstrumental\b|\bversion\b|现场|伴奏|翻唱|重制|纯音乐|混音|演唱会)",
+    )
+    .expect("valid version-tag pattern")
+});
 
 pub(super) struct Client {
     pub credential: Value,
@@ -89,9 +96,29 @@ impl Client {
     pub fn comm(&self, desktop: bool, login_type: Option<u64>) -> Value {
         let gtk = hash33(string(&self.credential["musickey"]), 5381);
         let mut c = if desktop {
-            json!({"ct":19,"cv":2201,"chid":"0","uin":number(&self.credential["musicid"]),"g_tk":gtk,"guid":self.guid.to_uppercase()})
+            json!({
+                "ct": 19,
+                "cv": 2201,
+                "chid": "0",
+                "uin": number(&self.credential["musicid"]),
+                "g_tk": gtk,
+                "guid": self.guid.to_uppercase(),
+            })
         } else {
-            json!({"ct":24,"cv":4747474,"platform":"yqq.json","chid":"0","uin":number(&self.credential["musicid"]),"g_tk":gtk,"g_tk_new_20200303":gtk,"format":"json","inCharset":"utf-8","outCharset":"utf-8","notice":0,"need_new_code":1})
+            json!({
+                "ct": 24,
+                "cv": 4747474,
+                "platform": "yqq.json",
+                "chid": "0",
+                "uin": number(&self.credential["musicid"]),
+                "g_tk": gtk,
+                "g_tk_new_20200303": gtk,
+                "format": "json",
+                "inCharset": "utf-8",
+                "outCharset": "utf-8",
+                "notice": 0,
+                "need_new_code": 1,
+            })
         };
         if !string(&self.credential["musickey"]).is_empty() {
             c["authst"] = self.credential["musickey"].clone();
@@ -113,9 +140,16 @@ impl Client {
         let endpoint = "https://u.y.qq.com/cgi-bin/musicu.fcg";
         #[cfg(test)]
         let endpoint = self.rpc_endpoint.as_deref().unwrap_or(endpoint);
-        let response = self.http.post(endpoint)
-            .json(&json!({"comm":self.comm(desktop,login_type),"req_0":{"module":module,"method":method,"param":param}}))
-            .send().await.map_err(|_| "QQ 音乐网络请求失败，请稍后重试")?;
+        let response = self
+            .http
+            .post(endpoint)
+            .json(&json!({
+                "comm": self.comm(desktop,login_type),
+                "req_0": {"module":module,"method":method,"param":param},
+            }))
+            .send()
+            .await
+            .map_err(|_| "QQ 音乐网络请求失败，请稍后重试")?;
         let body = http::json(response).await?;
         let top = body["code"].as_i64().ok_or("QQ 音乐响应格式不完整")?;
         if top != 0 {
@@ -195,7 +229,27 @@ impl Client {
     }
     pub async fn lyric(&self, id: u64) -> Result<String, String> {
         // crypt=0 returns ordinary Base64 LRC and avoids the obsolete QRC cipher.
-        let d=self.rpc("music.musichallSong.PlayLyricInfo","GetPlayLyricInfo",json!({"songId":id,"crypt":0,"lrc_t":0,"qrc":0,"qrc_t":0,"roma":0,"roma_t":0,"trans":0,"trans_t":0,"needSingingAnnotations":false,"type":1}),false,None).await?;
+        let d = self
+            .rpc(
+                "music.musichallSong.PlayLyricInfo",
+                "GetPlayLyricInfo",
+                json!({
+                    "songId": id,
+                    "crypt": 0,
+                    "lrc_t": 0,
+                    "qrc": 0,
+                    "qrc_t": 0,
+                    "roma": 0,
+                    "roma_t": 0,
+                    "trans": 0,
+                    "trans_t": 0,
+                    "needSingingAnnotations": false,
+                    "type": 1,
+                }),
+                false,
+                None,
+            )
+            .await?;
         let value = string(&d["lyric"]);
         if value.is_empty() {
             return Ok(String::new());
@@ -242,7 +296,22 @@ impl Client {
                 format!("{prefix}{media}.{ext}")
             })
             .collect();
-        let d=self.rpc("music.vkey.GetVkey","UrlGetVkey",json!({"uin":self.uin(),"filename":filenames,"guid":uuid::Uuid::new_v4().simple().to_string(),"songmid":vec![mid;levels.len()],"songtype":vec![number(&track["type"]);levels.len()],"ctx":0}),false,None).await?;
+        let d = self
+            .rpc(
+                "music.vkey.GetVkey",
+                "UrlGetVkey",
+                json!({
+                    "uin": self.uin(),
+                    "filename": filenames,
+                    "guid": uuid::Uuid::new_v4().simple().to_string(),
+                    "songmid": vec![mid;levels.len()],
+                    "songtype": vec![number(&track["type"]);levels.len()],
+                    "ctx": 0,
+                }),
+                false,
+                None,
+            )
+            .await?;
         select_playback(&d, level)
     }
     pub async fn download_info(&self, track: &Value) -> Result<Value, String> {
@@ -253,9 +322,13 @@ impl Client {
             .iter()
             .map(|a| string(&a["name"]))
             .collect();
-        Ok(
-            json!({"song":song(track),"artists":artists,"year":string(&track["time_public"]).chars().take(4).collect::<String>(),"playback":playback,"lyric":lyric}),
-        )
+        Ok(json!({
+            "song": song(track),
+            "artists": artists,
+            "year": string(&track["time_public"]).chars().take(4).collect::<String>(),
+            "playback": playback,
+            "lyric": lyric,
+        }))
     }
     pub async fn execute(
         &mut self,
@@ -285,7 +358,20 @@ impl Client {
                 if query.trim().is_empty() || query.chars().count() > 100 || offset > 10_000 {
                     return Err("请输入 1–100 个字符的搜索词".into());
                 }
-                let d=self.rpc("music.search.SearchCgiService","DoSearchForQQMusicDesktop",json!({"query":query,"num_per_page":30,"page_num":offset/30+1,"search_type":kind}),true,None).await?;
+                let d = self
+                    .rpc(
+                        "music.search.SearchCgiService",
+                        "DoSearchForQQMusicDesktop",
+                        json!({
+                            "query": query,
+                            "num_per_page": 30,
+                            "page_num": offset/30+1,
+                            "search_type": kind,
+                        }),
+                        true,
+                        None,
+                    )
+                    .await?;
                 let list = rows(&d["body"][key]["list"]);
                 let (artists, albums, playlists): (Vec<Value>, Vec<Value>, Vec<Value>) = match kind
                 {
@@ -304,7 +390,22 @@ impl Client {
             }
             "artist_detail" => {
                 let mid = valid_mid(string(&args["mid"]))?;
-                let info=self.rpc("music.musichallSinger.SingerInfoInter","GetSingerDetail",json!({"singer_mids":[mid],"ex_singer":1,"wiki_singer":0,"group_singer":0,"pic":1,"photos":0}),false,None).await?;
+                let info = self
+                    .rpc(
+                        "music.musichallSinger.SingerInfoInter",
+                        "GetSingerDetail",
+                        json!({
+                            "singer_mids": [mid],
+                            "ex_singer": 1,
+                            "wiki_singer": 0,
+                            "group_singer": 0,
+                            "pic": 1,
+                            "photos": 0,
+                        }),
+                        false,
+                        None,
+                    )
+                    .await?;
                 let singer = rows(&info["singer_list"])
                     .first()
                     .cloned()
@@ -339,14 +440,34 @@ impl Client {
                     Ok(d) => rows(&d["singerlist"]).iter().map(artist_row).collect(),
                     Err(_) => Vec::new(),
                 };
-                json!({"artist":artist,"brief":string(&singer["ex_info"]["desc"]),"songs":rows(&songs["songList"]).iter().map(song).collect::<Vec<_>>(),"similar":similar})
+                json!({
+                    "artist": artist,
+                    "brief": string(&singer["ex_info"]["desc"]),
+                    "songs": rows(&songs["songList"]).iter().map(song).collect::<Vec<_>>(),
+                    "similar": similar,
+                })
             }
             "artist_albums" => {
                 let mid = valid_mid(string(&args["mid"]))?;
                 if offset > 10_000 {
                     return Err("专辑参数无效".into());
                 }
-                let d=self.rpc("music.musichallAlbum.AlbumListServer","GetAlbumList",json!({"singerMid":mid,"order":0,"begin":offset,"num":30,"songNumTag":0,"singerID":0}),false,None).await?;
+                let d = self
+                    .rpc(
+                        "music.musichallAlbum.AlbumListServer",
+                        "GetAlbumList",
+                        json!({
+                            "singerMid": mid,
+                            "order": 0,
+                            "begin": offset,
+                            "num": 30,
+                            "songNumTag": 0,
+                            "singerID": 0,
+                        }),
+                        false,
+                        None,
+                    )
+                    .await?;
                 let albums: Vec<Value> = rows(&d["albumList"])
                     .iter()
                     .map(|a| {
@@ -382,11 +503,28 @@ impl Client {
                 let singers = rows(&info["singer"]["singerList"]);
                 let main = singers.first().cloned().unwrap_or(Value::Null);
                 let songs: Vec<Value> = rows(&tracks["songList"]).iter().map(song).collect();
-                json!({"album":{"source":"qq","id":number(&b["albumID"]),"mid":mid,"name":string(&b["albumName"]),
-                    "artist":singers.iter().map(|x| string(&x["name"])).collect::<Vec<_>>().join(" / "),
-                    "artistId":number(&main["singerID"]),"artistMid":string(&main["mid"]),"cover":album_cover(mid),
-                    "publishTime":date_ms(string(&b["publishDate"])),"trackCount":number(&tracks["totalNum"]).max(songs.len() as u64)},
-                    "description":string(&b["desc"]),"songs":songs})
+                let artist = singers
+                    .iter()
+                    .map(|x| string(&x["name"]))
+                    .collect::<Vec<_>>()
+                    .join(" / ");
+                let track_count = number(&tracks["totalNum"]).max(songs.len() as u64);
+                json!({
+                    "album": {
+                        "source": "qq",
+                        "id": number(&b["albumID"]),
+                        "mid": mid,
+                        "name": string(&b["albumName"]),
+                        "artist": artist,
+                        "artistId": number(&main["singerID"]),
+                        "artistMid": string(&main["mid"]),
+                        "cover": album_cover(mid),
+                        "publishTime": date_ms(string(&b["publishDate"])),
+                        "trackCount": track_count,
+                    },
+                    "description": string(&b["desc"]),
+                    "songs": songs,
+                })
             }
             "my_playlists" => {
                 self.require_login()?;
@@ -397,19 +535,56 @@ impl Client {
                 }
                 let euin = string(&self.credential["encrypt_uin"]);
                 let uin = self.uin();
-                let d=self.rpc("music.musicasset.PlaylistFavRead","CgiGetPlaylistFavInfo",json!({"uin":if euin.is_empty(){&uin}else{euin},"offset":offset/30*30,"size":30}),false,None).await?;
+                let d = self
+                    .rpc(
+                        "music.musicasset.PlaylistFavRead",
+                        "CgiGetPlaylistFavInfo",
+                        json!({
+                            "uin": if euin.is_empty(){&uin}else{euin},
+                            "offset": offset/30*30,
+                            "size": 30,
+                        }),
+                        false,
+                        None,
+                    )
+                    .await?;
                 list.extend(rows(&d["v_list"]).iter().map(|p| playlist(p, false)));
                 let mut seen = BTreeSet::new();
                 list.retain(|p| number(&p["id"]) > 0 && seen.insert(number(&p["id"])));
-                json!({"playlists":list,"more":d["hasmore"]==true||number(&d["hasmore"])!=0,"nextOffset":offset+30})
+                json!({
+                    "playlists": list,
+                    "more": d["hasmore"]==true||number(&d["hasmore"])!=0,
+                    "nextOffset": offset+30,
+                })
             }
             "playlist_tracks" => {
                 if id == 0 || offset > 1_000_000 {
                     return Err("歌单参数无效".into());
                 }
-                let d=self.rpc("music.srfDissInfo.DissInfo","CgiGetDiss",json!({"disstid":id,"dirid":number(&args["dirid"]),"tag":1,"song_begin":offset/100*100,"song_num":100,"userinfo":1,"orderlist":1,"onlysonglist":0}),false,None).await?;
+                let d = self
+                    .rpc(
+                        "music.srfDissInfo.DissInfo",
+                        "CgiGetDiss",
+                        json!({
+                            "disstid": id,
+                            "dirid": number(&args["dirid"]),
+                            "tag": 1,
+                            "song_begin": offset/100*100,
+                            "song_num": 100,
+                            "userinfo": 1,
+                            "orderlist": 1,
+                            "onlysonglist": 0,
+                        }),
+                        false,
+                        None,
+                    )
+                    .await?;
                 let songs: Vec<_> = rows(&d["songlist"]).iter().map(song).collect();
-                json!({"total":d["total_song_num"].as_u64().unwrap_or(songs.len() as u64),"nextOffset":offset+songs.len() as u64,"songs":songs})
+                json!({
+                    "total": d["total_song_num"].as_u64().unwrap_or(songs.len() as u64),
+                    "nextOffset": offset+songs.len() as u64,
+                    "songs": songs,
+                })
             }
             "playlist_edit" => {
                 let action = string(&args["action"]);
@@ -425,7 +600,24 @@ impl Client {
                     .ok_or("只能修改自己创建的歌单")?;
                 let track = self.detail(track_id, "").await?;
                 let kind = track["type"].as_u64().ok_or("无法读取歌曲类型，请重试")?;
-                let d=self.rpc("music.musicasset.PlaylistDetailWrite",if action=="add"{"AddSonglist"}else{"DelSonglist"},json!({"dirId":number(&owned["dirid"]),"tid":id,"bFmtUtf8":true,"v_songInfo":[{"songId":track_id,"songType":kind}]}),false,None).await?;
+                let d = self
+                    .rpc(
+                        "music.musicasset.PlaylistDetailWrite",
+                        if action == "add" {
+                            "AddSonglist"
+                        } else {
+                            "DelSonglist"
+                        },
+                        json!({
+                            "dirId": number(&owned["dirid"]),
+                            "tid": id,
+                            "bFmtUtf8": true,
+                            "v_songInfo": [{"songId":track_id,"songType":kind}],
+                        }),
+                        false,
+                        None,
+                    )
+                    .await?;
                 if d["retCode"] != 0 {
                     return Err("歌单修改未成功，请刷新后重试".into());
                 }
@@ -495,7 +687,16 @@ fn first<'a>(p: &'a Value, keys: &[&str]) -> &'a Value {
         .unwrap_or(&Value::Null)
 }
 fn playlist(p: &Value, owned: bool) -> Value {
-    json!({"id":number(first(p,&["tid","id","dissid"])),"source":"qq","dirid":number(first(p,&["dirId","dirid"])),"name":first(p,&["title","dirName","dissname"]).as_str().unwrap_or("歌单"),"cover":string(first(p,&["picurl","picUrl","cover"])).replacen("http://","https://",1),"trackCount":number(first(p,&["songnum","songNum","song_cnt"])),"creator":first(p,&["nick","nickname"]).as_str().unwrap_or("QQ 音乐"),"owned":owned})
+    json!({
+        "id": number(first(p,&["tid","id","dissid"])),
+        "source": "qq",
+        "dirid": number(first(p,&["dirId","dirid"])),
+        "name": first(p,&["title","dirName","dissname"]).as_str().unwrap_or("歌单"),
+        "cover": string(first(p,&["picurl","picUrl","cover"])).replacen("http://","https://",1),
+        "trackCount": number(first(p,&["songnum","songNum","song_cnt"])),
+        "creator": first(p,&["nick","nickname"]).as_str().unwrap_or("QQ 音乐"),
+        "owned": owned,
+    })
 }
 fn song(s: &Value) -> Value {
     // Singer / album lists wrap each track as {songInfo: …}.
@@ -511,7 +712,32 @@ fn song(s: &Value) -> Value {
         .map(|a| json!({"id":number(&a["id"]),"mid":string(&a["mid"]),"name":string(&a["name"])}))
         .collect();
     let mid = string(&s["album"]["mid"]);
-    json!({"id":number(&s["id"]),"source":"qq","mid":s["mid"],"name":first(s,&["title","name"]),"artist":artists.join(" / "),"artists":refs,"album":s["album"]["name"].as_str().unwrap_or(""),"albumId":number(&s["album"]["id"]),"albumMid":mid,"gain":s["volume"]["gain"].as_f64().filter(|g| g.is_finite() && (-30.0..=20.0).contains(g)),"quality":if number(&s["file"]["size_hires"])>0{"hires"}else if number(&s["file"]["size_flac"])>0{"lossless"}else{""},"cover":album_cover(mid),"duration":number(&s["interval"])*1000,"fee":if number(&s["pay"]["pay_play"])>0{1}else{0}})
+    let gain = s["volume"]["gain"]
+        .as_f64()
+        .filter(|g| g.is_finite() && (-30.0..=20.0).contains(g));
+    let quality = if number(&s["file"]["size_hires"]) > 0 {
+        "hires"
+    } else if number(&s["file"]["size_flac"]) > 0 {
+        "lossless"
+    } else {
+        ""
+    };
+    json!({
+        "id": number(&s["id"]),
+        "source": "qq",
+        "mid": s["mid"],
+        "name": first(s,&["title","name"]),
+        "artist": artists.join(" / "),
+        "artists": refs,
+        "album": s["album"]["name"].as_str().unwrap_or(""),
+        "albumId": number(&s["album"]["id"]),
+        "albumMid": mid,
+        "gain": gain,
+        "quality": quality,
+        "cover": album_cover(mid),
+        "duration": number(&s["interval"])*1000,
+        "fee": if number(&s["pay"]["pay_play"])>0{1}else{0},
+    })
 }
 fn album_cover(mid: &str) -> String {
     if mid.is_empty() {
@@ -532,7 +758,16 @@ fn https(s: &str) -> String {
 }
 fn artist_row(a: &Value) -> Value {
     let mid = string(first(a, &["singerMID", "singerMid", "singer_mid", "mid"]));
-    json!({"source":"qq","id":number(first(a,&["singerID","singerId","singer_id","id"])),"mid":mid,"name":string(first(a,&["singerName","name"])),"avatar":singer_avatar(mid),"albumCount":number(&a["albumNum"]),"songCount":number(&a["songNum"]),"alias":string(first(a,&["foreign_name","singerTransName"]))})
+    json!({
+        "source": "qq",
+        "id": number(first(a,&["singerID","singerId","singer_id","id"])),
+        "mid": mid,
+        "name": string(first(a,&["singerName","name"])),
+        "avatar": singer_avatar(mid),
+        "albumCount": number(&a["albumNum"]),
+        "songCount": number(&a["songNum"]),
+        "alias": string(first(a,&["foreign_name","singerTransName"])),
+    })
 }
 fn album_row(a: &Value) -> Value {
     let mid = string(first(a, &["albumMID", "albumMid"]));
@@ -547,7 +782,18 @@ fn album_row(a: &Value) -> Value {
             .join(" / ")
     };
     let date = string(first(a, &["publicTime", "publishDate"]));
-    json!({"source":"qq","id":number(first(a,&["albumID","albumId"])),"mid":mid,"name":string(first(a,&["albumName","name"])),"artist":artist,"artistId":number(&a["singerID"]),"artistMid":string(&a["singerMID"]),"cover":album_cover(mid),"publishTime":date_ms(date),"trackCount":number(first(a,&["song_count","totalNum"]))})
+    json!({
+        "source": "qq",
+        "id": number(first(a,&["albumID","albumId"])),
+        "mid": mid,
+        "name": string(first(a,&["albumName","name"])),
+        "artist": artist,
+        "artistId": number(&a["singerID"]),
+        "artistMid": string(&a["singerMID"]),
+        "cover": album_cover(mid),
+        "publishTime": date_ms(date),
+        "trackCount": number(first(a,&["song_count","totalNum"])),
+    })
 }
 /// "2003-07-31" as Unix milliseconds (UTC midnight); 0 when unparseable.
 fn date_ms(date: &str) -> u64 {
@@ -567,7 +813,15 @@ fn date_ms(date: &str) -> u64 {
     ((era * 146097 + doe - 719468) * 86_400_000).max(0) as u64
 }
 fn songlist_row(p: &Value) -> Value {
-    json!({"source":"qq","id":number(&p["dissid"]),"name":string(&p["dissname"]),"cover":https(string(&p["imgurl"])),"trackCount":number(&p["song_count"]),"creator":string(&p["creator"]["name"]),"owned":false})
+    json!({
+        "source": "qq",
+        "id": number(&p["dissid"]),
+        "name": string(&p["dissname"]),
+        "cover": https(string(&p["imgurl"])),
+        "trackCount": number(&p["song_count"]),
+        "creator": string(&p["creator"]["name"]),
+        "owned": false,
+    })
 }
 fn valid_mid(mid: &str) -> Result<&str, String> {
     if mid.is_empty() || mid.len() > 32 || !mid.chars().all(|c| c.is_ascii_alphanumeric()) {
@@ -621,9 +875,15 @@ fn select_playback(d: &Value, requested: &str) -> Result<Value, String> {
             {
                 return Err("音源地址不安全".into());
             }
-            return Ok(
-                json!({"url":url.as_str(),"trial":false,"trialStart":0,"level":level,"requestedLevel":requested,"bitrate":match *level{"standard"=>128000,"exhigh"=>320000,_=>0},"format":format}),
-            );
+            return Ok(json!({
+                "url": url.as_str(),
+                "trial": false,
+                "trialStart": 0,
+                "level": level,
+                "requestedLevel": requested,
+                "bitrate": match *level{"standard"=>128000,"exhigh"=>320000,_=>0},
+                "format": format,
+            }));
         }
     }
     Err("QQ 音乐未返回可播放音源，请检查登录、会员权限或歌曲版权".into())
@@ -648,7 +908,7 @@ fn same_recording(track: &Value, wanted: &Value) -> bool {
     let album = normalized(string(&track["album"]["name"]));
     let duration = number(&track["interval"]) * 1000;
     let wanted_duration = number(&wanted["duration"]);
-    let version=regex::Regex::new(r"(?i)(\blive\b|\bremix\b|\bremaster\w*\b|\bacoustic\b|\binstrumental\b|\bversion\b|现场|伴奏|翻唱|重制|纯音乐|混音|演唱会)").unwrap();
+    let version = &*VERSION_TAG;
     !expected.is_empty()
         && actual == expected
         && !album.is_empty()
@@ -664,7 +924,15 @@ fn same_recording(track: &Value, wanted: &Value) -> bool {
 mod tests {
     use super::*;
     fn track() -> Value {
-        json!({"id":123,"mid":"mid","title":"Song","singer":[{"name":"Artist"}],"album":{"name":"Album","mid":"album"},"interval":20,"type":0})
+        json!({
+            "id": 123,
+            "mid": "mid",
+            "title": "Song",
+            "singer": [{"name":"Artist"}],
+            "album": {"name":"Album","mid":"album"},
+            "interval": 20,
+            "type": 0,
+        })
     }
     fn wanted() -> Value {
         json!({"name":"Song","artists":["Artist"],"album":"Album","duration":20000})
@@ -698,7 +966,9 @@ mod tests {
     }
     #[test]
     fn playback_selects_quality_not_row_order() {
-        let d = json!({"midurlinfo":[{"purl":"M500test.mp3","result":0},{"purl":"F000test.flac","result":0},{"purl":"AI00test.flac","result":0}]});
+        let d = json!({
+            "midurlinfo": [{"purl":"M500test.mp3","result":0},{"purl":"F000test.flac","result":0},{"purl":"AI00test.flac","result":0}],
+        });
         assert_eq!(select_playback(&d, "best").unwrap()["level"], "master");
         assert_eq!(
             select_playback(&d, "lossless").unwrap()["level"],
@@ -749,22 +1019,38 @@ mod tests {
         assert_eq!(date_ms("bad"), 0);
         assert_eq!(date_ms("2003-07-31 12:00:00"), 1_059_609_600_000);
         assert_eq!(date_ms("99999999999999-01-01"), 0);
-        let a = artist_row(
-            &json!({"singerID":4558,"singerMID":"0025NhlN2yWrP4","singerName":"周杰伦","albumNum":43,"songNum":1012}),
-        );
+        let a = artist_row(&json!({
+            "singerID": 4558,
+            "singerMID": "0025NhlN2yWrP4",
+            "singerName": "周杰伦",
+            "albumNum": 43,
+            "songNum": 1012,
+        }));
         assert_eq!(a["mid"], "0025NhlN2yWrP4");
         assert!(a["avatar"]
             .as_str()
             .unwrap()
             .contains("T001R300x300M0000025NhlN2yWrP4"));
-        let al = album_row(
-            &json!({"albumID":8220,"albumMID":"000MkMni19ClKG","albumName":"叶惠美","singer_list":[{"name":"周杰伦"}],"publicTime":"2003-07-31","song_count":11}),
-        );
+        let al = album_row(&json!({
+            "albumID": 8220,
+            "albumMID": "000MkMni19ClKG",
+            "albumName": "叶惠美",
+            "singer_list": [{"name":"周杰伦"}],
+            "publicTime": "2003-07-31",
+            "song_count": 11,
+        }));
         assert_eq!(al["trackCount"], 11);
         assert_eq!(al["artist"], "周杰伦");
-        let wrapped = song(
-            &json!({"songInfo":{"id":1,"mid":"m","title":"晴天","singer":[{"id":4558,"mid":"s","name":"周杰伦"}],"album":{"id":8220,"mid":"a","name":"叶惠美"},"interval":10}}),
-        );
+        let wrapped = song(&json!({
+            "songInfo": {
+                "id": 1,
+                "mid": "m",
+                "title": "晴天",
+                "singer": [{"id":4558,"mid":"s","name":"周杰伦"}],
+                "album": {"id":8220,"mid":"a","name":"叶惠美"},
+                "interval": 10,
+            },
+        }));
         assert_eq!(wrapped["albumMid"], "a");
         assert_eq!(wrapped["artists"][0]["mid"], "s");
         assert!(valid_mid("abc/../x").is_err());

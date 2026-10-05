@@ -299,7 +299,12 @@ mod tests {
     use super::*;
     #[test]
     fn deltas_preserve_track_and_clear_resets_all_transport() {
-        let value = serde_json::json!({"metadata":{"trackId":"3","title":"song","artist":"artist","album":"album","artwork":[]},"playbackState":"playing","position":{"duration":100,"position":200,"playbackRate":1},"volume":2});
+        let value = serde_json::json!({
+            "metadata": {"trackId":"3","title":"song","artist":"artist","album":"album","artwork":[]},
+            "playbackState": "playing",
+            "position": {"duration":100,"position":200,"playbackRate":1},
+            "volume": 2,
+        });
         let first = merge(&Snapshot::default(), &value).unwrap();
         assert_eq!(first.position.as_ref().unwrap().position, 100.0);
         assert_eq!(first.volume, 1.0);

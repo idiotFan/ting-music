@@ -3,6 +3,7 @@
 //! shortcuts, the download folder choice, backup files and diagnostics.
 //! Every control here only sends a "player-command" to the main window; the
 //! main window owns playback and answers with "player-state".
+use crate::lock::Locked;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
@@ -114,7 +115,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         tray = tray.icon(icon.clone());
     }
     tray.build(app)?;
-    *state.tray.lock().unwrap() = Some(TrayItems { now, toggle });
+    *state.tray.locked() = Some(TrayItems { now, toggle });
     let bindings: HashMap<String, String> =
         serde_json::from_value(prefs["shortcuts"].clone()).unwrap_or_default();
     let _ = register(app, &bindings);
@@ -142,7 +143,7 @@ fn register(app: &AppHandle, bindings: &HashMap<String, String>) -> Result<(), S
             _ => failed.push(accelerator.clone()),
         }
     }
-    *app.state::<Desktop>().shortcuts.lock().unwrap() = map;
+    *app.state::<Desktop>().shortcuts.locked() = map;
     if failed.is_empty() {
         Ok(())
     } else {
@@ -159,8 +160,7 @@ pub fn shortcut_pressed(app: &AppHandle, shortcut: &Shortcut, state: ShortcutSta
     let action = app
         .state::<Desktop>()
         .shortcuts
-        .lock()
-        .unwrap()
+        .locked()
         .get(&shortcut.id())
         .cloned();
     match action.as_deref() {
@@ -193,7 +193,7 @@ pub fn desktop_prefs(app: AppHandle, prefs: DesktopPrefs) -> Result<(), String> 
 /// The tray's "now playing" line and its play / pause label.
 #[tauri::command]
 pub fn tray_update(app: AppHandle, title: String, playing: bool) {
-    if let Some(items) = app.state::<Desktop>().tray.lock().unwrap().as_ref() {
+    if let Some(items) = app.state::<Desktop>().tray.locked().as_ref() {
         let title: String = title.chars().take(60).collect();
         let _ = items.now.set_text(if title.is_empty() {
             "未在播放".into()

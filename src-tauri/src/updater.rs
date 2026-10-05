@@ -141,13 +141,15 @@ mod desktop {
             .ok_or("没有已下载的更新")?;
         // Windows exits inside install() once the installer has been launched.
         let installed = tauri::async_runtime::spawn_blocking(move || {
-            update.install(&bytes).map_err(|_| (update, bytes))
+            update
+                .install(&bytes)
+                .map_err(|_| Box::new((update, bytes)))
         })
         .await
         .map_err(|_| "更新安装失败，请稍后重试")?;
         if let Err(staged) = installed {
             if let Ok(mut slot) = state.staged.lock() {
-                *slot = Some(staged);
+                *slot = Some(*staged);
             }
             return Err("更新安装失败，请确认应用所在位置可写，或手动下载新版本".into());
         }

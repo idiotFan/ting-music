@@ -12,7 +12,6 @@ import {
   persistentLocals,
   restoreLocals,
   storable,
-  validLocal,
 } from "./local-library";
 import { $, icon } from "./dom";
 import { setupDownloads, type DownloadResult } from "./downloads";
@@ -58,6 +57,7 @@ import {
   mergeResults,
   namesArtist,
   normalizeName,
+  pinyinOrder,
   songArtists,
 } from "./catalog-model.mjs";
 import {
@@ -118,66 +118,15 @@ import {
   type Song,
   type Playlist,
 } from "./library";
-const sourceName = (s?: {
-  source?: Source;
-  localUrl?: string;
-  localPath?: string;
-}) =>
-  s?.localUrl || s?.localPath
-    ? "本地"
-    : s?.source === "qq"
-      ? "QQ音乐"
-      : "网易云";
-/** Any file on this device, whether remembered by path or only for this session. */
-const localSong = (s?: Song) => !!s && !!(s.localUrl || s.localPath);
-/** A session-only import (mobile): gone after restart, so it cannot be organized. */
-const transient = (s?: Song) => !!s && !!s.localUrl && !s.localPath;
-type Playback = {
-  url: string;
-  trial: boolean;
-  trialStart: number;
-  bitrate: number;
-  level: string;
-  requestedLevel: string;
-  format: string;
-};
-type View =
-  | "discover"
-  | "favorites"
-  | "local"
-  | "queue"
-  | "playlists"
-  | "playlist"
-  | "artist"
-  | "album";
-/** Pages one layer below the nav: entered by pushing, left through goBack. */
-const DETAIL_VIEWS: View[] = ["playlist", "artist", "album"];
-const isDetail = (v: View) => DETAIL_VIEWS.includes(v);
-// The nav renders these in order, so a tap that moves right must bring its
-// content in from the right. A playlist detail is one layer deeper instead.
-const NAV_ORDER: View[] = [
-  "discover",
-  "playlists",
-  "favorites",
-  "local",
-  "queue",
-];
-type Move = { direction: -1 | 1; distance: number; duration: number };
-function viewMove(previous: View, next: View, back = false): Move {
-  if (back && isDetail(previous))
-    return { direction: -1, distance: MOTION.dPush, duration: MOTION.t3 };
-  if (isDetail(next))
-    return { direction: 1, distance: MOTION.dPush, duration: MOTION.t4 };
-  if (isDetail(previous))
-    return { direction: -1, distance: MOTION.dPush, duration: MOTION.t3 };
-  const from = NAV_ORDER.indexOf(previous),
-    to = NAV_ORDER.indexOf(next);
-  return {
-    direction: from < 0 || to < 0 || to >= from ? 1 : -1,
-    distance: MOTION.dLateral,
-    duration: MOTION.t3,
-  };
-}
+import { localSong, sourceName, transient } from "./song-kind";
+import {
+  actualQualityNames,
+  cloud,
+  qualityNames,
+  type Playback,
+} from "./cloud";
+import { isDetail, viewMove, type View } from "./views";
+import { readSession, restore, restoreSongs, type Session } from "./session";
 type PlaylistFilter = "recent" | Source | "internal";
 let playlistFilter = (readSetting("ting.playlist-filter") ||
   "netease") as PlaylistFilter;
@@ -196,153 +145,18 @@ let playlistsOffset = 0,
   playlistTotal = 0,
   librarySerial = 0,
   libraryBusy = false;
-const qualityNames: Record<string, string> = {
-  standard: "标准",
-  exhigh: "高品质",
-  lossless: "无损",
-  best: "最高可用",
-};
-const actualQualityNames: Record<string, string> = {
-  ...qualityNames,
-  higher: "较高",
-  hires: "Hi-Res",
-  jymaster: "超清母带",
-  master: "臻品母带",
-  jyeffect: "高清环绕",
-  sky: "沉浸环绕",
-};
 let quality = readSetting("ting.quality") || "standard";
 if (["hires", "jymaster", "jyeffect", "sky"].includes(quality))
   quality = "best";
 if (quality === "higher") quality = "exhigh";
 if (!qualityNames[quality]) quality = "standard";
-async function cloud<T>(
-  command: string,
-  args: Record<string, unknown> = {},
-  source: Source = "netease",
-): Promise<T> {
-  if (source === "qq")
-    return invoke<T>("qq_request", { operation: command, args });
-  const request = { ...args };
-  if (command === "song_url" && request.level === "best") {
-    let trial: T | undefined, lastError: unknown;
-    for (const level of [
-      "jymaster",
-      "hires",
-      "lossless",
-      "exhigh",
-      "standard",
-    ]) {
-      try {
-        const result = await invoke<Playback>(command, { ...request, level });
-        if (!result.trial) return result as T;
-        trial = result as T;
-      } catch (e) {
-        lastError = e;
-      }
-    }
-    if (trial) return trial;
-    throw lastError || new Error("没有可用音源");
-  }
-  return invoke<T>(command, request);
-}
 let pendingSeek: number | null = null,
   resumeAfterLoad = true;
 
-function restoreSongs(data: unknown): Song[] {
-  if (!Array.isArray(data)) return [];
-  const online = data.filter(
-    (s) =>
-      s &&
-      !s.localUrl &&
-      !s.localPath &&
-      (!s.source || ["netease", "qq"].includes(s.source)) &&
-      Number.isSafeInteger(s.id) &&
-      s.id > 0 &&
-      typeof s.name === "string" &&
-      typeof s.artist === "string" &&
-      typeof s.album === "string" &&
-      typeof s.cover === "string",
-  );
-  if (!persistentLocals) return online;
-  // Remembered files come back through the library so a moved or deleted
-  // file is flagged rather than played from a stale address.
-  return data.flatMap((s) => {
-    if (!validLocal(s)) return online.includes(s) ? [s] : [];
-    const fresh = localByKey(songKey(s));
-    return fresh ? [fresh] : [];
-  });
-}
-function restore(key: string): Song[] {
-  try {
-    return restoreSongs(JSON.parse(localStorage.getItem(key) || "[]"));
-  } catch {
-    return [];
-  }
-}
 let favorites = favoriteSongs(),
   locals: Song[] = localSongs(),
   results: Song[] = [];
 const playbackQueue = new PlaybackQueue(restore("ting.queue"));
-/** What was on screen when the app last closed: the track, its position, and
- *  the list being browsed. Read once at startup, before any view renders. */
-type Session = {
-  song?: Song;
-  position?: number;
-  view?: View;
-  playlist?: Playlist;
-  artist?: ArtistRef;
-  album?: AlbumRef;
-};
-const validRef = (r: unknown): r is ArtistRef & AlbumRef => {
-  const ref = r as ArtistRef;
-  return (
-    !!ref &&
-    typeof ref === "object" &&
-    ["netease", "qq", "local"].includes(ref.source) &&
-    Number.isSafeInteger(ref.id) &&
-    typeof ref.name === "string" &&
-    !!ref.name &&
-    (ref.mid === undefined || typeof ref.mid === "string")
-  );
-};
-function readSession(): Session {
-  try {
-    const data = JSON.parse(localStorage.getItem("ting.session") || "{}");
-    if (!data || typeof data !== "object") return {};
-    const song = restoreSongs([data.song])[0];
-    const playlist = data.playlist;
-    const validPlaylist =
-      playlist &&
-      typeof playlist === "object" &&
-      Number.isSafeInteger(playlist.id) &&
-      typeof playlist.name === "string" &&
-      (!playlist.source || ["netease", "qq"].includes(playlist.source));
-    return {
-      song,
-      position:
-        typeof data.position === "number" && data.position >= 0
-          ? data.position
-          : 0,
-      view: [
-        "favorites",
-        "playlists",
-        "playlist",
-        "queue",
-        "local",
-        "artist",
-        "album",
-      ].includes(data.view)
-        ? data.view
-        : undefined,
-      playlist: validPlaylist ? (playlist as Playlist) : undefined,
-      artist: validRef(data.artist) ? data.artist : undefined,
-      album: validRef(data.album) ? data.album : undefined,
-    };
-  } catch {
-    return {};
-  }
-}
 const startupSession = readSession();
 let session: Session = { ...startupSession };
 let sessionTimer = 0;
@@ -804,7 +618,7 @@ function syncRows() {
     ? `正在补齐队列：${playbackQueue.songs.length}/${queueExpected}`
     : `${playbackQueue.songs.length} 首`;
   const favoriteIds = new Set(favorites.map(songKey));
-  const visibleSongs = new Map(list().map((song) => [songKey(song), song]));
+  const visibleSongs = new Map(baseList().map((song) => [songKey(song), song]));
   document.querySelectorAll<HTMLElement>(".song-row").forEach((row) => {
     const id = row.dataset.song!,
       selected = id === songKey(current);
@@ -1033,6 +847,9 @@ function searchMore() {
     searchSource === "all" ? ["netease", "qq"] : [searchSource];
   return sources.some((s) => searchOffsets[s] < searchTotals[s]);
 }
+/** Rows that left the list recently, reused when they come back (filters, sorts, tabs). */
+const retiredRows = new Map<string, HTMLElement>();
+const RETIRED_ROW_LIMIT = 4000;
 function renderSongs() {
   const stagger = !suppressRowStagger;
   suppressRowStagger = false;
@@ -1165,12 +982,28 @@ function renderSongs() {
     ),
   );
   const wanted = new Set(songs.map((s) => songKey(s)));
+  if (retiredRows.size > RETIRED_ROW_LIMIT) retiredRows.clear();
   existing.forEach((row, id) => {
-    if (!wanted.has(id)) row.remove();
+    if (wanted.has(id)) return;
+    row.remove();
+    retiredRows.set(id, row);
   });
   const marked = markQuery();
-  songs.forEach((song, i) => {
-    let row = existing.get(songKey(song));
+  // The queue reorders by dragging on desktop (not while filtered).
+  const draggable =
+    view === "queue" &&
+    queueTab === "queue" &&
+    !mobileDevice &&
+    !listFilter.trim();
+  let cursor = container.firstElementChild;
+  songs.forEach((song) => {
+    const key = songKey(song);
+    let row = existing.get(key);
+    if (!row) {
+      row = retiredRows.get(key);
+      retiredRows.delete(key);
+      if (row) fresh.push(row);
+    }
     const signature = JSON.stringify([
       song,
       view === "queue" && queueTab === "queue",
@@ -1188,20 +1021,16 @@ function renderSongs() {
       next.setAttribute("aria-label", song.name);
       next.title = mobileDevice ? "轻点播放" : "单击选中，双击播放；回车播放";
       next.innerHTML = songRowMarkup(song);
-      // The queue reorders by dragging on desktop (not while filtered).
-      if (
-        view === "queue" &&
-        queueTab === "queue" &&
-        !mobileDevice &&
-        !listFilter.trim()
-      )
-        next.draggable = true;
-      if (row) row.replaceWith(next);
-      else fresh.push(next);
+      if (!row) fresh.push(next);
+      else if (row.isConnected) {
+        if (cursor === row) cursor = next;
+        row.replaceWith(next);
+      } else fresh[fresh.indexOf(row)] = next;
       row = next;
     }
-    if (container.children[i] !== row)
-      container.insertBefore(row, container.children[i] ?? null);
+    row.draggable = draggable;
+    if (cursor === row) cursor = row.nextElementSibling;
+    else container.insertBefore(row, cursor);
   });
   syncRows();
   if (stagger && fresh.length) animateArrival(visibleHead(fresh));
@@ -1579,8 +1408,7 @@ function localCards(): Card[] {
   return [...artists.values()]
     .sort(
       (a, b) =>
-        b.songs.length - a.songs.length ||
-        a.name.localeCompare(b.name, "zh-Hans-CN"),
+        b.songs.length - a.songs.length || pinyinOrder.compare(a.name, b.name),
     )
     .map((a) => ({
       kind: "artist" as const,

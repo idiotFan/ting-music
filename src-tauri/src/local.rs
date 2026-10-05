@@ -433,7 +433,7 @@ pub async fn local_store(
         .headers()
         .get("x-file-name")
         .and_then(|v| v.to_str().ok())
-        .map(|v| percent_decode(v))
+        .map(percent_decode)
         .unwrap_or_default();
     let name = safe_name(&name).ok_or("不支持的音频文件")?;
     let dir = app

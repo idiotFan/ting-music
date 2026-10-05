@@ -1,4 +1,5 @@
 use super::*;
+use crate::lock::Locked;
 use dbus::{
     arg::{PropMap, Variant},
     channel::{MatchingReceiver, Sender},
@@ -160,11 +161,11 @@ impl Backend {
             );
             b.signal::<(i64,), _>("Seeked", ("Position",));
             b.property("PlaybackStatus")
-                .get(|_, s| Ok(s.lock().unwrap().status().to_owned()));
+                .get(|_, s| Ok(s.locked().status().to_owned()));
             b.property("Metadata")
-                .get(|_, s| Ok(clone_map(&s.lock().unwrap().metadata)));
+                .get(|_, s| Ok(clone_map(&s.locked().metadata)));
             b.property("Position")
-                .get(|_, s| Ok(s.lock().unwrap().position()))
+                .get(|_, s| Ok(s.locked().position()))
                 .emits_changed_false();
             b.property("Rate")
                 .get(|_, _| Ok(1.0f64))
@@ -179,7 +180,7 @@ impl Backend {
             b.property("MinimumRate").get(|_, _| Ok(1.0f64));
             b.property("MaximumRate").get(|_, _| Ok(1.0f64));
             b.property("Volume")
-                .get(|_, s| Ok(s.lock().unwrap().snapshot.volume))
+                .get(|_, s| Ok(s.locked().snapshot.volume))
                 .set(|_, s, v: f64| {
                     if v.is_finite() {
                         action(s, "volume", Some(("volume", v.clamp(0.0, 1.0))));
@@ -188,10 +189,10 @@ impl Backend {
                 });
             for name in ["CanPlay", "CanPause", "CanGoNext", "CanGoPrevious"] {
                 b.property(name)
-                    .get(|_, s| Ok(s.lock().unwrap().snapshot.track.is_some()));
+                    .get(|_, s| Ok(s.locked().snapshot.track.is_some()));
             }
             b.property("CanSeek")
-                .get(|_, s| Ok(s.lock().unwrap().snapshot.position.is_some()));
+                .get(|_, s| Ok(s.locked().snapshot.position.is_some()));
             b.property("CanControl").get(|_, _| Ok(true));
         });
         cr.insert(PATH, &[root, player], state.clone());
@@ -318,6 +319,15 @@ fn track_path(track: &Track) -> Path<'static> {
     Path::new(format!("/com/ting/music/track/t{id}")).unwrap()
 }
 
+impl Drop for Backend {
+    fn drop(&mut self) {
+        self.alive.store(false, Ordering::Relaxed);
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -361,13 +371,5 @@ mod tests {
         assert!(Path::new(first.to_string()).is_ok());
         track.track_id.push('2');
         assert_ne!(first, track_path(&track));
-    }
-}
-impl Drop for Backend {
-    fn drop(&mut self) {
-        self.alive.store(false, Ordering::Relaxed);
-        if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
-        }
     }
 }

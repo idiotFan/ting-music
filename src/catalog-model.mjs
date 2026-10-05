@@ -98,6 +98,9 @@ export function namesArtist(query, artist) {
 
 export const SORTS = ["default", "name", "artist", "album", "short", "long"];
 
+/** One collator for every comparison; `localeCompare` with a locale rebuilds it per call. */
+export const pinyinOrder = new Intl.Collator("zh-Hans-CN");
+
 /** Filters by title / artist / album and applies one of SORTS; stable. */
 export function arrange(songs, filter = "", sort = "default") {
   const terms = normalizeName(filter)
@@ -110,7 +113,7 @@ export function arrange(songs, filter = "", sort = "default") {
       })
     : [...songs];
   const text = (key) => (a, b) =>
-    String(a[key] || "").localeCompare(String(b[key] || ""), "zh-Hans-CN");
+    pinyinOrder.compare(String(a[key] || ""), String(b[key] || ""));
   const compare = {
     name: text("name"),
     artist: text("artist"),
