@@ -166,7 +166,19 @@ fn set_lyrics_panel(open: bool, width: Option<f64>) -> Result<(), String> {
     Ok(())
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[cfg(target_os = "linux")]
+#[link(name = "X11")]
+extern "C" {
+    fn XInitThreads() -> std::os::raw::c_int;
+}
+
 pub fn run() {
+    // GTK, WebKit and the global-shortcut listener each talk to X11 from their
+    // own threads; Xlib must be put in thread-safe mode before any of them do.
+    #[cfg(target_os = "linux")]
+    unsafe {
+        XInitThreads();
+    }
     let builder = tauri::Builder::default();
     #[cfg(target_os = "android")]
     let builder = builder
