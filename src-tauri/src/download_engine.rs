@@ -12,6 +12,7 @@ use serde_json::{json, Value};
 use std::{
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
+    sync::LazyLock,
     time::{Duration, Instant},
 };
 use symphonia::core::{
@@ -23,6 +24,8 @@ use symphonia::core::{
     probe::Hint,
 };
 use tokio::io::AsyncWriteExt;
+static TIMED_LYRIC: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"\[\d+:\d+").expect("valid lyric pattern"));
 const IO_ERROR: &str = "下载文件无法写入，请检查磁盘空间和目录权限";
 
 fn format_io_error(path: &Path, err: &std::io::Error) -> String {
@@ -146,7 +149,7 @@ pub async fn prepare(id: u64, cookie: &str) -> Result<Value, String> {
     .await
     .unwrap_or(Value::Null);
     let lyric = s(&lyrics["lrc"]["lyric"]);
-    let lyric = if regex::Regex::new(r"\[\d+:\d+").unwrap().is_match(lyric) {
+    let lyric = if TIMED_LYRIC.is_match(lyric) {
         lyric
     } else {
         ""
@@ -160,11 +163,30 @@ pub async fn prepare(id: u64, cookie: &str) -> Result<Value, String> {
     let playback = if best.is_null() {
         Value::Null
     } else {
-        json!({"url":best["url"],"format":best["type"],"level":best["level"],"size":best["size"],"md5":best["md5"],"trial":false})
+        json!({
+            "url": best["url"],
+            "format": best["type"],
+            "level": best["level"],
+            "size": best["size"],
+            "md5": best["md5"],
+            "trial": false,
+        })
     };
-    Ok(
-        json!({"song":{"id":id,"source":"netease","name":song["name"],"duration":song["dt"],"artist":artists.join(" / "),"album":song["al"]["name"],"cover":song["al"]["picUrl"]},"artists":artists,"year":year,"lyric":lyric,"playback":playback}),
-    )
+    Ok(json!({
+        "song": {
+            "id": id,
+            "source": "netease",
+            "name": song["name"],
+            "duration": song["dt"],
+            "artist": artists.join(" / "),
+            "album": song["al"]["name"],
+            "cover": song["al"]["picUrl"],
+        },
+        "artists": artists,
+        "year": year,
+        "lyric": lyric,
+        "playback": playback,
+    }))
 }
 fn trusted_url(value: &str, artwork: bool) -> Result<reqwest::Url, String> {
     let url = reqwest::Url::parse(value).map_err(|_| "音源地址无效")?;
@@ -738,27 +760,88 @@ pub async fn run(
         }
     }
     let _cancel = Cancel(canceled.clone());
-    tokio::task::spawn_blocking(move||{
-        let _guard=guard;
-        let _scratch=scratch;
-        let content_hash_verified=!s(&audio["md5"]).is_empty();
-        validate_audio(&temp,n(&info["song"]["duration"]),content_hash_verified)?;
-        tag_file(&temp,&info,&origin,&source,audio_id,&level,artwork.as_deref())?;
-        let verified=lofty::read_from_path(&temp).map_err(|_|"歌曲标签校验失败")?;
-        let properties=verified.properties();
-        let artists:Vec<_>=info["artists"].as_array().into_iter().flatten().map(s).collect();
-        let stem=format!("{} [{}{}]",safe_name(&format!("{} - {}",s(&info["song"]["name"]),artists.join(" & "))),if origin=="qq"{"QQ-"}else{""},id);
+    tokio::task::spawn_blocking(move || {
+        let _guard = guard;
+        let _scratch = scratch;
+        let content_hash_verified = !s(&audio["md5"]).is_empty();
+        validate_audio(&temp, n(&info["song"]["duration"]), content_hash_verified)?;
+        tag_file(
+            &temp,
+            &info,
+            &origin,
+            &source,
+            audio_id,
+            &level,
+            artwork.as_deref(),
+        )?;
+        let verified = lofty::read_from_path(&temp).map_err(|_| "歌曲标签校验失败")?;
+        let properties = verified.properties();
+        let artists: Vec<_> = info["artists"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(s)
+            .collect();
+        let stem = format!(
+            "{} [{}{}]",
+            safe_name(&format!(
+                "{} - {}",
+                s(&info["song"]["name"]),
+                artists.join(" & ")
+            )),
+            if origin == "qq" { "QQ-" } else { "" },
+            id
+        );
         sync_audio(&temp)?;
-        if canceled.load(std::sync::atomic::Ordering::Acquire){return Err("下载已取消".into());}
-        let dest=publish(&temp,&folder,&stem,&ext)?;
-        let mut warnings=Vec::new();let lyric=s(&info["lyric"]);
-        if artwork.is_none(){warnings.push("封面暂不可用");}if lyric.is_empty(){warnings.push("歌词暂不可用");}
-        if !lyric.is_empty()&&sidecar(&dest.with_extension("lrc"),lyric.as_bytes()).is_err(){warnings.push("歌词文件写入失败");}
-        let mut result=json!({"filename":dest.file_name().unwrap_or_default().to_string_lossy(),"path":dest.to_string_lossy(),"source":source,"level":level,"format":ext,"bytes":std::fs::metadata(&dest).map_err(|e| format_io_error(&dest, &e))?.len(),"bitrate":properties.audio_bitrate().unwrap_or(0)*1000,"sampleRate":properties.sample_rate().unwrap_or(0),"bitDepth":properties.bit_depth().unwrap_or(0),"cover":artwork.is_some(),"lyrics":!lyric.is_empty(),"warnings":warnings});
-        let mut provenance=result.clone();provenance["origin"]=json!({"platform":origin,"id":id});provenance["audio"]=json!({"platform":source,"id":audio_id});provenance["title"]=info["song"]["name"].clone();provenance["artists"]=info["artists"].clone();
-        if sidecar(&dest.with_extension("json"),serde_json::to_string_pretty(&provenance).map_err(|_|IO_ERROR)?.as_bytes()).is_err(){warnings.push("来源记录写入失败");result["warnings"]=json!(warnings);}
+        if canceled.load(std::sync::atomic::Ordering::Acquire) {
+            return Err("下载已取消".into());
+        }
+        let dest = publish(&temp, &folder, &stem, &ext)?;
+        let mut warnings = Vec::new();
+        let lyric = s(&info["lyric"]);
+        if artwork.is_none() {
+            warnings.push("封面暂不可用");
+        }
+        if lyric.is_empty() {
+            warnings.push("歌词暂不可用");
+        }
+        if !lyric.is_empty() && sidecar(&dest.with_extension("lrc"), lyric.as_bytes()).is_err() {
+            warnings.push("歌词文件写入失败");
+        }
+        let mut result = json!({
+            "filename": dest.file_name().unwrap_or_default().to_string_lossy(),
+            "path": dest.to_string_lossy(),
+            "source": source,
+            "level": level,
+            "format": ext,
+            "bytes": std::fs::metadata(&dest).map_err(|e| format_io_error(&dest, &e))?.len(),
+            "bitrate": properties.audio_bitrate().unwrap_or(0)*1000,
+            "sampleRate": properties.sample_rate().unwrap_or(0),
+            "bitDepth": properties.bit_depth().unwrap_or(0),
+            "cover": artwork.is_some(),
+            "lyrics": !lyric.is_empty(),
+            "warnings": warnings,
+        });
+        let mut provenance = result.clone();
+        provenance["origin"] = json!({"platform":origin,"id":id});
+        provenance["audio"] = json!({"platform":source,"id":audio_id});
+        provenance["title"] = info["song"]["name"].clone();
+        provenance["artists"] = info["artists"].clone();
+        if sidecar(
+            &dest.with_extension("json"),
+            serde_json::to_string_pretty(&provenance)
+                .map_err(|_| IO_ERROR)?
+                .as_bytes(),
+        )
+        .is_err()
+        {
+            warnings.push("来源记录写入失败");
+            result["warnings"] = json!(warnings);
+        }
         Ok(result)
-    }).await.map_err(|_|"音频校验任务未完成")?
+    })
+    .await
+    .map_err(|_| "音频校验任务未完成")?
 }
 #[cfg(test)]
 mod tests {
@@ -770,7 +853,18 @@ mod tests {
         Scratch(p)
     }
     fn info(ext: &str) -> Value {
-        json!({"song":{"id":123,"source":"qq","name":"Example","album":"Album","duration":20000},"artists":["Artist"],"year":"2026","lyric":"[00:00.00]Fixture lyric","playback":{"url":"https://stream.qqmusic.qq.com/fixture","trial":false,"format":ext,"level":if ext=="flac"{"lossless"}else{"exhigh"}}})
+        json!({
+            "song": {"id":123,"source":"qq","name":"Example","album":"Album","duration":20000},
+            "artists": ["Artist"],
+            "year": "2026",
+            "lyric": "[00:00.00]Fixture lyric",
+            "playback": {
+                "url": "https://stream.qqmusic.qq.com/fixture",
+                "trial": false,
+                "format": ext,
+                "level": if ext=="flac"{"lossless"}else{"exhigh"},
+            },
+        })
     }
     fn fixture(ext: &str, dir: &Path) -> PathBuf {
         let path = dir.join(format!("fixture.{ext}"));

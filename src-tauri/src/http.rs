@@ -2,15 +2,24 @@
 use reqwest::{Client, Response};
 use std::{sync::OnceLock, time::Duration};
 
+/// Browser identities the music services expect; they reject unknown clients.
+pub const DESKTOP_CHROME_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+pub const DESKTOP_SAFARI_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/17.4 Safari/605.1.15";
+
 pub fn client() -> Result<Client, String> {
     static CLIENT: OnceLock<Result<Client, String>> = OnceLock::new();
-    CLIENT.get_or_init(|| Client::builder()
-        .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
-        .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(40))
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        .build().map_err(|_| "无法初始化网络连接".into())).clone()
+    CLIENT
+        .get_or_init(|| {
+            Client::builder()
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
+                .connect_timeout(Duration::from_secs(10))
+                .timeout(Duration::from_secs(40))
+                .user_agent(DESKTOP_CHROME_UA)
+                .build()
+                .map_err(|_| "无法初始化网络连接".into())
+        })
+        .clone()
 }
 
 pub async fn bytes(mut response: Response, limit: usize) -> Result<Vec<u8>, String> {

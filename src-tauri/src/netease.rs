@@ -1,4 +1,5 @@
 //! NetEase WEAPI adapter following go-musicfox/netease-music (see THIRD_PARTY_NOTICES.md).
+use crate::lock::Locked;
 use aes::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyIvInit};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use num_bigint::BigUint;
@@ -6,11 +7,18 @@ use reqwest::cookie::{CookieStore, Jar};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::{
-    sync::{Arc, Mutex},
+    sync::{Arc, LazyLock, Mutex},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-const MODULUS: &str = "e0b509f6259df8642dbc35662901477df22677ec152b5ff68ace615bb7b725152b3ab17a876aea8a5aa76d2e417629ec4ee341f56135fccf695280104e0312ecbda92557c93870114af6c9d05c4f7f0c3685b7a46bee255932575cce10b424d813cfe4875d3e82047b97ddef52741d546b8e289dc6935b3ece0462db0a22b8e7";
+const MODULUS: &str = concat!(
+    "e0b509f6259df8642dbc35662901477df22677ec152b5ff68ace615bb7b72515",
+    "2b3ab17a876aea8a5aa76d2e417629ec4ee341f56135fccf695280104e0312ec",
+    "bda92557c93870114af6c9d05c4f7f0c3685b7a46bee255932575cce10b424d8",
+    "13cfe4875d3e82047b97ddef52741d546b8e289dc6935b3ece0462db0a22b8e7",
+);
+static RSA_MODULUS: LazyLock<BigUint> =
+    LazyLock::new(|| BigUint::parse_bytes(MODULUS.as_bytes(), 16).expect("valid WEAPI modulus"));
 fn encrypt(data: &[u8], key: &[u8]) -> String {
     STANDARD.encode(
         cbc::Encryptor::<aes::Aes128>::new_from_slices(key, b"0102030405060708")
@@ -22,8 +30,7 @@ fn weapi(data: &Value, secret: &[u8]) -> [(String, String); 2] {
     let first = encrypt(data.to_string().as_bytes(), b"0CoJUm6Qyw8W8jud");
     let params = encrypt(first.as_bytes(), secret);
     let reversed: Vec<u8> = secret.iter().rev().copied().collect();
-    let n = BigUint::parse_bytes(MODULUS.as_bytes(), 16).unwrap();
-    let rsa = BigUint::from_bytes_be(&reversed).modpow(&BigUint::from(65537u32), &n);
+    let rsa = BigUint::from_bytes_be(&reversed).modpow(&BigUint::from(65537u32), &RSA_MODULUS);
     [
         ("params".into(), params),
         (
@@ -59,9 +66,13 @@ impl Session {
                 jar.add_cookie_str(&format!("{cookie}; Path=/; Secure"), &url);
             }
         }
-        let client = reqwest::Client::builder().timeout(Duration::from_secs(20)).connect_timeout(Duration::from_secs(8))
-            .cookie_provider(jar.clone()).user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/17.4 Safari/605.1.15")
-            .build().map_err(|_| "无法初始化网络客户端".to_string())?;
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(20))
+            .connect_timeout(Duration::from_secs(8))
+            .cookie_provider(jar.clone())
+            .user_agent(crate::http::DESKTOP_SAFARI_UA)
+            .build()
+            .map_err(|_| "无法初始化网络客户端".to_string())?;
         Ok(Self { client, jar })
     }
     fn cookies(&self) -> String {
@@ -432,7 +443,7 @@ impl Api {
         })
     }
     fn session(&self) -> Session {
-        self.active.lock().unwrap().clone()
+        self.active.locked().clone()
     }
     async fn raw(session: &Session, path: &str, mut data: Value) -> Result<Value, String> {
         data["csrf_token"] = json!(session.cookie("__csrf"));
@@ -480,14 +491,14 @@ impl Api {
         Self::profile_for(&self.session()).await
     }
     fn cancel_pending(&self) -> u64 {
-        let mut state = self.login_state.lock().unwrap();
+        let mut state = self.login_state.locked();
         state.revision = state.revision.wrapping_add(1);
         state.phone = None;
-        *self.pending.lock().unwrap() = None;
+        *self.pending.locked() = None;
         state.revision
     }
     fn ensure_login_revision(&self, revision: u64) -> Result<(), String> {
-        if self.login_state.lock().unwrap().revision != revision {
+        if self.login_state.locked().revision != revision {
             return Err("登录已取消，请重新开始".into());
         }
         Ok(())
@@ -498,7 +509,7 @@ impl Api {
         session: Session,
         profile: Profile,
     ) -> Result<QrStatus, String> {
-        let mut state = self.login_state.lock().unwrap();
+        let mut state = self.login_state.locked();
         if state.revision != revision {
             return Err("登录已取消，请重新开始".into());
         }
@@ -509,9 +520,9 @@ impl Api {
         } else {
             None
         };
-        *self.active.lock().unwrap() = session;
+        *self.active.locked() = session;
         state.phone = None;
-        *self.pending.lock().unwrap() = None;
+        *self.pending.locked() = None;
         Ok(QrStatus {
             code: 803,
             profile: Some(profile),
@@ -520,12 +531,12 @@ impl Api {
     }
     pub async fn send_login_code(&self, phone: &str, country: &str) -> Result<(), String> {
         let (phone, country) = phone_identity(phone, country)?;
-        let revision = self.login_state.lock().unwrap().revision;
+        let revision = self.login_state.locked().revision;
         let _gate = self.auth_gate.lock().await;
         self.ensure_login_revision(revision)?;
         let session = Session::new(None)?;
         let revision = {
-            let mut state = self.login_state.lock().unwrap();
+            let mut state = self.login_state.locked();
             if state.revision != revision {
                 return Err("登录已取消，请重新开始".into());
             }
@@ -545,7 +556,7 @@ impl Api {
                 session: session.clone(),
                 created: now,
             });
-            *self.pending.lock().unwrap() = None;
+            *self.pending.locked() = None;
             state.revision
         };
         // Upstream request definitions (WEAPI rewrites /api/ to /weapi/):
@@ -569,10 +580,10 @@ impl Api {
     ) -> Result<QrStatus, String> {
         let (phone, country) = phone_identity(phone, country)?;
         let code = validate_login_code(code)?;
-        let revision = self.login_state.lock().unwrap().revision;
+        let revision = self.login_state.locked().revision;
         let _gate = self.auth_gate.lock().await;
         let session = {
-            let state = self.login_state.lock().unwrap();
+            let state = self.login_state.locked();
             if state.revision != revision {
                 return Err("登录已取消，请重新开始".into());
             }
@@ -629,11 +640,11 @@ impl Api {
             .append_pair("codekey", &key)
             .append_pair("chainId", &chain);
         {
-            let state = self.login_state.lock().unwrap();
+            let state = self.login_state.locked();
             if state.revision != revision {
                 return Err("登录已取消，请重新开始".into());
             }
-            *self.pending.lock().unwrap() = Some(Pending {
+            *self.pending.locked() = Some(Pending {
                 key: key.clone(),
                 session,
                 created: Instant::now(),
@@ -650,11 +661,11 @@ impl Api {
         Ok(())
     }
     pub async fn check_login(&self, key: &str) -> Result<QrStatus, String> {
-        let revision = self.login_state.lock().unwrap().revision;
+        let revision = self.login_state.locked().revision;
         let _gate = self.auth_gate.lock().await;
         self.ensure_login_revision(revision)?;
         let session = {
-            let pending = self.pending.lock().unwrap();
+            let pending = self.pending.locked();
             let p = pending
                 .as_ref()
                 .filter(|p| p.key == key)
@@ -685,9 +696,9 @@ impl Api {
                 .ok_or("扫码已确认，但暂未取得账号信息，请重试")?;
             return self.finish_login(revision, session, profile);
         } else if code == 800 {
-            let state = self.login_state.lock().unwrap();
+            let state = self.login_state.locked();
             if state.revision == revision {
-                *self.pending.lock().unwrap() = None;
+                *self.pending.locked() = None;
             }
         }
         Ok(QrStatus {
@@ -704,8 +715,8 @@ impl Api {
                 .await
                 .map_err(|_| "清除登录状态失败")??;
         }
-        *self.active.lock().unwrap() = Session::new(None)?;
-        *self.pending.lock().unwrap() = None;
+        *self.active.locked() = Session::new(None)?;
+        *self.pending.locked() = None;
         Ok(())
     }
     pub async fn search(&self, query: &str, offset: u32) -> Result<SearchResult, String> {
@@ -855,7 +866,17 @@ impl Api {
             op = "update";
             tracks = ids;
         }
-        let result = self.request("playlist/manipulate/tracks", json!({"pid":id,"op":op,"trackIds":serde_json::to_string(&tracks).unwrap(),"imme":true})).await?;
+        let result = self
+            .request(
+                "playlist/manipulate/tracks",
+                json!({
+                    "pid": id,
+                    "op": op,
+                    "trackIds": serde_json::to_string(&tracks).unwrap(),
+                    "imme": true,
+                }),
+            )
+            .await?;
         // Some responses wrap a second status inside the successful HTTP response.
         if let Some(code) = result["body"]["code"].as_u64() {
             if code != 200 {
@@ -877,7 +898,15 @@ impl Api {
             vec![]
         } else {
             let c: Vec<Value> = batch.iter().map(|id| json!({"id":id})).collect();
-            let detail=self.request("v3/song/detail",json!({"c":serde_json::to_string(&c).unwrap(),"ids":serde_json::to_string(&batch).unwrap()})).await?;
+            let detail = self
+                .request(
+                    "v3/song/detail",
+                    json!({
+                        "c": serde_json::to_string(&c).unwrap(),
+                        "ids": serde_json::to_string(&batch).unwrap(),
+                    }),
+                )
+                .await?;
             let mut songs = songs_from(&detail["songs"]);
             songs.sort_by_key(|s| {
                 batch
@@ -968,7 +997,7 @@ mod tests {
             .await
             .unwrap_err()
             .contains("先获取"));
-        api.login_state.lock().unwrap().phone = Some(pending_phone(Instant::now()));
+        api.login_state.locked().phone = Some(pending_phone(Instant::now()));
         assert!(api
             .login_phone("13900000000", "86", "1234")
             .await
@@ -979,8 +1008,7 @@ mod tests {
             .await
             .unwrap_err()
             .contains("变更"));
-        api.login_state.lock().unwrap().phone =
-            Some(pending_phone(Instant::now() - PHONE_LOGIN_TTL));
+        api.login_state.locked().phone = Some(pending_phone(Instant::now() - PHONE_LOGIN_TTL));
         assert!(api
             .login_phone("13800000000", "86", "1234")
             .await
@@ -991,7 +1019,7 @@ mod tests {
     #[tokio::test]
     async fn sms_cooldown_survives_cancel_and_number_changes() {
         let api = Api::new().unwrap();
-        api.login_state.lock().unwrap().last_sms_send = Some(Instant::now());
+        api.login_state.locked().last_sms_send = Some(Instant::now());
         for phone in ["13800000000", "13900000000"] {
             api.cancel_login().await.unwrap();
             let error = api.send_login_code(phone, "86").await.unwrap_err();
@@ -1002,7 +1030,7 @@ mod tests {
     #[tokio::test]
     async fn canceled_phone_requests_cannot_wait_then_restore_login() {
         let api = Api::new().unwrap();
-        api.login_state.lock().unwrap().phone = Some(pending_phone(Instant::now()));
+        api.login_state.locked().phone = Some(pending_phone(Instant::now()));
         let gate = api.auth_gate.lock().await;
         let mut request = Box::pin(api.login_phone("13800000000", "86", "1234"));
         assert!(
@@ -1016,9 +1044,9 @@ mod tests {
             .unwrap();
         drop(gate);
         assert!(request.await.unwrap_err().contains("取消"));
-        assert!(api.login_state.lock().unwrap().phone.is_none());
+        assert!(api.login_state.locked().phone.is_none());
 
-        let revision = api.login_state.lock().unwrap().revision;
+        let revision = api.login_state.locked().revision;
         let authenticated = Session::new(Some("MUSIC_U=synthetic-session")).unwrap();
         api.cancel_login().await.unwrap();
         let result = api.finish_login(
@@ -1046,7 +1074,7 @@ mod tests {
         api.cancel_login().await.unwrap();
         drop(gate);
         assert!(request.await.unwrap_err().contains("取消"));
-        assert!(api.login_state.lock().unwrap().last_sms_send.is_none());
+        assert!(api.login_state.locked().last_sms_send.is_none());
     }
     #[test]
     fn upstream_errors_never_forward_request_credentials() {

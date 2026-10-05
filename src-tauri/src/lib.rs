@@ -9,6 +9,7 @@ mod download;
 mod download_engine;
 mod http;
 mod local;
+mod lock;
 mod mobile;
 pub mod netease;
 mod qq;

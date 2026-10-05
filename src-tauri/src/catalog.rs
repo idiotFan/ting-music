@@ -282,7 +282,15 @@ mod tests {
         assert_eq!(a.avatar, "https://p1/x.jpg");
         assert_eq!(a.alias, "Jay Chou");
         assert!(artist(&json!({"id":0,"name":"x"})).is_none());
-        let al = album(&json!({"id":1,"name":"叶惠美","picUrl":"http://p/a.jpg","artists":[{"id":6452,"name":"周杰伦"},{"id":2,"name":"B"}],"size":11,"publishTime":1059580800000u64})).unwrap();
+        let al = album(&json!({
+            "id": 1,
+            "name": "叶惠美",
+            "picUrl": "http://p/a.jpg",
+            "artists": [{"id":6452,"name":"周杰伦"},{"id":2,"name":"B"}],
+            "size": 11,
+            "publishTime": 1059580800000u64,
+        }))
+        .unwrap();
         assert_eq!(al.artist, "周杰伦 / B");
         assert_eq!(al.artist_id, 6452);
         assert_eq!(al.track_count, 11);
