@@ -1,5 +1,10 @@
-//! Local durable outbox acknowledgement plus an explicitly granted iCloud Drive folder.
-use crate::sync_model::{Batch, Document, Playlist};
+//! Local durable outbox acknowledgement plus an explicitly granted iCloud Drive
+//! folder or WebDAV account.
+use crate::{
+    secret_store,
+    sync_model::{Batch, Document, Playlist},
+    webdav,
+};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, path::Path, sync::Mutex};
 use tauri::Manager;
@@ -16,6 +21,8 @@ struct Local {
     #[serde(default)]
     icloud: bool,
     last_exchange: Option<u64>,
+    #[serde(default)]
+    webdav: Option<webdav::Remote>,
 }
 impl Default for Local {
     fn default() -> Self {
@@ -27,6 +34,7 @@ impl Default for Local {
             folder: None,
             icloud: false,
             last_exchange: None,
+            webdav: None,
         }
     }
 }
@@ -42,6 +50,9 @@ pub struct Response {
     last_exchange: Option<u64>,
     pending: bool,
     warning: Option<String>,
+    provider: Option<&'static str>,
+    server: Option<String>,
+    account: Option<String>,
 }
 fn disk_lock(path: &Path) -> Result<std::fs::File, String> {
     let parent = path.parent().ok_or("同步目录不可用")?;
@@ -208,6 +219,8 @@ pub async fn sync_choose_folder(window: tauri::WebviewWindow) -> Result<bool, St
             let _disk = disk_lock(&file)?;
             let mut local = read(&file)?;
             local.bookmark = Some(bookmark);
+            local.webdav = None;
+            let _ = secret_store::remove(webdav::PASSWORD_ACCOUNT);
             local.folder = value["folder"].as_str().map(str::to_owned);
             local.icloud = value["icloud"].as_bool().unwrap_or(false);
             local.last_exchange = None;
@@ -231,6 +244,39 @@ pub async fn sync_disconnect(app: tauri::AppHandle) -> Result<(), String> {
         let file = path(&app)?;
         let _disk = disk_lock(&file)?;
         let mut local = read(&file)?;
+        let had_webdav = local.webdav.take().is_some();
+        local.bookmark = None;
+        local.folder = None;
+        local.icloud = false;
+        local.last_exchange = None;
+        save(&file, &local)?;
+        if had_webdav {
+            secret_store::remove(webdav::PASSWORD_ACCOUNT)?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|_| "无法停用同步")?
+}
+#[tauri::command]
+pub async fn sync_webdav_connect(
+    app: tauri::AppHandle,
+    server: String,
+    folder: String,
+    username: String,
+    password: String,
+) -> Result<(), String> {
+    let remote = webdav::Remote::new(&server, &folder, &username)?;
+    webdav::check_password(&password)?;
+    webdav::connect(&remote, &password).await?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<SyncState>();
+        let _guard = state.0.lock().map_err(|_| "同步状态不可用")?;
+        let file = path(&app)?;
+        let _disk = disk_lock(&file)?;
+        let mut local = read(&file)?;
+        secret_store::save(webdav::PASSWORD_ACCOUNT, &password)?;
+        local.webdav = Some(remote);
         local.bookmark = None;
         local.folder = None;
         local.icloud = false;
@@ -238,13 +284,62 @@ pub async fn sync_disconnect(app: tauri::AppHandle) -> Result<(), String> {
         save(&file, &local)
     })
     .await
-    .map_err(|_| "无法停用同步")?
+    .map_err(|_| "无法连接 WebDAV")?
+}
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+fn exchange_webdav(
+    path: &Path,
+    local: &mut Local,
+    mut remote: webdav::Remote,
+    password: &dyn Fn() -> Option<String>,
+) -> Result<(), String> {
+    use md5::{Digest, Md5};
+    let secret = password().ok_or("无法读取已保存的 WebDAV 密码，请重新连接")?;
+    let fetched = tauri::async_runtime::block_on(webdav::fetch(&remote, &secret, &local.device))?;
+    let mut merged = local.document.clone();
+    for document in &fetched.documents {
+        merged.merge(document)?;
+    }
+    let payload = serde_json::to_string(&merged).map_err(|_| "无法生成同步文件")?;
+    if payload.len() > 16 * 1024 * 1024 {
+        return Err("歌单同步数据超过 16 MB 上限".into());
+    }
+    let digest = format!("{:x}", Md5::digest(payload.as_bytes()));
+    // Received edits and the ETags they came from are committed together,
+    // before this device publishes its merged snapshot.
+    local.document = merged;
+    remote.etags = fetched.etags;
+    local.webdav = Some(remote.clone());
+    save(path, local)?;
+    if !fetched.own || remote.uploaded.as_deref() != Some(digest.as_str()) {
+        let etag = tauri::async_runtime::block_on(webdav::publish(
+            &remote,
+            &secret,
+            &local.device,
+            payload,
+        ))?;
+        let own = format!("device-{}.json", local.device);
+        match etag {
+            Some(tag) => remote.etags.insert(own, tag),
+            None => remote.etags.remove(&own),
+        };
+        remote.uploaded = Some(digest);
+    }
+    local.webdav = Some(remote);
+    local.last_exchange = Some(now());
+    save(path, local)
 }
 fn update(
     path: &Path,
     batches: Vec<Batch>,
     exchange: bool,
     expected_device: Option<String>,
+    password: &dyn Fn() -> Option<String>,
 ) -> Result<Response, String> {
     if batches.len() > 2000 {
         return Err("待同步修改过多，请重启后重试".into());
@@ -267,7 +362,11 @@ fn update(
     #[cfg_attr(not(any(target_os = "macos", target_os = "ios")), allow(unused_mut))]
     let mut pending = false;
     if exchange {
-        if let Some(bookmark) = local.bookmark.clone() {
+        if let Some(remote) = local.webdav.clone() {
+            if let Err(e) = exchange_webdav(path, &mut local, remote, password) {
+                warning = Some(e);
+            }
+        } else if let Some(bookmark) = local.bookmark.clone() {
             #[cfg(any(target_os = "macos", target_os = "ios"))]
             {
                 let result = (|| {
@@ -297,12 +396,7 @@ fn update(
                     )?;
                     pending = response["pending"].as_bool().unwrap_or(false)
                         || written["pending"].as_bool().unwrap_or(false);
-                    local.last_exchange = Some(
-                        std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs(),
-                    );
+                    local.last_exchange = Some(now());
                     save(path, &local)?;
                     Ok(())
                 })();
@@ -317,16 +411,25 @@ fn update(
             }
         }
     }
+    let provider = if local.webdav.is_some() {
+        Some("webdav")
+    } else {
+        local.bookmark.as_ref().map(|_| "icloud")
+    };
+    let remote = local.webdav.as_ref();
     Ok(Response {
-        device: local.device,
+        device: local.device.clone(),
         playlists: local.document.playlists(),
         ack,
-        connected: local.bookmark.is_some(),
-        folder: local.folder,
+        connected: provider.is_some(),
+        folder: remote.map(|r| r.folder.clone()).or(local.folder),
         icloud: local.icloud,
         last_exchange: local.last_exchange,
         pending,
         warning,
+        provider,
+        server: remote.map(webdav::Remote::host),
+        account: remote.map(|r| r.username.clone()),
     })
 }
 #[tauri::command]
@@ -341,7 +444,9 @@ pub async fn sync_library(
         let _guard = state.0.lock().map_err(|_| "同步状态不可用")?;
         let file = path(&app)?;
         let _disk = disk_lock(&file)?;
-        update(&file, batches, exchange, expected_device)
+        update(&file, batches, exchange, expected_device, &|| {
+            secret_store::load(webdav::PASSWORD_ACCOUNT)
+        })
     })
     .await
     .map_err(|_| "同步任务中断，本机歌单仍保留")?
@@ -360,22 +465,251 @@ mod tests {
             "changes": [{"id":9,"create":true,"name":"离线歌单","add":[],"order":[]}],
         }))
         .unwrap();
-        let first = update(&path, vec![batch.clone()], false, None).unwrap();
+        let first = update(&path, vec![batch.clone()], false, None, &|| None).unwrap();
         assert_eq!(first.playlists.len(), 1);
         assert_eq!(first.ack, vec![batch.id.clone()]);
         let before = std::fs::read(&path).unwrap();
-        let second = update(&path, vec![batch], false, None).unwrap();
+        let second = update(&path, vec![batch], false, None, &|| None).unwrap();
         assert_eq!(first.playlists, second.playlists);
         assert_eq!(before, std::fs::read(&path).unwrap());
         std::fs::remove_file(&path).unwrap();
-        assert!(update(&path, vec![], false, Some(first.device)).is_err());
+        assert!(update(&path, vec![], false, Some(first.device), &|| None).is_err());
         assert!(
             !path.exists(),
             "missing backend state must not erase a restored frontend library"
         );
         std::fs::write(&path, b"broken").unwrap();
-        assert!(update(&path, vec![], false, None).is_err());
+        assert!(update(&path, vec![], false, None, &|| None).is_err());
         assert_eq!(std::fs::read(&path).unwrap(), b"broken");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    mod dav {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        use std::{
+            collections::{BTreeMap, BTreeSet},
+            io::{BufRead, BufReader, Read, Write},
+            net::TcpListener,
+            sync::{Arc, Mutex},
+        };
+        #[derive(Default)]
+        pub struct Store {
+            pub files: BTreeMap<String, (Vec<u8>, u64)>,
+            pub dirs: BTreeSet<String>,
+            pub log: Vec<String>,
+            pub fail_put: bool,
+            next: u64,
+        }
+        fn parent(path: &str) -> String {
+            let trimmed = path.trim_end_matches('/');
+            format!("{}/", trimmed.rsplit_once('/').map_or("", |(p, _)| p))
+        }
+        /// Minimal single-threaded WebDAV server with Nutstore's status codes.
+        pub fn serve(user: &str, password: &str) -> (String, Arc<Mutex<Store>>) {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let base = format!("http://{}/dav", listener.local_addr().unwrap());
+            let auth = format!("Basic {}", STANDARD.encode(format!("{user}:{password}")));
+            let store = Arc::new(Mutex::new(Store::default()));
+            store.lock().unwrap().dirs.insert("/dav/".into());
+            let shared = store.clone();
+            std::thread::spawn(move || {
+                for stream in listener.incoming() {
+                    let mut stream = stream.unwrap();
+                    let mut reader = BufReader::new(stream.try_clone().unwrap());
+                    let mut line = String::new();
+                    reader.read_line(&mut line).unwrap();
+                    let mut parts = line.split_whitespace();
+                    let method = parts.next().unwrap_or_default().to_owned();
+                    let path = parts.next().unwrap_or_default().to_owned();
+                    let (mut length, mut authorized) = (0usize, false);
+                    loop {
+                        let mut header = String::new();
+                        reader.read_line(&mut header).unwrap();
+                        let header = header.trim_end();
+                        if header.is_empty() {
+                            break;
+                        }
+                        let (name, value) = header.split_once(':').unwrap();
+                        match name.to_ascii_lowercase().as_str() {
+                            "content-length" => length = value.trim().parse().unwrap(),
+                            "authorization" => authorized = value.trim() == auth,
+                            _ => {}
+                        }
+                    }
+                    let mut body = vec![0; length];
+                    reader.read_exact(&mut body).unwrap();
+                    let mut s = shared.lock().unwrap();
+                    s.log.push(format!("{method} {path}"));
+                    let (code, extra, out): (u16, String, Vec<u8>) = if !authorized {
+                        (401, String::new(), Vec::new())
+                    } else {
+                        match method.as_str() {
+                            "PROPFIND" if s.dirs.contains(&path) => {
+                                let mut xml = format!(
+                                    r#"<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:response><d:href>{path}</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop></d:propstat></d:response>"#
+                                );
+                                for d in s.dirs.iter().filter(|d| parent(d) == path && **d != path)
+                                {
+                                    xml += &format!("<d:response><d:href>{d}</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop></d:propstat></d:response>");
+                                }
+                                for (f, (bytes, tag)) in
+                                    s.files.iter().filter(|(f, _)| parent(f) == path)
+                                {
+                                    xml += &format!("<d:response><d:href>{f}</d:href><d:propstat><d:prop><d:resourcetype/><d:getetag>&quot;{tag}&quot;</d:getetag><d:getcontentlength>{}</d:getcontentlength></d:prop></d:propstat></d:response>", bytes.len());
+                                }
+                                xml += "</d:multistatus>";
+                                (207, String::new(), xml.into_bytes())
+                            }
+                            "PROPFIND" => (404, String::new(), Vec::new()),
+                            "MKCOL" if s.dirs.contains(&path) => (405, String::new(), Vec::new()),
+                            "MKCOL" if !s.dirs.contains(&parent(&path)) => {
+                                (409, String::new(), Vec::new())
+                            }
+                            "MKCOL" => {
+                                s.dirs.insert(path);
+                                (201, String::new(), Vec::new())
+                            }
+                            "GET" => match s.files.get(&path) {
+                                Some((bytes, tag)) => {
+                                    (200, format!("ETag: \"{tag}\"\r\n"), bytes.clone())
+                                }
+                                None => (404, String::new(), Vec::new()),
+                            },
+                            "PUT" if s.fail_put => (503, String::new(), Vec::new()),
+                            "PUT" if !s.dirs.contains(&parent(&path)) => {
+                                (409, String::new(), Vec::new())
+                            }
+                            "PUT" => {
+                                s.next += 1;
+                                let tag = s.next;
+                                s.files.insert(path, (body, tag));
+                                (201, format!("ETag: \"{tag}\"\r\n"), Vec::new())
+                            }
+                            _ => (405, String::new(), Vec::new()),
+                        }
+                    };
+                    drop(s);
+                    let head = format!(
+                        "HTTP/1.1 {code} X\r\nContent-Length: {}\r\nConnection: close\r\n{extra}\r\n",
+                        out.len()
+                    );
+                    let _ = stream.write_all(head.as_bytes());
+                    let _ = stream.write_all(&out);
+                }
+            });
+            (base, store)
+        }
+    }
+    fn batch(change: serde_json::Value) -> Batch {
+        serde_json::from_value(serde_json::json!({
+            "id": uuid::Uuid::new_v4().to_string(),
+            "changes": [change],
+        }))
+        .unwrap()
+    }
+    fn create(id: u64, name: &str) -> Batch {
+        batch(serde_json::json!({"id":id,"create":true,"name":name,"add":[],"order":[]}))
+    }
+    fn names(r: &Response) -> Vec<String> {
+        let mut out: Vec<_> = r.playlists.iter().map(|p| p.name.clone()).collect();
+        out.sort();
+        out
+    }
+    #[test]
+    fn webdav_devices_merge_without_losing_local_edits() {
+        const SECRET: &str = "app-secret-4f9a";
+        let (base, store) = dav::serve("me@example.com", SECRET);
+        let remote = webdav::Remote::new(&base, "Ting", "me@example.com").unwrap();
+        let block = tauri::async_runtime::block_on;
+        assert!(block(webdav::connect(&remote, "wrong"))
+            .unwrap_err()
+            .contains("第三方应用密码"));
+        block(webdav::connect(&remote, SECRET)).unwrap();
+        assert!(store
+            .lock()
+            .unwrap()
+            .dirs
+            .contains("/dav/Ting/Ting-Sync-v1/"));
+
+        let root = std::env::temp_dir().join(format!("ting-webdav-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let (a, b) = (root.join("a.json"), root.join("b.json"));
+        let password = || Some(SECRET.to_owned());
+        for (path, id, name) in [(&a, 1, "A 歌单"), (&b, 2, "B 歌单")] {
+            update(path, vec![create(id, name)], false, None, &|| None).unwrap();
+            let mut local = read(path).unwrap();
+            local.webdav = Some(remote.clone());
+            save(path, &local).unwrap();
+        }
+        let first = update(&a, vec![], true, None, &password).unwrap();
+        assert_eq!(first.warning, None);
+        assert_eq!(first.provider, Some("webdav"));
+        assert_eq!(first.folder.as_deref(), Some("Ting"));
+        assert_eq!(first.server.as_deref(), Some("127.0.0.1"));
+        assert!(first.connected && first.last_exchange.is_some());
+        let second = update(&b, vec![], true, None, &password).unwrap();
+        assert_eq!(names(&second), ["A 歌单", "B 歌单"]);
+        let first = update(&a, vec![], true, None, &password).unwrap();
+        assert_eq!(names(&first), ["A 歌单", "B 歌单"]);
+
+        // Unchanged snapshots are neither downloaded nor re-uploaded.
+        store.lock().unwrap().log.clear();
+        update(&a, vec![], true, None, &password).unwrap();
+        assert_eq!(
+            store.lock().unwrap().log,
+            ["PROPFIND /dav/Ting/Ting-Sync-v1/"]
+        );
+
+        store.lock().unwrap().fail_put = true;
+        let edit = create(3, "离线修改");
+        let failed = update(&a, vec![edit.clone()], true, None, &password).unwrap();
+        assert!(failed.warning.as_deref().unwrap().contains("600"));
+        assert_eq!(failed.ack, vec![edit.id]);
+        assert_eq!(names(&failed).len(), 3);
+        assert_eq!(
+            names(&update(&a, vec![], false, None, &|| None).unwrap()).len(),
+            3
+        );
+        store.lock().unwrap().fail_put = false;
+        assert_eq!(
+            update(&a, vec![], true, None, &password).unwrap().warning,
+            None
+        );
+        assert_eq!(
+            names(&update(&b, vec![], true, None, &password).unwrap()).len(),
+            3
+        );
+
+        let wrong = update(&a, vec![], true, None, &|| Some("old".into())).unwrap();
+        assert!(wrong.warning.unwrap().contains("第三方应用密码"));
+        assert!(update(&a, vec![], true, None, &|| None)
+            .unwrap()
+            .warning
+            .is_some());
+
+        let own = format!("/dav/Ting/Ting-Sync-v1/device-{}.json", first.device);
+        let before = store.lock().unwrap().files[&own].clone();
+        store.lock().unwrap().files.insert(
+            format!(
+                "/dav/Ting/Ting-Sync-v1/device-{}.json",
+                uuid::Uuid::new_v4()
+            ),
+            (b"{broken".to_vec(), 999),
+        );
+        let corrupt = update(&a, vec![create(4, "损坏时的修改")], true, None, &password).unwrap();
+        assert!(corrupt.warning.as_deref().unwrap().contains("损坏"));
+        assert_eq!(names(&corrupt).len(), 4);
+        assert_eq!(store.lock().unwrap().files[&own], before);
+
+        let state = std::fs::read_to_string(&a).unwrap();
+        assert!(!state.contains(SECRET));
+        assert!(!serde_json::to_string(&corrupt).unwrap().contains(SECRET));
+        assert!(store
+            .lock()
+            .unwrap()
+            .files
+            .values()
+            .all(|(bytes, _)| !String::from_utf8_lossy(bytes).contains(SECRET)));
         std::fs::remove_dir_all(root).unwrap();
     }
 }

@@ -13,6 +13,7 @@ mod lock;
 mod mobile;
 pub mod netease;
 mod qq;
+mod secret_store;
 mod sync;
 mod sync_model;
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "android"))]
@@ -21,6 +22,7 @@ mod system_media;
 #[path = "system_media_web.rs"]
 mod system_media;
 mod updater;
+mod webdav;
 mod window_memory;
 use netease::{
     Api, Playback, PlaylistPage, PlaylistTracks, Profile, QrLogin, QrStatus, SearchResult,
@@ -241,6 +243,7 @@ pub fn run() {
             system_media::system_media_update,
             sync::sync_choose_folder,
             sync::sync_disconnect,
+            sync::sync_webdav_connect,
             sync::sync_library,
             qq::qq_request,
             search_songs,

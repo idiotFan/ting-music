@@ -53,10 +53,6 @@ struct Register<T> {
     value: T,
 }
 impl<T: Clone> Register<T> {
-    #[cfg_attr(
-        not(any(target_os = "macos", target_os = "ios", test)),
-        allow(dead_code)
-    )]
     fn merge(&mut self, other: &Self) {
         if other.stamp > self.stamp {
             *self = other.clone();
@@ -251,10 +247,6 @@ impl Document {
         *self = next;
         Ok(())
     }
-    #[cfg_attr(
-        not(any(target_os = "macos", target_os = "ios", test)),
-        allow(dead_code)
-    )]
     pub fn merge(&mut self, other: &Self) -> Result<(), String> {
         other.validate()?;
         for (id, b) in &other.lists {
