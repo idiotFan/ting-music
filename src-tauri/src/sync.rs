@@ -498,6 +498,7 @@ mod tests {
             pub dirs: BTreeSet<String>,
             pub log: Vec<String>,
             pub fail_put: bool,
+            pub omit_put_etag: bool,
             next: u64,
         }
         fn parent(path: &str) -> String {
@@ -583,7 +584,12 @@ mod tests {
                                 s.next += 1;
                                 let tag = s.next;
                                 s.files.insert(path, (body, tag));
-                                (201, format!("ETag: \"{tag}\"\r\n"), Vec::new())
+                                let header = if s.omit_put_etag {
+                                    String::new()
+                                } else {
+                                    format!("ETag: \"{tag}\"\r\n")
+                                };
+                                (201, header, Vec::new())
                             }
                             _ => (405, String::new(), Vec::new()),
                         }
@@ -670,10 +676,27 @@ mod tests {
             names(&update(&a, vec![], false, None, &|| None).unwrap()).len(),
             3
         );
-        store.lock().unwrap().fail_put = false;
+        {
+            let mut s = store.lock().unwrap();
+            s.fail_put = false;
+            s.omit_put_etag = true;
+        }
         assert_eq!(
             update(&a, vec![], true, None, &password).unwrap().warning,
             None
+        );
+        // Without an ETag from PUT, the next exchange still skips its own file.
+        store.lock().unwrap().log.clear();
+        update(&a, vec![], true, None, &password).unwrap();
+        assert_eq!(
+            store.lock().unwrap().log,
+            ["PROPFIND /dav/Ting/Ting-Sync-v1/"]
+        );
+        store.lock().unwrap().log.clear();
+        update(&a, vec![], true, None, &password).unwrap();
+        assert_eq!(
+            store.lock().unwrap().log,
+            ["PROPFIND /dav/Ting/Ting-Sync-v1/"]
         );
         assert_eq!(
             names(&update(&b, vec![], true, None, &password).unwrap()).len(),

@@ -385,6 +385,14 @@ pub async fn fetch(remote: &Remote, password: &str, device: &str) -> Result<Fetc
             return Err("WebDAV 上的同步文件超过 16 MB，未覆盖云端文件".into());
         }
         let etag = entry.etag.filter(|t| t.len() <= 256);
+        // This device's own upload is already in the local state; its ETag is
+        // only learned from the listing when the PUT response omitted it.
+        if entry.name == own_name && remote.uploaded.is_some() {
+            if let Some(tag) = etag {
+                fetched.etags.insert(entry.name, tag);
+            }
+            continue;
+        }
         if let Some(tag) = &etag {
             if remote.etags.get(&entry.name) == Some(tag) {
                 fetched.etags.insert(entry.name, tag.clone());
