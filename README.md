@@ -22,7 +22,7 @@ _截图为 macOS 实机运行画面（0.9.7），账号信息已收敛为首字�
 - **自适应布局**：窄窗口单栏；拉宽后列表 / 播放器两栏，大封面居中；打开歌词成三栏，每栏宽度可拖拽并记忆；平板与手机横屏同样适配。
 - **11 套主题**并可跟随系统深浅色，系统媒体控制（macOS / iOS 控制中心、Windows SMTC、Linux MPRIS、Android MediaSession），本地音频离线播放。
 
-**当前版本 1.0.0**（iOS 构建 1000001，Android versionCode 1000000）。macOS 需 15+ Apple Silicon；iOS 16+ 为开发签名真机版；Windows / Linux / Android 由 CI 构建。
+**当前版本 1.0.1**（iOS 构建 1000101，Android versionCode 1000001）。macOS 需 15+ Apple Silicon；iOS 16+ 为开发签名真机版；Windows / Linux / Android 由 CI 构建。
 
 ## 功能细节
 
@@ -111,7 +111,7 @@ python3 -B scripts/release.py --gitleaks /path/to/gitleaks
 
 ### Linux / Windows
 
-CI 在 Windows（NSIS 安装器）和 Ubuntu Linux（deb / AppImage）上原生构建并运行回归；登录凭据分别持久化到 Windows 凭据管理器和 Linux Secret Service，系统媒体控制使用 SMTC / MPRIS。macOS 应用包也随 CI 作为构建产物提供。iOS 提供手机布局、钥匙串和沙盒下载。
+CI 在 Windows（NSIS 安装器）和 Ubuntu 22.04 Linux（deb / AppImage）上原生构建并运行回归，Linux 安装包需 glibc 2.35 及以上（Ubuntu 22.04、Debian 12、Fedora 36、Manjaro / Arch 等）；登录凭据分别持久化到 Windows 凭据管理器和 Linux Secret Service，系统媒体控制使用 SMTC / MPRIS。macOS 应用包也随 CI 作为构建产物提供。iOS 提供手机布局、钥匙串和沙盒下载。
 
 ## 使用说明
 
