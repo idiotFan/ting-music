@@ -9,6 +9,7 @@ use std::{collections::BTreeMap, net::IpAddr, sync::OnceLock, time::Duration};
 
 pub const PASSWORD_ACCOUNT: &str = "webdav-password";
 const DIRECTORY: &str = "Ting-Sync-v1";
+const NUTSTORE_HOST: &str = "dav.jianguoyun.com";
 const SNAPSHOT_LIMIT: usize = 16 * 1024 * 1024;
 const TOTAL_LIMIT: usize = 32 * 1024 * 1024;
 const LISTING_LIMIT: usize = 4 * 1024 * 1024;
@@ -90,6 +91,39 @@ fn folder_path(input: &str) -> Result<String, String> {
     Ok(parts.join("/"))
 }
 
+/// Nutstore only serves WebDAV under `/dav/`; a folder typed into the server
+/// address moves into the folder path so missing parents can be created.
+fn nutstore_root(mut url: Url, folder: String) -> Result<(Url, String), String> {
+    if url.host_str() != Some(NUTSTORE_HOST) {
+        return Ok((url, folder));
+    }
+    let extra: Vec<String> = url
+        .path_segments()
+        .into_iter()
+        .flatten()
+        .filter(|s| !s.is_empty())
+        .skip_while(|s| *s == "dav")
+        .map(|s| {
+            percent_encoding::percent_decode_str(s)
+                .decode_utf8()
+                .map(|s| s.into_owned())
+                .map_err(|_| "WebDAV 服务器地址无效".to_string())
+        })
+        .collect::<Result<_, _>>()?;
+    url.set_path("/dav/");
+    if extra.is_empty() {
+        return Ok((url, folder));
+    }
+    let prefix = folder_path(&extra.join("/"))?;
+    let nested = folder == prefix || folder.starts_with(&format!("{prefix}/"));
+    let folder = if nested {
+        folder
+    } else {
+        folder_path(&format!("{prefix}/{folder}"))?
+    };
+    Ok((url, folder))
+}
+
 pub fn check_password(password: &str) -> Result<(), String> {
     if password.is_empty() || password.len() > 1024 || !clean(password) {
         return Err("请填写有效的 WebDAV 密码".into());
@@ -103,9 +137,10 @@ impl Remote {
         if username.is_empty() || username.len() > 256 || !clean(username) {
             return Err("请填写有效的 WebDAV 账号".into());
         }
+        let (server, folder) = nutstore_root(server_url(server)?, folder_path(folder)?)?;
         Ok(Self {
-            server: server_url(server)?.to_string(),
-            folder: folder_path(folder)?,
+            server: server.to_string(),
+            folder,
             username: username.into(),
             etags: BTreeMap::new(),
             uploaded: None,
@@ -162,6 +197,7 @@ fn failure(status: StatusCode) -> String {
                 .into()
         }
         300..=399 => "WebDAV 地址发生了跳转，请填写服务器提供的完整地址".into(),
+        409 => "WebDAV 上级文件夹不存在，请检查服务器地址和文件夹（坚果云地址为 https://dav.jianguoyun.com/dav/）".into(),
         507 => "WebDAV 空间已满".into(),
         code => format!("WebDAV 服务器返回错误（HTTP {code}）"),
     }
@@ -312,7 +348,8 @@ async fn list(remote: &Remote, password: &str) -> Result<Option<Vec<Entry>>, Str
     .await?;
     match response.status() {
         StatusCode::MULTI_STATUS => Ok(Some(parse(&body(response, LISTING_LIMIT).await?)?)),
-        StatusCode::NOT_FOUND => Ok(None),
+        // Nutstore answers 409 when a parent folder is missing too.
+        StatusCode::NOT_FOUND | StatusCode::CONFLICT => Ok(None),
         status => Err(failure(status)),
     }
 }
@@ -331,7 +368,6 @@ async fn create(remote: &Remote, password: &str) -> Result<(), String> {
             // 405: the collection already exists.
             200..=299 | 405 => {}
             403 => return Err("WebDAV 服务器不允许新建这个文件夹，请先在网盘里创建它".into()),
-            409 => return Err("WebDAV 上级文件夹不存在".into()),
             _ => return Err(failure(response.status())),
         }
     }
@@ -483,6 +519,26 @@ mod tests {
             ]
         );
         assert_eq!(r.host(), "dav.jianguoyun.com");
+        for (server, folder, want) in [
+            ("https://dav.jianguoyun.com/dav/听Ting", "听Ting", "听Ting"),
+            (
+                "https://dav.jianguoyun.com/dav/听Ting/",
+                "Ting",
+                "听Ting/Ting",
+            ),
+            ("https://dav.jianguoyun.com/", "Ting", "Ting"),
+            ("https://dav.jianguoyun.com/dav/a%20b/", "a b/c", "a b/c"),
+        ] {
+            let r = Remote::new(server, folder, "u").unwrap();
+            assert_eq!(r.server, "https://dav.jianguoyun.com/dav/", "{server}");
+            assert_eq!(r.folder, want, "{server}");
+        }
+        assert_eq!(
+            Remote::new("https://x.example/dav/听Ting/", "Ting", "u")
+                .unwrap()
+                .folder,
+            "Ting"
+        );
         for ok in [
             "http://127.0.0.1:8080/",
             "http://192.168.1.2/dav",

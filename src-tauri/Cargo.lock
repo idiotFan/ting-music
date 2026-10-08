@@ -4438,6 +4438,7 @@ dependencies = [
  "objc2",
  "objc2-foundation",
  "objc2-ui-kit",
+ "percent-encoding",
  "quick-xml",
  "regex",
  "reqwest 0.12.28",

@@ -561,6 +561,9 @@ mod tests {
                                 xml += "</d:multistatus>";
                                 (207, String::new(), xml.into_bytes())
                             }
+                            "PROPFIND" if !s.dirs.contains(&parent(&path)) => {
+                                (409, String::new(), Vec::new())
+                            }
                             "PROPFIND" => (404, String::new(), Vec::new()),
                             "MKCOL" if s.dirs.contains(&path) => (405, String::new(), Vec::new()),
                             "MKCOL" if !s.dirs.contains(&parent(&path)) => {
