@@ -364,9 +364,19 @@ pub fn local_forget_folder(app: tauri::AppHandle, folder: String) -> Vec<String>
 
 /// Re-admits remembered files at launch; returns the paths that no longer exist.
 #[tauri::command]
-pub fn local_restore(app: tauri::AppHandle, paths: Vec<String>) -> Result<Vec<String>, String> {
+pub async fn local_restore(
+    app: tauri::AppHandle,
+    paths: Vec<String>,
+) -> Result<Vec<String>, String> {
+    // Stat calls on a sleeping or unreachable drive can stall for seconds;
+    // keep them off the window's main thread.
+    tauri::async_runtime::spawn_blocking(move || restore(&app, &paths))
+        .await
+        .map_err(|_| "本地音乐恢复失败".to_string())
+}
+fn restore(app: &tauri::AppHandle, paths: &[String]) -> Vec<String> {
     let mut missing = Vec::new();
-    for path in &paths {
+    for path in paths {
         let file = Path::new(path);
         // Only audio files are ever re-admitted: the page's list cannot open
         // anything else on disk to the web view.
@@ -374,29 +384,35 @@ pub fn local_restore(app: tauri::AppHandle, paths: Vec<String>) -> Result<Vec<St
             continue;
         }
         if file.is_file() {
-            admit(&app, path);
+            admit(app, path);
         } else {
             missing.push(path.clone());
         }
     }
-    if let Some(dir) = cover_dir(&app) {
+    if let Some(dir) = cover_dir(app) {
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
-                admit(&app, &entry.path().to_string_lossy());
+                admit(app, &entry.path().to_string_lossy());
             }
         }
     }
-    Ok(missing)
+    missing
 }
 
 /// Lyrics for a library file: the `.lrc` beside it, else the embedded tag.
 /// Only files already admitted to the asset protocol can be asked about.
 #[tauri::command]
-pub fn local_lyric(app: tauri::AppHandle, path: String) -> Option<String> {
-    let file = Path::new(&path);
-    if !is_audio(file) || !app.asset_protocol_scope().is_allowed(file) {
+pub async fn local_lyric(app: tauri::AppHandle, path: String) -> Option<String> {
+    let file = PathBuf::from(path);
+    if !is_audio(&file) || !app.asset_protocol_scope().is_allowed(&file) {
         return None;
     }
+    tauri::async_runtime::spawn_blocking(move || lyric(&file))
+        .await
+        .ok()
+        .flatten()
+}
+fn lyric(file: &Path) -> Option<String> {
     let lrc = file.with_extension("lrc");
     if let Ok(meta) = std::fs::metadata(&lrc) {
         if meta.len() <= 1024 * 1024 {

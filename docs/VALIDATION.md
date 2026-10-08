@@ -5,6 +5,7 @@
 - 内容：全平台新增 WebDAV 传输（坚果云预设 + 其他 WebDAV），沿用 iCloud 的设备快照与字段级合并；密码只进系统凭据存储，详见 [WebDAV 同步说明](WEBDAV-SYNC.md)。
 - 验证：Rust 本地 WebDAV 服务器集成测试（认证失败、MKCOL、双设备合并、ETag 跳过、PUT 无 ETag、503 重试、云端损坏、密码不泄露）与 XML/URL 单元测试；clippy `-D warnings`；Playwright 195 项中仅 Linux 必挂的 macOS 品牌留白用例失败。真实 Linux Tauri 应用连接本地 WsgiDAV，以两个独立 XDG 数据目录模拟两台设备，验收错误密码 / 服务器不可达提示、钥匙串存取与 132 个本机及远端文件无密码、歌单与收藏双向合并、重启免重输密码、离线编辑保留并恢复、无改动时每轮仅 1 次 PROPFIND、停用后本机与远端数据保留、400×650 窄窗口。
 - 未实机：真实坚果云账号、macOS / Windows / 手机端凭据存储与界面、实际音频播放。
+- Linux 卡死（Manjaro）：在 Arch 容器（WebKitGTK 2.54 / Mesa 26.2）复现，0.9.9 与 1.0.0 原始 AppImage 的 WebKit 页面进程均报 `Could not create default EGL display: EGL_BAD_PARAMETER. Aborting...`，窗口空白无响应；原因是 AppImage 捆绑了构建机（Ubuntu 24.04）的 libwayland-*，与新版宿主 Mesa 不匹配。CI 打包后用 `scripts/appimage-system-wayland.py` 去掉这四个库、重新封装并重签更新包。修复后 AppImage 在 Arch 容器与 Ubuntu 24.04 上均正常显示界面；deb 不受影响。另将本地曲库恢复与歌词读取移出主线程，NVIDIA 专有驱动下默认关闭 WebKit DMA-BUF 渲染（用户已设置时不覆盖）。未在真实 Manjaro / NVIDIA 硬件验收。
 
 ## 0.9.9 UI 整改与发布 · 2026-10-05
 

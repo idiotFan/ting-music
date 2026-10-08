@@ -173,6 +173,17 @@ extern "C" {
     fn XInitThreads() -> std::os::raw::c_int;
 }
 
+/// WebKitGTK's DMA-BUF renderer leaves the window blank or frozen on the
+/// proprietary NVIDIA driver; an explicit user setting still wins.
+#[cfg(target_os = "linux")]
+fn webkit_env() {
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none()
+        && std::path::Path::new("/proc/driver/nvidia/version").exists()
+    {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // GTK, WebKit and the global-shortcut listener each talk to X11 from their
@@ -181,6 +192,8 @@ pub fn run() {
     unsafe {
         XInitThreads();
     }
+    #[cfg(target_os = "linux")]
+    webkit_env();
     let builder = tauri::Builder::default();
     #[cfg(target_os = "android")]
     let builder = builder
