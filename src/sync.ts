@@ -92,24 +92,27 @@ export function setupSync(changed: () => void) {
       ? "正在连接 WebDAV…"
       : running
         ? "正在处理歌单修改…"
-        : active
-          ? status!.pending
-            ? "等待 iCloud 下载其他设备的修改"
-            : `${webdav ? `已连接${status!.server === NUTSTORE_HOST ? "坚果云" : ` ${status!.server}`} · ${status!.account} · ` : ""}${
-                status!.lastExchange
-                  ? `${webdav ? "上次同步" : "已与同步文件夹交换"} · ${new Date(status!.lastExchange * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-                  : webdav
-                    ? "等待同步"
-                    : "已连接文件夹，等待同步"
-              }`
-          : "未开启同步 · 歌单仍保存在本机";
+        : active && active !== view
+          ? `当前使用${active === "icloud" ? " iCloud 云盘" : "坚果云 / WebDAV"}同步；连接后将改用${view === "icloud" ? " iCloud 云盘" : " WebDAV"}`
+          : active
+            ? status!.pending
+              ? "等待 iCloud 下载其他设备的修改"
+              : `${webdav ? `已连接${status!.server === NUTSTORE_HOST ? "坚果云" : ` ${status!.server}`} · ${status!.account} · ` : ""}${
+                  status!.lastExchange
+                    ? `${webdav ? "上次同步" : "已与同步文件夹交换"} · ${new Date(status!.lastExchange * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                    : webdav
+                      ? "等待同步"
+                      : "已连接文件夹，等待同步"
+                }`
+            : "未开启同步 · 歌单仍保存在本机";
     if (dialog.open && q("#sync-status").textContent !== previousStatus)
       animateContent(q("#sync-status"), { distance: 3, duration: 160 });
-    q("#sync-folder").textContent = !status?.folder
-      ? ""
-      : webdav
-        ? `文件夹：${status.folder}/Ting-Sync-v1`
-        : `文件夹：${status.folder}${status.icloud ? "" : "（请确认位于 iCloud 云盘，本地文件夹不会跨设备同步）"}`;
+    q("#sync-folder").textContent =
+      !status?.folder || active !== view
+        ? ""
+        : webdav
+          ? `文件夹：${status.folder}/Ting-Sync-v1`
+          : `文件夹：${status.folder}${status.icloud ? "" : "（请确认位于 iCloud 云盘，本地文件夹不会跨设备同步）"}`;
     q("#sync-warning").textContent = error || status?.warning || "";
     q("#sync-warning").hidden = !(error || status?.warning);
     q("#sync-icloud").hidden = view !== "icloud";
