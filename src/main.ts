@@ -741,7 +741,7 @@ function songRowMarkup(song: Song) {
       : song.fee === 1
         ? "<em>VIP</em>"
         : "";
-  return `<span class="row-number"></span><div class="song-info">${coverMarkup(song)}<div><button class="song-title" aria-label="${mobileDevice ? "播放" : "选中"} ${esc(song.name)}" aria-pressed="false">${hl(song.name, q)}</button>${badge}<small><span class="source-badge" data-source="${song.source || "netease"}">${sourceName(song)}</span>${downloadedCopy(song) ? '<span class="quality-badge downloaded">已下载</span>' : qualityBadge(song)} ${artists}${album}</small></div></div><span class="album">${esc(song.album)}</span><span class="song-duration">${song.duration ? formatTime(song.duration / 1000) : "—"}</span><div class="row-actions"><button class="icon-button favorite" data-favorite="${songKey(song)}" ${transient(song) ? "disabled" : ""}>${icon("Heart")}</button><button class="icon-button" data-${inQueue ? "remove" : "enqueue"}="${songKey(song)}" aria-label="${inQueue ? "移出队列" : "加入队列"} ${esc(song.name)}">${icon(inQueue ? "X" : "Plus")}</button><button class="icon-button" data-song-menu="${songKey(song)}" aria-label="歌曲操作 ${esc(song.name)}" ${transient(song) ? "disabled" : ""}>${icon("Ellipsis")}</button></div>`;
+  return `<span class="row-number"></span><div class="song-info">${coverMarkup(song)}<div><button class="song-title" aria-label="${mobileDevice ? "播放" : "选中"} ${esc(song.name)}" aria-pressed="false">${hl(song.name, q)}</button>${badge}<small>${song.missing ? '<span class="source-badge missing">文件丢失</span>' : `<span class="source-badge" data-source="${song.source || "netease"}">${sourceName(song)}</span>`}${downloadedCopy(song) ? '<span class="quality-badge downloaded">已下载</span>' : qualityBadge(song)} ${artists}${album}</small></div></div><span class="album">${esc(song.album)}</span><span class="song-duration">${song.duration ? formatTime(song.duration / 1000) : "—"}</span><div class="row-actions"><button class="icon-button favorite" data-favorite="${songKey(song)}" ${transient(song) ? "disabled" : ""}>${icon("Heart")}</button><button class="icon-button" data-${inQueue ? "remove" : "enqueue"}="${songKey(song)}" aria-label="${inQueue ? "移出队列" : "加入队列"} ${esc(song.name)}">${icon(inQueue ? "X" : "Plus")}</button><button class="icon-button" data-song-menu="${songKey(song)}" aria-label="歌曲操作 ${esc(song.name)}" ${transient(song) ? "disabled" : ""}>${icon("Ellipsis")}</button></div>`;
 }
 /** Artist / album hero and the artist page's tabs, above the list. */
 function renderDetailHeader() {
@@ -1019,7 +1019,7 @@ function renderSongs() {
     ]);
     if (!row || row.dataset.signature !== signature) {
       const next = document.createElement("div");
-      next.className = "song-row";
+      next.className = song.missing ? "song-row missing" : "song-row";
       next.dataset.song = songKey(song);
       next.dataset.signature = signature;
       next.tabIndex = 0;

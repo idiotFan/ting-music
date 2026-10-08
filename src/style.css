@@ -1018,6 +1018,13 @@ main {
   color: var(--accent);
   border-color: var(--line);
 }
+.source-badge.missing {
+  color: var(--error);
+}
+.song-row.missing .song-title,
+.song-row.missing .song-info small > :not(.missing) {
+  color: var(--muted);
+}
 .account-platforms {
   display: flex;
   gap: 8px;
