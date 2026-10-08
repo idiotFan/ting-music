@@ -17,6 +17,7 @@
     "allow-system-media-update",
     "allow-sync-choose-folder",
     "allow-sync-disconnect",
+    "allow-sync-webdav-connect",
     "allow-sync-library",
     "allow-qq-request",
     "allow-search-songs",

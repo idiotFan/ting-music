@@ -1018,6 +1018,13 @@ main {
   color: var(--accent);
   border-color: var(--line);
 }
+.source-badge.missing {
+  color: var(--error);
+}
+.song-row.missing .song-title,
+.song-row.missing .song-info small > :not(.missing) {
+  color: var(--muted);
+}
 .account-platforms {
   display: flex;
   gap: 8px;
@@ -1614,6 +1621,58 @@ button.brand:active {
 }
 .sync-actions button {
   min-height: 44px;
+}
+.sync-providers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin: 16px 0 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--bg);
+}
+.sync-providers[hidden] {
+  display: none;
+}
+.sync-providers button {
+  min-height: 40px;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+}
+.sync-providers button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
+}
+#sync-webdav label {
+  display: block;
+  margin: 14px 0 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+#sync-webdav input,
+#sync-webdav select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+}
+#webdav-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+}
+.mobile-device #sync-webdav input,
+.mobile-device #sync-webdav select {
+  font-size: 16px;
 }
 #sync-button[data-sync-state="connected"] {
   color: var(--accent);

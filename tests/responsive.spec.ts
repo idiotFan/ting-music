@@ -54,22 +54,37 @@ test("desktop window splits into two columns when wide and stacks when narrow", 
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(1280);
   // A media-query-only switch never rebuilds the DOM or resets the list scroll.
-  await page.locator(".main-scroll").evaluate((el) => (el.scrollTop = 120));
+  // Text reflows at each width and the browser's scroll anchoring may shift
+  // scrollTop by a few pixels, so check the row the reader was looking at.
+  const scroller = page.locator(".main-scroll");
+  await scroller.evaluate((el) => (el.scrollTop = 120));
+  const topRow = () =>
+    scroller.evaluate((el) => {
+      const top = el.getBoundingClientRect().top;
+      const rows = [...el.querySelectorAll<HTMLElement>(".song-row")];
+      const row = rows.find((r) => r.getBoundingClientRect().bottom > top);
+      return { row: row?.textContent ?? "", scrollTop: el.scrollTop };
+    });
+  const before = await topRow();
+  expect(before.row).not.toBe("");
+  const row = await scroller.locator(".song-row").first().elementHandle();
   for (const width of [760, 480]) {
     await page.setViewportSize({ width, height: 700 });
     ({ now, nav, main } = await boxes(page));
     expect(now.x).toBe(main.x);
     expect(main.y).toBeGreaterThanOrEqual(nav.y + nav.height);
-    expect(
-      await page.locator(".main-scroll").evaluate((el) => el.scrollTop),
-    ).toBe(120);
+    const after = await topRow();
+    expect(after.scrollTop).toBeGreaterThan(0);
+    expect(after.row).toBe(before.row);
   }
   await page.setViewportSize({ width: 1280, height: 800 });
   ({ now, main } = await boxes(page));
   expect(main.x + main.width).toBeLessThanOrEqual(now.x);
-  expect(
-    await page.locator(".main-scroll").evaluate((el) => el.scrollTop),
-  ).toBe(120);
+  const restored = await topRow();
+  expect(restored.scrollTop).toBeGreaterThan(0);
+  expect(restored.row).toBe(before.row);
+  // The same nodes are still mounted: nothing was re-rendered.
+  expect(await row!.evaluate((el) => el.isConnected)).toBe(true);
 });
 
 test("desktop two columns leave room for the lyrics pane on the right", async ({

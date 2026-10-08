@@ -59,6 +59,19 @@ async function setup(
         }
         if (cmd === "sync_disconnect") {
           w.__syncBackend.connected = false;
+          w.__syncBackend.webdav = null;
+          return null;
+        }
+        if (cmd === "sync_webdav_connect") {
+          (w.__webdavCalls ||= []).push(structuredClone(args));
+          if (args.password !== "app-pass-123")
+            throw "WebDAV 账号或密码错误。坚果云请填写「第三方应用密码」，不是登录密码";
+          w.__syncBackend.connected = true;
+          w.__syncBackend.webdav = {
+            server: new URL(args.server).hostname,
+            account: args.username,
+            folder: args.folder,
+          };
           return null;
         }
         if (cmd !== "sync_library") return null;
@@ -109,8 +122,15 @@ async function setup(
           playlists: structuredClone(backend.lists),
           ack: args.batches.map((b: any) => b.id),
           connected: backend.connected,
-          folder: backend.connected ? "Ting" : null,
-          icloud: true,
+          folder: backend.webdav?.folder ?? (backend.connected ? "Ting" : null),
+          icloud: !backend.webdav,
+          provider: backend.connected
+            ? backend.webdav
+              ? "webdav"
+              : "icloud"
+            : null,
+          server: backend.webdav?.server ?? null,
+          account: backend.webdav?.account ?? null,
           pending: false,
           lastExchange: backend.connected ? 1800000000 : null,
         };
@@ -139,12 +159,15 @@ const otherPlatforms = [
   { platform: "Linux armv8l", userAgent: "Mozilla/5.0 (Linux; Android 15)" },
 ];
 for (const device of otherPlatforms) {
-  test(`${device.platform} acknowledges local favorites and playlists without exposing iCloud`, async ({
+  test(`${device.platform} acknowledges local favorites and playlists and offers only WebDAV`, async ({
     page,
   }) => {
     await setup(page, device);
-    await expect(page.locator("#sync-button")).toBeHidden();
-    await expect(page.locator("#sync-dialog")).toHaveCount(0);
+    await page.locator("#sync-button").tap();
+    await expect(page.locator("#sync-webdav")).toBeVisible();
+    await expect(page.locator(".sync-providers")).toBeHidden();
+    await expect(page.locator("#sync-icloud")).toBeHidden();
+    await page.locator("#sync-close").tap();
     await page.locator('[data-favorite="netease:1"]').tap();
     await expect(page.locator("#fav-count")).toHaveText("1");
     await playlists(page);
@@ -507,4 +530,100 @@ test("0.9.2 already acknowledged playlists upgrade without recreating them or dr
   expect(edits[0].add).toHaveLength(1);
   await playlists(page);
   await expect(page.locator(".playlist-card")).toHaveCount(1);
+});
+
+test("Nutstore WebDAV connects on Windows without persisting the app password", async ({
+  page,
+}) => {
+  await setup(page, otherPlatforms[0]);
+  await page.locator("#sync-button").tap();
+  await expect(page.locator("#webdav-service")).toHaveValue("nutstore");
+  await expect(page.locator("#webdav-server")).toBeHidden();
+  await expect(page.locator("#webdav-hint")).toContainText("第三方应用管理");
+  await page.locator("#webdav-connect").tap();
+  await expect(page.locator("#sync-warning")).toContainText("请填写账号");
+  await page.locator("#webdav-user").fill(" me@example.com ");
+  await page.locator("#webdav-password").fill("login-password");
+  await page.locator("#webdav-connect").tap();
+  await expect(page.locator("#sync-warning")).toContainText("第三方应用密码");
+  await expect(page.locator("#sync-status")).toContainText("未开启");
+  await page.locator("#webdav-password").fill("app-pass-123");
+  await page.locator("#webdav-connect").tap();
+  await expect(page.locator("#sync-status")).toContainText(
+    "已连接坚果云 · me@example.com · 上次同步",
+  );
+  await expect(page.locator("#sync-warning")).toBeHidden();
+  await expect(page.locator("#sync-folder")).toHaveText(
+    "文件夹：Ting/Ting-Sync-v1",
+  );
+  await expect(page.locator("#sync-webdav")).toBeHidden();
+  expect(
+    await page.evaluate(() => (window as any).__webdavCalls.at(-1)),
+  ).toEqual({
+    server: "https://dav.jianguoyun.com/dav/",
+    folder: "Ting",
+    username: "me@example.com",
+    password: "app-pass-123",
+  });
+  const calls = await page.evaluate(() => (window as any).__syncCalls);
+  expect(calls.at(-1).exchange).toBe(true);
+  expect(JSON.stringify(calls)).not.toContain("app-pass-123");
+  expect(
+    await page.evaluate(() =>
+      Object.values(localStorage).some((v) => v.includes("app-pass-123")),
+    ),
+  ).toBe(false);
+  await expect(page.locator("#sync-button")).toHaveAttribute(
+    "data-sync-state",
+    "connected",
+  );
+
+  await page.locator("#sync-edit").tap();
+  await expect(page.locator("#webdav-user")).toHaveValue("me@example.com");
+  await expect(page.locator("#webdav-password")).toHaveValue("");
+  await page.locator("#webdav-cancel").tap();
+  await expect(page.locator("#sync-webdav")).toBeHidden();
+
+  await page.evaluate(() => {
+    (window as any).__syncBackend.lists[0].name = "来自坚果云的改名";
+  });
+  await page.locator("#sync-now").tap();
+  await page.locator("#sync-disconnect").tap();
+  await expect(page.locator("#sync-status")).toContainText("未开启");
+  await expect(page.locator("#sync-webdav")).toBeVisible();
+  await page.locator("#sync-close").tap();
+  await playlists(page);
+  await expect(page.locator(".playlist-card")).toContainText(
+    "来自坚果云的改名",
+  );
+});
+test("Apple devices choose between iCloud and a custom WebDAV server", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.locator("#sync-button").tap();
+  await expect(page.locator("#sync-connect")).toBeVisible();
+  await expect(page.locator("#sync-webdav")).toBeHidden();
+  await page.locator('[data-provider="webdav"]').tap();
+  await expect(page.locator("#sync-icloud")).toBeHidden();
+  await page.locator("#webdav-service").selectOption("custom");
+  await expect(page.locator("#webdav-password-label")).toHaveText("密码");
+  await page.locator("#webdav-user").fill("nas-user");
+  await page.locator("#webdav-password").fill("app-pass-123");
+  await page.locator("#webdav-folder").fill("音乐/Ting");
+  await page.locator("#webdav-connect").tap();
+  await expect(page.locator("#sync-warning")).toContainText("服务器地址");
+  await page.locator("#webdav-server").fill("https://nas.example.com/dav");
+  await page.locator("#webdav-connect").tap();
+  await expect(page.locator("#sync-status")).toContainText(
+    "已连接 nas.example.com · nas-user",
+  );
+  await expect(page.locator("#sync-folder")).toHaveText(
+    "文件夹：音乐/Ting/Ting-Sync-v1",
+  );
+  await page.locator('[data-provider="icloud"]').tap();
+  await expect(page.locator("#sync-connect")).toHaveText("选择 iCloud 文件夹");
+  await expect(page.locator("#sync-now")).toBeHidden();
+  await page.locator('[data-provider="webdav"]').tap();
+  await expect(page.locator("#sync-now")).toBeVisible();
 });

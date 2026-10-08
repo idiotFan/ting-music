@@ -1,6 +1,6 @@
 [package]
 name = "ting-music"
-version = "0.9.9"
+version = "1.0.0"
 description = "A compact player for NetEase Cloud Music and QQ Music"
 authors = ["Ting contributors"]
 edition = "2021"
@@ -31,6 +31,7 @@ md-5 = "0.10"
 symphonia = { version = "0.5.5", default-features = false, features = ["flac", "mp3"] }
 lofty = "0.22.4"
 time = "0.3"
+quick-xml = "0.42"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"

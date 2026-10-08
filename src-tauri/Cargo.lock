@@ -4422,7 +4422,7 @@ dependencies = [
 
 [[package]]
 name = "ting-music"
-version = "0.9.9"
+version = "1.0.0"
 dependencies = [
  "aes",
  "base64 0.22.1",
@@ -4438,6 +4438,7 @@ dependencies = [
  "objc2",
  "objc2-foundation",
  "objc2-ui-kit",
+ "quick-xml",
  "regex",
  "reqwest 0.12.28",
  "security-framework",

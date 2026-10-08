@@ -139,9 +139,10 @@ test("a remembered file that vanished is flagged instead of played, and can be f
   await page.reload();
   // The local view and the last song come back; the missing file is flagged.
   await expect(page.locator('[data-view="local"]')).toHaveClass(/active/);
-  await expect(page.locator('[data-song="local:-101"]')).toContainText(
-    "文件丢失",
-  );
+  await expect(
+    page.locator('[data-song="local:-101"] .source-badge.missing'),
+  ).toBeVisible();
+  await expect(page.locator('[data-song="local:-101"]')).toHaveClass(/missing/);
   await expect(page.locator("#now-name")).toHaveText("晚风");
   await page.locator("#toggle").click();
   await expect(page.locator("#track-tag")).toHaveText("文件丢失");

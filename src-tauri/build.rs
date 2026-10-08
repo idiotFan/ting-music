@@ -29,6 +29,7 @@ fn main() {
             "system_media_update",
             "sync_choose_folder",
             "sync_disconnect",
+            "sync_webdav_connect",
             "sync_library",
             "qq_request",
             "search_songs",
