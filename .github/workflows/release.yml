@@ -1,0 +1,183 @@
+name: Publish release from CI artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v1.1.0)'
+        required: true
+        type: string
+      run_id:
+        description: 'Successful Quality and security CI run ID'
+        required: true
+        type: string
+      updater_notes:
+        description: 'Short release notes written into latest.json'
+        required: false
+        default: ''
+        type: string
+      body:
+        description: 'Optional GitHub Release Markdown body (leave empty for default notes)'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    name: Assemble and publish ${{ inputs.tag }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: Download signed CI artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/ting-release/raw /tmp/ting-release/assets
+          gh run download "${{ inputs.run_id }}" -R "${{ github.repository }}" -D /tmp/ting-release/raw
+          find /tmp/ting-release/raw -maxdepth 3 -ls
+
+      - name: Stage release assets and updater manifest
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_RUN_ID: ${{ inputs.run_id }}
+          INPUT_UPDATER_NOTES: ${{ inputs.updater_notes }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, shutil, stat, subprocess, tarfile, zipfile
+          from pathlib import Path
+
+          root = Path.cwd()
+          raw = Path("/tmp/ting-release/raw")
+          out = Path("/tmp/ting-release/assets")
+          pkg = json.loads((root / "package.json").read_text())
+          tauri = json.loads((root / "src-tauri/tauri.conf.json").read_text())
+          ver = pkg["version"]
+          build = tauri["bundle"]["macOS"]["bundleVersion"]
+          tag = os.environ["INPUT_TAG"]
+          if tag != f"v{ver}":
+              raise SystemExit(f"Tag {tag} does not match package.json version v{ver}")
+          commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+          short = commit[:7]
+          prefix = f"Ting-{ver}-build-{build}"
+
+          pairs = [
+              (raw / f"{prefix}-macOS/听 · Ting.app.tar.gz", out / f"Ting-v{ver}-macOS-AppleSilicon.app.tar.gz"),
+              (raw / f"{prefix}-macOS-Intel/听 · Ting.app.tar.gz", out / f"Ting-v{ver}-macOS-Intel.app.tar.gz"),
+              (raw / f"{prefix}-Windows/nsis/听 · Ting_{ver}_x64-setup.exe", out / f"Ting-v{ver}-Windows-x64-Setup.exe"),
+              (raw / f"{prefix}-Linux/appimage/Ting_{ver}_amd64.AppImage", out / f"Ting-v{ver}-Linux-x64.AppImage"),
+              (raw / f"{prefix}-Linux/deb/Ting_{ver}_amd64.deb", out / f"Ting-v{ver}-Linux-x64.deb"),
+              (raw / f"{prefix}-Linux-ARM64/appimage/Ting_{ver}_aarch64.AppImage", out / f"Ting-v{ver}-Linux-ARM64.AppImage"),
+              (raw / f"{prefix}-Linux-ARM64/deb/Ting_{ver}_arm64.deb", out / f"Ting-v{ver}-Linux-ARM64.deb"),
+          ]
+          for src, dst in pairs:
+              assert src.exists(), f"Missing artifact file: {src}"
+              sig = Path(str(src) + ".sig")
+              assert sig.exists(), f"Missing signature file: {sig}"
+              shutil.copy2(src, dst)
+              shutil.copy2(sig, Path(str(dst) + ".sig"))
+
+          apk_src = raw / f"{prefix}-Android/app-universal-debug.apk"
+          assert apk_src.exists(), f"Missing Android APK: {apk_src}"
+          shutil.copy2(apk_src, out / f"Ting-v{ver}-Android-arm64-Debug-{short}.apk")
+
+          def tar_gz_to_zip(tgz_path: Path, zip_path: Path):
+              with tarfile.open(tgz_path, "r:gz") as tf, zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                  for m in tf.getmembers():
+                      name = m.name.lstrip("./")
+                      if not name:
+                          continue
+                      zi = zipfile.ZipInfo(name + ("/" if m.isdir() and not name.endswith("/") else ""))
+                      zi.create_system = 3
+                      if m.isdir():
+                          zi.external_attr = ((stat.S_IFDIR | (m.mode & 0o777)) << 16) | 0x10
+                          zf.writestr(zi, b"")
+                      elif m.issym():
+                          zi.external_attr = (stat.S_IFLNK | 0o777) << 16
+                          zf.writestr(zi, m.linkname.encode("utf-8"))
+                      elif m.isfile():
+                          zi.external_attr = (stat.S_IFREG | (m.mode & 0o777)) << 16
+                          f = tf.extractfile(m)
+                          assert f is not None
+                          zf.writestr(zi, f.read())
+
+          tar_gz_to_zip(out / f"Ting-v{ver}-macOS-AppleSilicon.app.tar.gz", out / f"Ting-v{ver}-macOS-AppleSilicon.zip")
+          tar_gz_to_zip(out / f"Ting-v{ver}-macOS-Intel.app.tar.gz", out / f"Ting-v{ver}-macOS-Intel.zip")
+
+          subprocess.run(
+              ["git", "archive", "--format=zip", "--prefix=ting-music/", f"--output={out / f'Ting-v{ver}-source.zip'}", commit],
+              cwd=root,
+              check=True,
+          )
+
+          notes = os.environ["INPUT_UPDATER_NOTES"].strip() or f"听 · Ting {ver}"
+          subprocess.run(
+              [
+                  "node",
+                  "scripts/updater-manifest.mjs",
+                  "--out",
+                  str(out / "latest.json"),
+                  "--notes",
+                  notes,
+                  f"darwin-aarch64={out / f'Ting-v{ver}-macOS-AppleSilicon.app.tar.gz'}",
+                  f"darwin-x86_64={out / f'Ting-v{ver}-macOS-Intel.app.tar.gz'}",
+                  f"windows-x86_64={out / f'Ting-v{ver}-Windows-x64-Setup.exe'}",
+                  f"linux-x86_64-appimage={out / f'Ting-v{ver}-Linux-x64.AppImage'}",
+                  f"linux-x86_64-deb={out / f'Ting-v{ver}-Linux-x64.deb'}",
+                  f"linux-aarch64-appimage={out / f'Ting-v{ver}-Linux-ARM64.AppImage'}",
+                  f"linux-aarch64-deb={out / f'Ting-v{ver}-Linux-ARM64.deb'}",
+              ],
+              cwd=root,
+              check=True,
+          )
+
+          files = sorted(p for p in out.iterdir() if p.is_file() and p.name not in ("SHA256SUMS.txt", "release.json"))
+          checksums = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
+          (out / "SHA256SUMS.txt").write_text("".join(f"{digest}  {name}\n" for name, digest in checksums.items()))
+          (out / "release.json").write_text(
+              json.dumps(
+                  {
+                      "version": ver,
+                      "commit": commit,
+                      "ciRun": int(os.environ["INPUT_RUN_ID"]),
+                      "bundleVersion": build,
+                      "sha256": checksums,
+                  },
+                  indent=2,
+              )
+              + "\n"
+          )
+          print(f"Prepared {len(list(out.iterdir()))} release files for {tag} ({short})")
+          PY
+          cat /tmp/ting-release/assets/latest.json
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_BODY: ${{ inputs.body }}
+        run: |
+          ver="${INPUT_TAG#v}"
+          if [ -n "$INPUT_BODY" ]; then
+            printf '%s\n' "$INPUT_BODY" > /tmp/ting-release/notes.md
+          else
+            printf '# 听 · Ting %s\n' "$ver" > /tmp/ting-release/notes.md
+          fi
+          gh release create "$INPUT_TAG" /tmp/ting-release/assets/* \
+            --repo "${{ github.repository }}" \
+            --title "听 · Ting $ver" \
+            --notes-file /tmp/ting-release/notes.md \
+            --latest
