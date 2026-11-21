@@ -392,8 +392,15 @@ export function setupSettingsPanel(o: Options) {
     keepFocus(dialog, () => (dialog.innerHTML = markup));
     const body = dialog.querySelector<HTMLElement>(".settings-body");
     if (body) {
-      if (prevScroll > 0) body.scrollTop = prevScroll;
-      // Release programmatic jump lock only on real user wheel/touch scroll,
+      let restoringScroll = false;
+      if (prevScroll > 0) {
+        restoringScroll = true;
+        body.scrollTop = prevScroll;
+        requestAnimationFrame(() => {
+          restoringScroll = false;
+        });
+      }
+      // Release programmatic jump lock only on real user wheel/touch/scrollbar scroll,
       // so clicking a bottom section never gets hijacked back by scroll-spy.
       const unlockOnUserScroll = () => {
         jumpLocked = false;
@@ -403,13 +410,17 @@ export function setupSettingsPanel(o: Options) {
       body.addEventListener("touchstart", unlockOnUserScroll, {
         passive: true,
       });
-      body.addEventListener("pointerdown", unlockOnUserScroll, {
-        passive: true,
-      });
+      body.addEventListener(
+        "pointerdown",
+        (ev) => {
+          if (ev.target === body) unlockOnUserScroll();
+        },
+        { passive: true },
+      );
       body.addEventListener(
         "scroll",
         () => {
-          if (jumpLocked) return;
+          if (jumpLocked || restoringScroll) return;
           const items = [
             ...body.querySelectorAll<HTMLElement>("[data-settings-section]"),
           ];
@@ -541,7 +552,7 @@ export function setupSettingsPanel(o: Options) {
     const scale = el.closest<HTMLElement>("[data-scale]");
     if (scale) {
       setPageScale(Number(scale.dataset.scale));
-      return render();
+      return;
     }
     const dir = el.closest<HTMLElement>("[data-download-dir]");
     if (dir) {

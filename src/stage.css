@@ -240,10 +240,11 @@ html[data-ambient="on"] .stage-ambient {
     width: 54%;
     height: 54%;
     border-radius: 50%;
+    rotate: var(--vinyl-deg, 0deg);
     box-shadow:
       0 0 0 2px rgb(0 0 0 / 0.65),
       0 0 0 4px rgb(255 255 255 / 0.08);
-    will-change: transform;
+    will-change: transform, rotate;
   }
   /* 3D machined stainless-steel center spindle */
   body.stage-vinyl .now-cover::after {

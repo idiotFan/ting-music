@@ -2510,6 +2510,7 @@ document.addEventListener("keydown", (e) => {
 });
 $(".brand").addEventListener("click", (e) => {
   e.preventDefault();
+  if (stage.isTheater()) stage.setTheater(false);
   if (view !== "discover") setView("discover");
 });
 $("#import-top").onclick = pickLocalFiles;

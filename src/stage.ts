@@ -240,22 +240,16 @@ export function setupStage(options: {
   let lastFrame = 0;
 
   function applyVinylRotation() {
-    const disc = nowCover.firstElementChild as HTMLElement | null;
-    if (!disc) return;
-    if (vinylMode && vinylAngle !== 0) {
-      disc.style.transform = `rotate(${vinylAngle.toFixed(2)}deg)`;
-    } else if (!vinylMode && disc.style.transform) {
-      disc.style.removeProperty("transform");
+    if (vinylMode) {
+      nowCover.style.setProperty("--vinyl-deg", `${vinylAngle.toFixed(2)}deg`);
+    } else {
+      nowCover.style.removeProperty("--vinyl-deg");
     }
   }
 
   function clearVinylRotation() {
     vinylVelocity = 0;
-    nowCover
-      .querySelectorAll<HTMLElement>("img, .fallback-cover")
-      .forEach((n) => {
-        n.style.removeProperty("transform");
-      });
+    nowCover.style.removeProperty("--vinyl-deg");
   }
 
   function applyVinyl(animate = false) {

@@ -58,6 +58,7 @@ async function desktopFixture(page: Page) {
         fee: 0,
       }));
       localStorage.setItem("ting.playlist-filter", "netease");
+      w.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
       w.__TAURI_INTERNALS__ = {
         transformCallback: () => 1,
         invoke: async (cmd: string, args: any = {}) => {
@@ -264,10 +265,15 @@ test("desktop right-click opens song menu, and vinyl & theater stage modes work 
   await page.locator("#toggle").click();
   await expect(page.locator("body")).toHaveAttribute("data-playback", "paused");
   await page.waitForTimeout(300);
-  const pausedTransform = await page
-    .locator("#now-cover img")
-    .evaluate((el) => el.style.transform);
-  expect(pausedTransform).toMatch(/^rotate\([1-9]/);
+  const pausedState = await page.locator("#now-cover").evaluate((cover) => {
+    const img = cover.querySelector("img");
+    return {
+      varDeg: cover.style.getPropertyValue("--vinyl-deg").trim(),
+      computedRotate: img ? getComputedStyle(img).rotate : "",
+    };
+  });
+  expect(parseFloat(pausedState.varDeg)).toBeGreaterThan(1);
+  expect(parseFloat(pausedState.computedRotate)).toBeGreaterThan(1);
   await page.locator("#toggle").click();
   await expect(page.locator("body")).toHaveAttribute(
     "data-playback",
@@ -289,4 +295,237 @@ test("desktop right-click opens song menu, and vinyl & theater stage modes work 
 
   await page.keyboard.press("Escape");
   await expect(page.locator("body")).not.toHaveClass(/stage-theater/);
+});
+
+test("adversarial stress pass 1: rapid settings nav, toggles while scrolled, scale & sub-dialogs without errors", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(`pageerror: ${err.message}`));
+  page.on("console", (msg) => {
+    if (msg.type() === "error") errors.push(`console.error: ${msg.text()}`);
+  });
+
+  await page.setViewportSize({ width: 1360, height: 820 });
+  await desktopFixture(page);
+
+  await page.locator("#settings-button").click();
+  const settings = page.locator("#settings-dialog");
+  await expect(settings).toBeVisible();
+
+  // Rapidly jump across all 6 categories in non-linear order.
+  const sequence = [
+    "playback",
+    "about",
+    "desktop",
+    "playback",
+    "data",
+    "appearance",
+    "about",
+    "data",
+  ];
+  for (const id of sequence) {
+    await settings.locator(`[data-settings-jump="${id}"]`).click();
+    await expect(
+      settings.locator(`[data-settings-jump="${id}"]`),
+    ).toHaveAttribute("aria-current", "true");
+  }
+  await page.waitForTimeout(750);
+  // Clicking "data" (second-to-last) stays highlighted even after smooth scroll settles.
+  await expect(settings.locator('[data-settings-jump="data"]')).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+
+  // Jump to "desktop", toggle close-to-tray and global shortcuts while scrolled down,
+  // and verify scroll position and active nav stay intact across re-renders.
+  await settings.locator('[data-settings-jump="desktop"]').click();
+  await page.waitForTimeout(450);
+  const scrollBefore = await settings
+    .locator(".settings-body")
+    .evaluate((el) => el.scrollTop);
+  expect(scrollBefore).toBeGreaterThan(80);
+  await settings.locator("#settings-tray").click();
+  await expect(settings.locator("#settings-tray")).toBeChecked();
+  const scrollAfterTray = await settings
+    .locator(".settings-body")
+    .evaluate((el) => el.scrollTop);
+  expect(Math.abs(scrollAfterTray - scrollBefore)).toBeLessThanOrEqual(4);
+  await expect(
+    settings.locator('[data-settings-jump="desktop"]'),
+  ).toHaveAttribute("aria-current", "true");
+
+  await settings.locator("#settings-shortcuts").click();
+  await expect(settings.locator("#settings-shortcuts")).toBeChecked();
+  await expect(settings.locator(".shortcut-list")).toBeVisible();
+
+  // Scale change updates cleanly without double-render errors.
+  await settings.locator('[data-settings-jump="appearance"]').click();
+  await settings.locator('[data-scale="1.1"]').click();
+  await expect(settings.locator('[data-scale="1.1"]')).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await settings.locator('[data-scale="1"]').click();
+  await expect(settings.locator('[data-scale="1"]')).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  // Open Theme and Sound sub-dialogs from inside Settings and return cleanly.
+  await settings.locator("[data-open-theme]").click();
+  await expect(page.locator("#theme-dialog")).toBeVisible();
+  await page.locator("#theme-close").click();
+  await expect(page.locator("#theme-dialog")).toBeHidden();
+
+  await settings.locator("[data-open-sound]").click();
+  await expect(page.locator("#sound-dialog")).toBeVisible();
+  await page.locator("[data-sound-close]").click();
+  await expect(page.locator("#sound-dialog")).toBeHidden();
+
+  await settings.locator("[data-settings-close]").click();
+  await expect(settings).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
+test("adversarial stress pass 2: rapid vinyl/theater toggles, brand exit, track skip in vinyl, lyrics interaction", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(`pageerror: ${err.message}`));
+  page.on("console", (msg) => {
+    if (msg.type() === "error") errors.push(`console.error: ${msg.text()}`);
+  });
+
+  await page.setViewportSize({ width: 1440, height: 860 });
+  await desktopFixture(page);
+
+  // Start playing track 1.
+  await page.locator(".song-row").first().dblclick();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-playback",
+    "playing",
+  );
+
+  // Rapidly toggle Vinyl/Square 6 times, ending in Vinyl mode.
+  for (let i = 0; i < 5; i++) {
+    await page.locator("#stage-vinyl-toggle").click();
+    await page.waitForTimeout(40);
+  }
+  await expect(page.locator("body")).toHaveClass(/stage-vinyl/);
+  await page.waitForTimeout(600);
+
+  const degBeforeSkip = await page
+    .locator("#now-cover")
+    .evaluate((el) =>
+      parseFloat(el.style.getPropertyValue("--vinyl-deg") || "0"),
+    );
+  expect(degBeforeSkip).toBeGreaterThan(2);
+
+  // Skip to next track while Vinyl is spinning: cover crossfades while --vinyl-deg continues smoothly.
+  await page.locator("#next").click();
+  await expect(page.locator("#now-name")).toContainText("流光曲目 2");
+  await page.waitForTimeout(450);
+  const degAfterSkip = await page
+    .locator("#now-cover")
+    .evaluate((el) =>
+      parseFloat(el.style.getPropertyValue("--vinyl-deg") || "0"),
+    );
+  expect(degAfterSkip).toBeGreaterThan(2);
+
+  // Switch back to square mode: --vinyl-deg is cleared and cover transform is clean ("none").
+  await page.locator("#stage-vinyl-toggle").click();
+  await expect(page.locator("body")).not.toHaveClass(/stage-vinyl/);
+  await page.waitForTimeout(350);
+  const squareState = await page.locator("#now-cover").evaluate((cover) => {
+    const img = cover.querySelector("img");
+    return {
+      varDeg: cover.style.getPropertyValue("--vinyl-deg").trim(),
+      transform: img ? getComputedStyle(img).transform : "none",
+      rotate: img ? getComputedStyle(img).rotate : "none",
+    };
+  });
+  expect(squareState.varDeg).toBe("");
+  expect(squareState.transform).toBe("none");
+  expect(squareState.rotate).toBe("none");
+
+  // Rapidly toggle Theater mode, then verify clicking .brand exits Theater mode cleanly.
+  await page.locator("#stage-theater-toggle").click();
+  await expect(page.locator("body")).toHaveClass(/stage-theater/);
+  await page.locator("#stage-theater-toggle").click();
+  await expect(page.locator("body")).not.toHaveClass(/stage-theater/);
+  await page.locator("#stage-theater-toggle").click();
+  await expect(page.locator("body")).toHaveClass(/stage-theater/);
+  await page.locator(".brand").click();
+  await expect(page.locator("body")).not.toHaveClass(/stage-theater/);
+  await expect(page.locator(".library")).toBeVisible();
+
+  // Lyrics interaction: open, scroll manually, click lyric line to seek, close & reopen rapidly.
+  await expect(page.locator("#lyrics-panel")).toBeVisible();
+  await expect(page.locator("#lyrics p").nth(3)).toBeVisible();
+  await page.locator("#lyrics p").nth(3).click();
+  await expect(page.locator("#lyrics p").nth(3)).toHaveClass(/current/);
+  for (let i = 0; i < 4; i++) {
+    await page.locator("#lyrics-toggle").click();
+    await page.waitForTimeout(60);
+  }
+  await expect(page.locator("#lyrics-panel")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("adversarial stress pass 3: multi-viewport layout integrity and reduced-motion compliance", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(`pageerror: ${err.message}`));
+  page.on("console", (msg) => {
+    if (msg.type() === "error") errors.push(`console.error: ${msg.text()}`);
+  });
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await desktopFixture(page);
+
+  const viewports = [
+    { width: 1440, height: 860 },
+    { width: 1040, height: 700 },
+    { width: 480, height: 720 },
+    { width: 393, height: 852 },
+    { width: 844, height: 390 },
+  ];
+
+  // Navigate into a playlist first so back button pinning is tested across viewports.
+  await page.setViewportSize(viewports[0]);
+  await page.locator('[data-view="playlists"]').click();
+  await page.locator('[data-playlist="netease:201"]').click();
+  await expect(page.locator("#back-button")).toBeVisible();
+
+  for (const vp of viewports) {
+    await page.setViewportSize(vp);
+    await page.waitForTimeout(100);
+    await page
+      .locator(".main-scroll")
+      .evaluate((el) => (el.scrollTop = el.scrollHeight));
+    await expect(page.locator("#back-button")).toBeInViewport();
+    const overflow = await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(1);
+  }
+
+  // Under reduced motion, playing + vinyl mode must leave zero running CSS animations on .now-card.
+  await page.setViewportSize({ width: 1440, height: 860 });
+  await page.locator(".song-row").first().dblclick();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-playback",
+    "playing",
+  );
+  await page.locator("#stage-vinyl-toggle").click();
+  await page.waitForTimeout(200);
+  const runningAnimations = await page
+    .locator(".now-card")
+    .evaluate((el) => el.getAnimations({ subtree: true }).length);
+  expect(runningAnimations).toBe(0);
+  expect(errors).toEqual([]);
 });
