@@ -460,8 +460,14 @@ test("adversarial stress pass 2: rapid vinyl/theater toggles, brand exit, track 
   await expect(page.locator("body")).not.toHaveClass(/stage-theater/);
   await expect(page.locator(".library")).toBeVisible();
 
-  // Lyrics interaction: open, scroll manually, click lyric line to seek, close & reopen rapidly.
+  // Lyrics interaction: ensure track 2 playback & lyrics are ready, click lyric line to seek, close & reopen rapidly.
   await expect(page.locator("#lyrics-panel")).toBeVisible();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-playback",
+    "playing",
+  );
+  await expect(page.locator("#seek")).toBeEnabled();
+  await expect(page.locator("#lyrics")).toHaveJSProperty("inert", false);
   await expect(page.locator("#lyrics p").nth(3)).toBeVisible();
   await page.locator("#lyrics p").nth(3).click();
   await expect(page.locator("#lyrics p").nth(3)).toHaveClass(/current/);
