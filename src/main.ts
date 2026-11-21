@@ -445,7 +445,6 @@ const stage = setupStage({
   audio,
   seek: $("#seek") as HTMLInputElement,
   isSeeking: () => seekDragging,
-  paintRange,
   ensureLyricsOpen: () => {
     if ($("#lyrics-panel").hidden) void lyricFollower.setOpen(true);
   },

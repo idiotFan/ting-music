@@ -287,45 +287,55 @@ main > .section-top #back-button {
 /* Desktop wide places precision ruler ticks directly above the track */
 @media (min-width: 900px) and (orientation: landscape) {
   html:not(.mobile-device) .timeline {
+    position: relative;
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-rows: auto auto;
     column-gap: 10px;
     row-gap: 6px;
     align-items: center;
-  }
-  html:not(.mobile-device) .timeline #seek {
-    grid-column: 1 / -1;
-    grid-row: 1;
-    height: 28px;
     padding-top: 12px;
+  }
+  /* Static calibration ruler painted once on a separate layer, never repainted during playback. */
+  html:not(.mobile-device) .timeline::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 1px;
+    height: 8px;
+    pointer-events: none;
     background:
-      /* Calibration ruler ticks above the recessed groove */
       repeating-linear-gradient(
           to right,
           color-mix(in srgb, var(--ink) 36%, transparent) 0 1px,
           transparent 1px 20%
         )
-        no-repeat left 1px / 100% 7px,
+        no-repeat left 0 / 100% 7px,
       repeating-linear-gradient(
           to right,
           color-mix(in srgb, var(--ink) 20%, transparent) 0 1px,
           transparent 1px 10%
         )
-        no-repeat left 3px / 100% 5px,
+        no-repeat left 2px / 100% 5px,
       repeating-linear-gradient(
           to right,
           color-mix(in srgb, var(--ink) 13%, transparent) 0 1px,
           transparent 1px 2%
         )
-        no-repeat left 5px / 100% 3px,
-      /* Machined progress fill inside recessed track */
-        linear-gradient(
-          to right,
-          var(--ink) var(--fill, 0%),
-          var(--recess-bg) var(--fill, 0%)
-        )
-        no-repeat center 18px / 100% 5px;
+        no-repeat left 4px / 100% 3px;
+  }
+  html:not(.mobile-device) .timeline #seek {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    height: 16px;
+    padding-top: 0;
+    background: linear-gradient(
+        to right,
+        var(--ink) var(--fill, 0%),
+        var(--recess-bg) var(--fill, 0%)
+      )
+      no-repeat center / 100% 5px;
   }
   html:not(.mobile-device) .timeline #seek::-webkit-slider-runnable-track {
     height: 5px;
@@ -716,37 +726,6 @@ dialog::backdrop {
 @media (hover: hover) and (pointer: fine) {
   html:not(.mobile-device) .theme-choice:hover {
     transform: translateY(-1px);
-  }
-}
-
-/* Stage floating pill styled as anodized hardware toggle bar, anchored top-left
-   opposite the tonearm so the two never crowd each other. */
-@media (min-width: 900px) and (orientation: landscape) {
-  html:not(.mobile-device) .stage-tools {
-    left: 16px;
-    right: auto;
-    background: var(--recess-bg);
-    border: 1px solid var(--seam-shadow);
-    box-shadow:
-      inset 0 1px 2px var(--bevel-dark),
-      0 1px 0 var(--bevel-light);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    opacity: 0.9;
-  }
-  html:not(.mobile-device) .stage-chip[aria-pressed="true"] {
-    background: linear-gradient(
-      180deg,
-      var(--keycap-top),
-      var(--keycap-bottom)
-    );
-    color: var(--ink);
-    box-shadow:
-      0 1px 3px var(--bevel-dark),
-      inset 0 1px 0 var(--bevel-light);
-  }
-  html:not(.mobile-device) .stage-chip[aria-pressed="true"] svg {
-    color: var(--signal);
   }
 }
 

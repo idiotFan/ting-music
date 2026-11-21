@@ -1,18 +1,25 @@
 import { $, icon } from "./dom";
+import { MOTION, animateContent } from "./motion";
 import { mobileDevice } from "./platform";
 import { readSetting, writeSetting } from "./settings";
 import "./stage.css";
 
 /**
- * Playback stage artistry & high-frequency motion:
- * - Album-driven ambient aurora palette extracted off-thread via a 24x24 canvas
- * - Optional Vinyl turntable presentation with articulated tonearm
- * - One-click Theater / Focus mode (F) on desktop
- * - 60/120fps requestAnimationFrame seek progress smoothing
- * - Tactile favorite burst micro-interaction
+ * Playback stage controller:
+ * - Album-driven ambient aurora palette extracted via an offscreen 24x24 canvas
+ * - Optional Vinyl turntable mode with realistic spin-up / coast-down inertia
+ *   (never snaps back to 0deg on pause) and brushed-metal tonearm
+ * - Choreographed Theater / Focus mode (F) on wide desktop viewports
+ * - Unified single-loop rAF clock driving 60/120fps seek smoothing, vinyl
+ *   inertia, and subtle ambient drift only when visible & active
+ * - Tactile favorite heart micro-burst
  */
 
 type Rgb = [number, number, number];
+
+const MAX_VINYL_DPS = 18; // ~33 RPM visual feel (calm, hypnotic, never dizzying)
+const VINYL_ACCEL = 32; // deg/s^2 spin-up torque
+const VINYL_BRAKE = 26; // deg/s^2 natural platter coast-down friction
 
 function rgbCss([r, g, b]: Rgb) {
   return `${Math.round(r)} ${Math.round(g)} ${Math.round(b)}`;
@@ -28,7 +35,7 @@ function luminance(r: number, g: number, b: number) {
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
 }
 
-/** Sample 3 distinct, vibrant-yet-balanced colors from an already-loaded image. */
+/** Sample 3 distinct, balanced colors from an already-loaded image. */
 function samplePalette(image: HTMLImageElement): [Rgb, Rgb, Rgb] | undefined {
   try {
     const size = 24;
@@ -39,7 +46,6 @@ function samplePalette(image: HTMLImageElement): [Rgb, Rgb, Rgb] | undefined {
     if (!ctx) return undefined;
     ctx.drawImage(image, 0, 0, size, size);
     const { data } = ctx.getImageData(0, 0, size, size);
-    // Quantize into coarse RGB buckets and score by frequency * chroma.
     const buckets = new Map<
       string,
       { r: number; g: number; b: number; count: number; score: number }
@@ -97,7 +103,6 @@ function samplePalette(image: HTMLImageElement): [Rgb, Rgb, Rgb] | undefined {
   }
 }
 
-/** Deterministic tasteful fallback hue shift when artwork is unavailable or CORS-opaque. */
 function hashHue(seed: string): number {
   let h = 2166136261;
   for (let i = 0; i < seed.length; i++) {
@@ -123,26 +128,17 @@ function hslToRgb(h: number, s: number, l: number): Rgb {
   return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
 }
 
-export function ambientEnabled() {
-  return readSetting("ting.ambient", "1") !== "0";
-}
-
-export function setAmbientEnabled(on: boolean) {
-  writeSetting("ting.ambient", on ? "1" : "0");
-  document.documentElement.dataset.ambient = on ? "on" : "off";
-  window.dispatchEvent(new CustomEvent("ting-ambient-change", { detail: on }));
-}
-
 export function setupStage(options: {
   audio: HTMLAudioElement;
   seek: HTMLInputElement;
   isSeeking: () => boolean;
-  paintRange: (input: HTMLInputElement) => void;
   ensureLyricsOpen?: () => void;
 }) {
   const root = document.documentElement;
   const nowPanel = $(".now-panel");
   const nowCard = $(".now-card");
+  const nowCover = $("#now-cover");
+  const player = $(".player");
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 
   // Ambient aura backdrop mounted inside the playback column (z-index: 0).
@@ -151,6 +147,9 @@ export function setupStage(options: {
   ambient.setAttribute("aria-hidden", "true");
   ambient.innerHTML = `<span class="ambient-orb orb-a"></span><span class="ambient-orb orb-b"></span><span class="ambient-orb orb-c"></span><span class="ambient-grain"></span>`;
   nowPanel.prepend(ambient);
+  const orbA = ambient.querySelector<HTMLElement>(".orb-a")!;
+  const orbB = ambient.querySelector<HTMLElement>(".orb-b")!;
+  const orbC = ambient.querySelector<HTMLElement>(".orb-c")!;
 
   // Colored bloom halo sitting in the same grid cell behind #now-cover.
   const bloom = document.createElement("div");
@@ -232,20 +231,71 @@ export function setupStage(options: {
     theaterButton.addEventListener("click", () => setTheater(!theaterMode));
   }
 
-  function applyVinyl() {
+  // Vinyl platter & unified rAF loop state (declared before initial applyVinyl/syncLoop).
+  let vinylAngle = 0;
+  let vinylVelocity = 0;
+  let ambientPhase = 0;
+  let lastPct = -1;
+  let rafId = 0;
+  let lastFrame = 0;
+
+  function applyVinylRotation() {
+    const disc = nowCover.firstElementChild as HTMLElement | null;
+    if (!disc) return;
+    if (vinylMode && vinylAngle !== 0) {
+      disc.style.transform = `rotate(${vinylAngle.toFixed(2)}deg)`;
+    } else if (!vinylMode && disc.style.transform) {
+      disc.style.removeProperty("transform");
+    }
+  }
+
+  function clearVinylRotation() {
+    vinylVelocity = 0;
+    nowCover
+      .querySelectorAll<HTMLElement>("img, .fallback-cover")
+      .forEach((n) => {
+        n.style.removeProperty("transform");
+      });
+  }
+
+  function applyVinyl(animate = false) {
     document.body.classList.toggle("stage-vinyl", vinylMode);
+    if (!vinylMode) clearVinylRotation();
+    else applyVinylRotation();
     if (vinylButton) {
       vinylButton.setAttribute("aria-pressed", String(vinylMode));
       vinylButton.title = vinylMode ? "切回纯净封面" : "切换黑胶唱盘视图";
     }
+    if (animate && !reduced.matches) {
+      animateContent(nowCover, {
+        distance: 0,
+        scaleFrom: 0.94,
+        duration: MOTION.t3,
+        from: 0.65,
+        easing: MOTION.enter,
+      });
+      if (vinylMode) {
+        animateContent(arm, {
+          axis: "x",
+          direction: 1,
+          distance: 14,
+          duration: MOTION.t4,
+          from: 0,
+          easing: MOTION.enter,
+        });
+      }
+    }
+    syncLoop();
   }
+
   function setVinyl(on: boolean) {
-    if (mobileDevice) return;
+    if (mobileDevice || on === vinylMode) return;
     vinylMode = on;
     writeSetting("ting.stage.vinyl", on ? "1" : "0");
-    applyVinyl();
+    applyVinyl(true);
   }
-  function applyTheater() {
+
+  function applyTheater(animate = false) {
     document.body.classList.toggle("stage-theater", theaterMode);
     if (theaterButton) {
       theaterButton.setAttribute("aria-pressed", String(theaterMode));
@@ -254,23 +304,46 @@ export function setupStage(options: {
         ? "退出沉浸剧场模式 (Esc / F)"
         : "沉浸剧场模式 (F)";
     }
+    if (animate && !reduced.matches) {
+      animateContent(nowCard, {
+        distance: 0,
+        scaleFrom: theaterMode ? 0.96 : 1.03,
+        duration: MOTION.t4,
+        from: 0.72,
+        easing: MOTION.move,
+      });
+      animateContent(player, {
+        axis: "y",
+        direction: 1,
+        distance: 8,
+        duration: MOTION.t3,
+        from: 0.7,
+        easing: MOTION.enter,
+      });
+      if (!theaterMode) {
+        animateContent($(".library"), {
+          axis: "x",
+          direction: -1,
+          distance: 14,
+          duration: MOTION.t3,
+          from: 0,
+          easing: MOTION.enter,
+        });
+      }
+    }
   }
+
   function setTheater(on: boolean) {
-    if (mobileDevice) return;
-    // Theater mode shines on wide windows; refuse below desktop two-column width.
+    if (mobileDevice || on === theaterMode) return;
     if (on && window.innerWidth < 900) return;
     theaterMode = on;
-    applyTheater();
+    applyTheater(true);
     if (on) options.ensureLyricsOpen?.();
   }
+
   window.addEventListener("resize", () => {
     if (theaterMode && window.innerWidth < 900) setTheater(false);
   });
-
-  // Sync ambient enabled state.
-  root.dataset.ambient = ambientEnabled() ? "on" : "off";
-  applyVinyl();
-  applyTheater();
 
   // Palette extraction with serial guard so stale covers never overwrite new ones.
   let paletteSerial = 0;
@@ -311,9 +384,7 @@ export function setupStage(options: {
       applyFallbackPalette(seed);
       return;
     }
-    // Immediate soft placeholder tone derived from track while image samples.
     applyFallbackPalette(seed || src);
-    // Probe with anonymous CORS so canvas readback works when the CDN allows it.
     const probe = new Image();
     probe.crossOrigin = "anonymous";
     probe.referrerPolicy = "no-referrer";
@@ -323,54 +394,119 @@ export function setupStage(options: {
       const colors = samplePalette(probe);
       if (colors) setPalette(colors);
     };
-    probe.onerror = () => {
-      // Keep the deterministic harmonic fallback palette quietly.
-    };
+    probe.onerror = () => {};
     probe.src = src;
   }
 
-  // Smooth 60/120fps seek-bar progress while playing (replaces 4Hz timeupdate stepping).
-  let rafId = 0;
-  function tickProgress() {
+  // Unified single-loop rAF stage clock:
+  // 1) Pixel-throttled seek progress smoothing while playing
+  // 2) Realistic vinyl platter spin-up & coast-down inertia (holds exact angle on pause)
+  // 3) Subtle ambient orb drift while playing on wide desktop (freezes cleanly on pause)
+  const isPlaying = () =>
+    !options.audio.paused &&
+    !options.audio.ended &&
+    options.audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+
+  function needsLoop() {
+    if (document.hidden || reduced.matches) return false;
+    if (isPlaying()) return true;
+    // Keep coasting vinyl platter smoothly down to 0 deg/s after pause.
+    if (vinylMode && vinylVelocity > 0.05) return true;
+    return false;
+  }
+
+  function tick(now: number) {
     rafId = 0;
-    const { audio, seek, isSeeking, paintRange } = options;
+    const dt = lastFrame ? Math.min(0.05, (now - lastFrame) / 1000) : 0.016;
+    lastFrame = now;
+    const playing = isPlaying();
+
+    // 1) Smooth seek bar progress (throttled to visually meaningful delta).
+    const { audio, seek, isSeeking } = options;
     if (
-      audio.paused ||
-      audio.ended ||
-      document.hidden ||
-      reduced.matches ||
-      !Number.isFinite(audio.duration) ||
-      audio.duration <= 0
-    )
-      return;
-    if (!isSeeking()) {
+      playing &&
+      !isSeeking() &&
+      Number.isFinite(audio.duration) &&
+      audio.duration > 0
+    ) {
       const pct = Math.min(
         100,
         Math.max(0, (audio.currentTime / audio.duration) * 100),
       );
-      seek.style.setProperty("--fill", `${pct}%`);
-      // Keep slider value aligned without thrashing layout.
-      seek.value = String(audio.currentTime);
+      if (Math.abs(pct - lastPct) >= 0.08) {
+        lastPct = pct;
+        seek.style.setProperty("--fill", `${pct.toFixed(2)}%`);
+        seek.value = String(audio.currentTime);
+      }
     }
-    rafId = requestAnimationFrame(tickProgress);
+
+    // 2) Vinyl platter inertia physics (only when Vinyl mode is active).
+    if (vinylMode) {
+      const target = playing ? MAX_VINYL_DPS : 0;
+      if (vinylVelocity < target) {
+        vinylVelocity = Math.min(target, vinylVelocity + VINYL_ACCEL * dt);
+      } else if (vinylVelocity > target) {
+        vinylVelocity = Math.max(target, vinylVelocity - VINYL_BRAKE * dt);
+      }
+      if (vinylVelocity > 0.01) {
+        vinylAngle = (vinylAngle + vinylVelocity * dt) % 360;
+        applyVinylRotation();
+      }
+    }
+
+    // 3) Gentle ambient orb drift on wide desktop while playing (never teleports on pause).
+    if (
+      playing &&
+      !mobileDevice &&
+      window.innerWidth >= 900 &&
+      root.dataset.ambient === "on"
+    ) {
+      ambientPhase += dt * 0.22;
+      const ax = Math.sin(ambientPhase) * 24;
+      const ay = Math.cos(ambientPhase * 0.78) * 18;
+      const bx = Math.cos(ambientPhase * 0.65) * -26;
+      const by = Math.sin(ambientPhase * 0.84) * -20;
+      const cx = Math.sin(ambientPhase * 0.92 + 1.4) * 18;
+      const cy = Math.cos(ambientPhase * 0.7 + 0.8) * 16;
+      orbA.style.transform = `translate3d(${ax.toFixed(1)}px, ${ay.toFixed(1)}px, 0)`;
+      orbB.style.transform = `translate3d(${bx.toFixed(1)}px, ${by.toFixed(1)}px, 0)`;
+      orbC.style.transform = `translate3d(${cx.toFixed(1)}px, ${cy.toFixed(1)}px, 0)`;
+    }
+
+    if (needsLoop()) rafId = requestAnimationFrame(tick);
+    else lastFrame = 0;
   }
-  function syncProgressLoop() {
-    if (rafId) {
+
+  function syncLoop() {
+    if (needsLoop()) {
+      if (!rafId) {
+        lastFrame = 0;
+        rafId = requestAnimationFrame(tick);
+      }
+    } else if (rafId) {
       cancelAnimationFrame(rafId);
       rafId = 0;
+      lastFrame = 0;
     }
-    if (
-      !options.audio.paused &&
-      !options.audio.ended &&
-      !document.hidden &&
-      !reduced.matches
-    )
-      rafId = requestAnimationFrame(tickProgress);
   }
-  for (const event of ["play", "playing", "pause", "ended", "emptied"])
-    options.audio.addEventListener(event, syncProgressLoop);
-  document.addEventListener("visibilitychange", syncProgressLoop);
-  reduced.addEventListener("change", syncProgressLoop);
+
+  for (const event of [
+    "play",
+    "playing",
+    "pause",
+    "ended",
+    "emptied",
+    "seeked",
+  ])
+    options.audio.addEventListener(event, () => {
+      if (event === "seeked" || event === "emptied") lastPct = -1;
+      syncLoop();
+    });
+  document.addEventListener("visibilitychange", syncLoop);
+  reduced.addEventListener("change", () => {
+    if (reduced.matches) clearVinylRotation();
+    syncLoop();
+  });
 
   /** Tactile micro-burst when favoriting a track. */
   function burstHeart(target: HTMLElement | null) {
@@ -386,6 +522,12 @@ export function setupStage(options: {
       { duration: 340, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
     );
   }
+
+  // Apply initial state once every helper and listener is ready.
+  root.dataset.ambient =
+    readSetting("ting.ambient", "1") !== "0" ? "on" : "off";
+  applyVinyl(false);
+  applyTheater(false);
 
   return {
     updateCover,

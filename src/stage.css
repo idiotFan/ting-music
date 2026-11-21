@@ -20,7 +20,9 @@
   z-index: 1;
 }
 
-/* Flowing multi-orb ambient canvas inside the wide playback stage. */
+/* Flowing multi-orb ambient canvas inside the wide playback stage.
+   Orb positions are updated smoothly by stage.ts without CSS keyframes so
+   pausing freezes cleanly in place and never snaps back or hangs getAnimations. */
 .stage-ambient {
   position: absolute;
   inset: 0;
@@ -52,7 +54,6 @@ html[data-ambient="on"] .stage-ambient {
   border-radius: 50%;
   filter: blur(56px);
   opacity: var(--ambient-opacity);
-  will-change: transform;
   transition: background-color 900ms ease-out;
 }
 .ambient-orb.orb-a {
@@ -60,46 +61,26 @@ html[data-ambient="on"] .stage-ambient {
   aspect-ratio: 1;
   top: -18%;
   left: -14%;
-  background: rgb(var(--ambient-1, 54 87 61) / 0.82);
+  background-color: rgb(var(--ambient-1, 54 87 61) / 0.82);
 }
 .ambient-orb.orb-b {
   width: 64%;
   aspect-ratio: 1;
   bottom: -24%;
   right: -18%;
-  background: rgb(var(--ambient-2, 92 122 148) / 0.72);
+  background-color: rgb(var(--ambient-2, 92 122 148) / 0.72);
 }
 .ambient-orb.orb-c {
   width: 48%;
   aspect-ratio: 1;
   top: 28%;
   left: 34%;
-  background: rgb(var(--ambient-3, 130 112 152) / 0.56);
+  background-color: rgb(var(--ambient-3, 130 112 152) / 0.56);
 }
-/* Attach infinite drift only while actively playing on a wide visible desktop
-   stage; idle, paused, hidden and narrow views carry zero active animations. */
-@media (min-width: 900px) and (orientation: landscape) {
-  html:not(.mobile-device):not(.app-hidden)[data-ambient="on"]
-    body[data-playback="playing"]
-    .ambient-orb.orb-a {
-    animation: ambient-drift-a 24s ease-in-out infinite alternate;
-  }
-  html:not(.mobile-device):not(.app-hidden)[data-ambient="on"]
-    body[data-playback="playing"]
-    .ambient-orb.orb-b {
-    animation: ambient-drift-b 30s ease-in-out infinite alternate;
-  }
-  html:not(.mobile-device):not(.app-hidden)[data-ambient="on"]
-    body[data-playback="playing"]
-    .ambient-orb.orb-c {
-    animation: ambient-drift-c 20s ease-in-out infinite alternate;
-  }
-}
-/* Subtle film grain prevents color banding and adds tactile print warmth. */
 .ambient-grain {
   position: absolute;
   inset: 0;
-  opacity: 0.035;
+  opacity: 0.032;
   background-image: radial-gradient(
     color-mix(in srgb, var(--ink) 50%, transparent) 0.5px,
     transparent 0.5px
@@ -107,8 +88,6 @@ html[data-ambient="on"] .stage-ambient {
   background-size: 6px 6px;
 }
 
-/* Keep compact mobile / narrow stacked header crisp and calm; ambient shines
-   in desktop two-column stage and full theater mode. */
 @media (max-width: 899px) {
   .stage-ambient {
     opacity: 0 !important;
@@ -118,33 +97,8 @@ html[data-ambient="on"] .stage-ambient {
   opacity: 0 !important;
 }
 
-@keyframes ambient-drift-a {
-  from {
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-  to {
-    transform: translate3d(12%, 10%, 0) scale(1.12);
-  }
-}
-@keyframes ambient-drift-b {
-  from {
-    transform: translate3d(0, 0, 0) scale(1.04);
-  }
-  to {
-    transform: translate3d(-14%, -10%, 0) scale(0.94);
-  }
-}
-@keyframes ambient-drift-c {
-  from {
-    transform: translate3d(-6%, 4%, 0) scale(0.96);
-  }
-  to {
-    transform: translate3d(8%, -8%, 0) scale(1.1);
-  }
-}
-
 /* Colored bloom halo behind the artwork in wide playback column.
-   Sits as a sibling in grid cell (1/-1, row 1) so #now-cover itself never animates. */
+   Uses background-color (interpolates smoothly in CSS!) instead of radial-gradient. */
 .now-cover-bloom {
   display: none;
   pointer-events: none;
@@ -156,21 +110,16 @@ html[data-ambient="on"] .stage-ambient {
     grid-row: 1;
     justify-self: center;
     align-self: center;
-    width: min(92cqw, 92cqh - 112px, 410px);
+    width: min(84cqw, 84cqh - 112px, 370px);
     aspect-ratio: 1;
-    border-radius: 26px;
-    background: radial-gradient(
-      circle at 38% 36%,
-      rgb(var(--ambient-1, 54 87 61) / 0.85),
-      rgb(var(--ambient-2, 92 122 148) / 0.55) 60%,
-      transparent 82%
-    );
-    filter: blur(36px);
+    border-radius: 32px;
+    background-color: rgb(var(--ambient-1, 54 87 61) / 0.62);
+    filter: blur(42px);
     opacity: 0;
-    transform: translate3d(0, 14px, 0) scale(0.96);
+    transform: translate3d(0, 14px, 0) scale(0.95);
     transition:
       opacity 560ms var(--e-enter),
-      background 800ms ease-out;
+      background-color 900ms ease-out;
     z-index: 0;
   }
   html[data-ambient="on"] .now-cover-bloom {
@@ -192,7 +141,7 @@ html[data-ambient="on"] .stage-ambient {
   }
 }
 
-/* Quiet floating stage-mode toolbar (desktop wide stage only). */
+/* Quiet floating stage-mode toolbar (desktop wide stage only; single source of truth). */
 .stage-tools {
   display: none;
 }
@@ -200,18 +149,19 @@ html[data-ambient="on"] .stage-ambient {
   html:not(.mobile-device) .stage-tools {
     position: absolute;
     top: 12px;
-    right: 16px;
+    left: 16px;
     z-index: 3;
     display: inline-flex;
     align-items: center;
     gap: 4px;
     padding: 3px;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--surface) 72%, transparent);
-    border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    opacity: 0.62;
+    background: var(--recess-bg);
+    border: 1px solid var(--seam-shadow);
+    box-shadow:
+      inset 0 1px 2px var(--bevel-dark),
+      0 1px 0 var(--bevel-light);
+    opacity: 0.82;
     transition: opacity var(--t-2) var(--e-enter);
   }
   html:not(.mobile-device) .now-panel:hover .stage-tools,
@@ -232,6 +182,7 @@ html[data-ambient="on"] .stage-ambient {
   transition:
     background-color var(--t-1) ease-out,
     color var(--t-1) ease-out,
+    box-shadow var(--t-1) ease-out,
     transform var(--t-1) var(--e-enter);
 }
 .stage-chip svg {
@@ -239,8 +190,14 @@ html[data-ambient="on"] .stage-ambient {
   height: 13px;
 }
 .stage-chip[aria-pressed="true"] {
-  background: var(--accent);
-  color: var(--on-accent);
+  background: linear-gradient(180deg, var(--keycap-top), var(--keycap-bottom));
+  color: var(--ink);
+  box-shadow:
+    0 1px 3px var(--bevel-dark),
+    inset 0 1px 0 var(--bevel-light);
+}
+.stage-chip[aria-pressed="true"] svg {
+  color: var(--signal);
 }
 @media (hover: hover) and (pointer: fine) {
   .stage-chip:hover:not([aria-pressed="true"]) {
@@ -252,7 +209,7 @@ html[data-ambient="on"] .stage-ambient {
   transform: scale(0.95);
 }
 
-/* ---- Vinyl Turntable Stage Mode ------------------------------------------- */
+/* ---- Optical Vinyl Turntable Stage Mode ----------------------------------- */
 .vinyl-arm {
   display: none;
   pointer-events: none;
@@ -286,16 +243,7 @@ html[data-ambient="on"] .stage-ambient {
     box-shadow:
       0 0 0 2px rgb(0 0 0 / 0.65),
       0 0 0 4px rgb(255 255 255 / 0.08);
-  }
-  html:not(.app-hidden)
-    body.stage-vinyl[data-playback="playing"]
-    .now-cover
-    img,
-  html:not(.app-hidden)
-    body.stage-vinyl[data-playback="playing"]
-    .now-cover
-    .fallback-cover {
-    animation: vinyl-spin 20s linear infinite;
+    will-change: transform;
   }
   /* 3D machined stainless-steel center spindle */
   body.stage-vinyl .now-cover::after {
@@ -372,7 +320,7 @@ html[data-ambient="on"] .stage-ambient {
     height: 62%;
     transform-origin: 69% 16%;
     transform: rotate(-18deg);
-    transition: transform 680ms cubic-bezier(0.22, 1, 0.36, 1);
+    transition: transform 720ms cubic-bezier(0.22, 1, 0.36, 1);
     filter: drop-shadow(0 10px 14px rgb(0 0 0 / 0.28));
   }
   body.stage-vinyl[data-playback="playing"] .vinyl-arm svg {
@@ -385,17 +333,6 @@ html[data-ambient="on"] .stage-ambient {
   }
   body.stage-vinyl .vinyl-arm .arm-pivot {
     fill: var(--signal, var(--accent));
-  }
-}
-
-html.app-hidden body.stage-vinyl .now-cover img,
-html.app-hidden body.stage-vinyl .now-cover .fallback-cover {
-  animation-play-state: paused;
-}
-
-@keyframes vinyl-spin {
-  to {
-    transform: rotate(360deg);
   }
 }
 
@@ -435,43 +372,15 @@ html.app-hidden body.stage-vinyl .now-cover .fallback-cover {
   }
   html:not(.mobile-device) body.stage-theater #lyrics p[data-line] {
     font-size: 25px;
-    margin-bottom: 28px;
+    margin-bottom: 24px;
   }
 }
 
-/* ---- Tactile Transport & Control Micro-interactions ----------------------- */
-.play-toggle {
-  transition:
-    transform var(--t-1) var(--e-enter),
-    background-color var(--t-2) ease-out,
-    box-shadow var(--t-2) ease-out;
-  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 28%, transparent);
-}
-.play-toggle:active:not(:disabled) {
-  transform: scale(0.92);
-}
-.transport-buttons > .icon-button {
-  transition:
-    transform var(--t-1) var(--e-enter),
-    background-color var(--t-1) ease-out,
-    color var(--t-1) ease-out;
-}
-.transport-buttons > .icon-button:active:not(:disabled) {
-  transform: scale(0.88);
-}
-
-/* Honor reduced-motion strictly everywhere in the stage. */
 @media (prefers-reduced-motion: reduce) {
-  .ambient-orb,
-  body.stage-vinyl .now-cover img,
-  body.stage-vinyl .now-cover .fallback-cover {
-    animation: none !important;
-  }
   .stage-ambient,
+  .ambient-orb,
   .now-cover-bloom,
   body.stage-vinyl .vinyl-arm svg,
-  .play-toggle,
-  .transport-buttons > .icon-button,
   .stage-chip {
     transition: none !important;
   }

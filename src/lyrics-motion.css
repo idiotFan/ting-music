@@ -3,38 +3,30 @@
    Four depths and a beat: a line arrives quickly and leaves with a tail, so
    the sung line reads as the one the music is on. */
 #lyrics p[data-line] {
-  opacity: 0.34;
+  opacity: 0.32;
   transform-origin: left center;
   transform: translate3d(0, 0, 0) scale(1);
-  filter: blur(calc(max(0, var(--dist, 0) - 1) * 0.55px));
   transition:
-    opacity 400ms var(--e-exit),
-    transform var(--t-4) var(--e-enter),
-    filter 320ms ease-out;
+    opacity 360ms var(--e-move),
+    transform 340ms var(--e-enter),
+    background-color 280ms ease-out;
 }
 #lyrics p[data-line].past {
   opacity: 0.22;
 }
 #lyrics p[data-line].near {
-  opacity: 0.54;
-  filter: none;
+  opacity: 0.56;
 }
 #lyrics p[data-line].current {
   opacity: 1;
-  filter: none;
   transform: translate3d(6px, 0, 0) scale(1);
   transition:
     opacity var(--t-2) var(--e-enter),
-    transform var(--t-4) var(--e-enter),
-    filter var(--t-2) ease-out;
+    transform 340ms var(--e-enter),
+    background-color 240ms var(--e-enter);
 }
 body.stage-theater #lyrics p[data-line].current {
   transform: translate3d(8px, 0, 0) scale(1.035);
-}
-/* Manual browsing or pointer hover clears depth blur instantly for reading. */
-#lyrics.browsing p[data-line],
-#lyrics:hover p[data-line] {
-  filter: none;
 }
 @media (hover: hover) {
   #lyrics p[data-line]:hover {
@@ -50,11 +42,10 @@ body.stage-theater #lyrics p[data-line].current {
   opacity: 1;
 }
 @media (prefers-reduced-motion: reduce) {
-  /* The depth tiers stay; only their travel, blur and easing go away. */
+  /* The depth tiers stay; only their travel and easing go away. */
   #lyrics p[data-line],
   #lyrics p[data-line].current {
     transition: none;
-    filter: none;
   }
   #lyrics p[data-line].current {
     transform: none;

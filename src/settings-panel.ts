@@ -251,6 +251,21 @@ export function setupSettingsPanel(o: Options) {
     keepFocus(dialog, () => (dialog.innerHTML = parts.join("")));
   }
   let activeSection = "playback";
+  let jumpLockTimer = 0;
+  let jumpLocked = false;
+
+  function setActiveNav(id: string) {
+    activeSection = id;
+    dialog
+      .querySelectorAll<HTMLElement>("[data-settings-jump]")
+      .forEach((btn) =>
+        btn.setAttribute(
+          "aria-current",
+          String(btn.dataset.settingsJump === activeSection),
+        ),
+      );
+  }
+
   function render() {
     if (phone) return renderPhone();
     const prevScroll =
@@ -378,29 +393,40 @@ export function setupSettingsPanel(o: Options) {
     const body = dialog.querySelector<HTMLElement>(".settings-body");
     if (body) {
       if (prevScroll > 0) body.scrollTop = prevScroll;
+      // Release programmatic jump lock only on real user wheel/touch scroll,
+      // so clicking a bottom section never gets hijacked back by scroll-spy.
+      const unlockOnUserScroll = () => {
+        jumpLocked = false;
+        window.clearTimeout(jumpLockTimer);
+      };
+      body.addEventListener("wheel", unlockOnUserScroll, { passive: true });
+      body.addEventListener("touchstart", unlockOnUserScroll, {
+        passive: true,
+      });
+      body.addEventListener("pointerdown", unlockOnUserScroll, {
+        passive: true,
+      });
       body.addEventListener(
         "scroll",
         () => {
+          if (jumpLocked) return;
           const items = [
             ...body.querySelectorAll<HTMLElement>("[data-settings-section]"),
           ];
-          const top = body.scrollTop + 40;
-          let current = items[0]?.dataset.settingsSection || activeSection;
+          if (!items.length) return;
+          // At the bottom of the scroll pane, highlight the final section.
+          if (body.scrollTop + body.clientHeight >= body.scrollHeight - 6) {
+            const last = items[items.length - 1].dataset.settingsSection;
+            if (last && last !== activeSection) setActiveNav(last);
+            return;
+          }
+          const bodyTop = body.getBoundingClientRect().top;
+          let current = items[0].dataset.settingsSection || activeSection;
           for (const item of items) {
-            if (item.offsetTop <= top)
+            if (item.getBoundingClientRect().top - bodyTop <= 48)
               current = item.dataset.settingsSection || current;
           }
-          if (current !== activeSection) {
-            activeSection = current;
-            dialog
-              .querySelectorAll<HTMLElement>("[data-settings-jump]")
-              .forEach((btn) =>
-                btn.setAttribute(
-                  "aria-current",
-                  String(btn.dataset.settingsJump === activeSection),
-                ),
-              );
-          }
+          if (current !== activeSection) setActiveNav(current);
         },
         { passive: true },
       );
@@ -410,11 +436,15 @@ export function setupSettingsPanel(o: Options) {
   async function refreshDownloadPath() {
     if (!desktop) return;
     try {
-      downloadPath = await invoke<string>("download_dir", {
+      const next = await invoke<string>("download_dir", {
         pick: false,
         reset: false,
       });
-      if (dialog.open) render();
+      // Skip redundant full DOM redraw when the path is unchanged.
+      if (next !== downloadPath) {
+        downloadPath = next;
+        if (dialog.open) render();
+      }
     } catch {
       /* The default still applies. */
     }
@@ -476,18 +506,33 @@ export function setupSettingsPanel(o: Options) {
     const jump = el.closest<HTMLElement>("[data-settings-jump]");
     if (jump) {
       const targetId = jump.dataset.settingsJump!;
-      activeSection = targetId;
-      dialog
-        .querySelectorAll<HTMLElement>("[data-settings-jump]")
-        .forEach((btn) =>
-          btn.setAttribute(
-            "aria-current",
-            String(btn.dataset.settingsJump === targetId),
-          ),
-        );
-      dialog
-        .querySelector<HTMLElement>(`[data-settings-section="${targetId}"]`)
-        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      setActiveNav(targetId);
+      const body = dialog.querySelector<HTMLElement>(".settings-body");
+      const section = dialog.querySelector<HTMLElement>(
+        `[data-settings-section="${targetId}"]`,
+      );
+      if (body && section) {
+        jumpLocked = true;
+        window.clearTimeout(jumpLockTimer);
+        const offset =
+          section.getBoundingClientRect().top -
+          body.getBoundingClientRect().top +
+          body.scrollTop -
+          8;
+        const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+        body.scrollTo({
+          top: Math.max(0, offset),
+          behavior: reduced ? "auto" : "smooth",
+        });
+        // Keep the clicked nav item highlighted even for short bottom sections
+        // until the user manually scrolls again.
+        jumpLockTimer = window.setTimeout(() => {
+          const atBottom =
+            body.scrollTop + body.clientHeight >= body.scrollHeight - 6;
+          if (!atBottom) jumpLocked = false;
+        }, 650);
+        animateContent(section, { distance: 0, duration: 220, from: 0.78 });
+      }
       return;
     }
     if (el.closest("[data-settings-close]")) return closeDialog(dialog);
@@ -560,11 +605,12 @@ export function setupSettingsPanel(o: Options) {
 
   $("#settings-button").onclick = () => {
     recording = undefined;
+    jumpLocked = false;
+    activeSection = "playback";
     prefs = desktopPrefs();
     render();
+    // openDialog owns the modal entrance; do not stack a second animateContent(dialog).
     openDialog(dialog);
-    // The phone page slides in whole; only the desktop sheet eases its rows.
-    if (!phone) animateContent(dialog, { distance: 5 });
     void refreshDownloadPath();
   };
   return { rerender: () => dialog.open && render() };

@@ -182,6 +182,18 @@ test("desktop dialogs expand into spacious multi-column layouts without cramped 
     settings.locator('[data-settings-jump="desktop"]'),
   ).toHaveAttribute("aria-current", "true");
   await page.screenshot({ path: "work/verify-settings-workbench.png" });
+  // Clicking bottom sections ("数据" / "关于") must lock the highlight and never
+  // get yanked back by scroll-spy during or after smooth scrolling.
+  for (const id of ["data", "about"]) {
+    await settings.locator(`[data-settings-jump="${id}"]`).click();
+    await expect(
+      settings.locator(`[data-settings-jump="${id}"]`),
+    ).toHaveAttribute("aria-current", "true");
+    await page.waitForTimeout(750);
+    await expect(
+      settings.locator(`[data-settings-jump="${id}"]`),
+    ).toHaveAttribute("aria-current", "true");
+  }
   await settings.locator("[data-settings-close]").click();
   await expect(settings).toBeHidden();
 
@@ -245,8 +257,22 @@ test("desktop right-click opens song menu, and vinyl & theater stage modes work 
   await page.locator("#stage-vinyl-toggle").click();
   await expect(page.locator("body")).toHaveClass(/stage-vinyl/);
   await expect(page.locator(".vinyl-arm svg")).toBeVisible();
-  await page.waitForTimeout(750);
+  await page.waitForTimeout(850);
   await page.screenshot({ path: "work/verify-stage-vinyl.png" });
+
+  // Pausing in Vinyl mode coasts smoothly and preserves rotation angle (never snaps to 0deg).
+  await page.locator("#toggle").click();
+  await expect(page.locator("body")).toHaveAttribute("data-playback", "paused");
+  await page.waitForTimeout(300);
+  const pausedTransform = await page
+    .locator("#now-cover img")
+    .evaluate((el) => el.style.transform);
+  expect(pausedTransform).toMatch(/^rotate\([1-9]/);
+  await page.locator("#toggle").click();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-playback",
+    "playing",
+  );
 
   // Switch to Theater mode via keyboard shortcut F, then exit via Escape.
   await page.locator(".now-panel").click();

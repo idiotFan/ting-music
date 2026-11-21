@@ -50,8 +50,6 @@ export function setupLyrics(
     if (next === index && !force) return;
     index = next;
     box.querySelectorAll<HTMLElement>("[data-line]").forEach((line, i) => {
-      const dist = index < 0 ? 0 : Math.min(4, Math.abs(i - index));
-      line.style.setProperty("--dist", String(dist));
       line.classList.toggle("current", i === index);
       line.classList.toggle("near", Math.abs(i - index) === 1);
       line.classList.toggle("past", i < index);
