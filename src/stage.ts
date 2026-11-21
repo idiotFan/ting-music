@@ -158,11 +158,55 @@ export function setupStage(options: {
   bloom.setAttribute("aria-hidden", "true");
   nowCard.prepend(bloom);
 
-  // Articulated SVG tonearm (only displayed when user activates Vinyl stage mode).
+  // Sculptural recessed well + Dieter Rams signal LED around the play/pause dial.
+  const toggleButton = $("#toggle");
+  if (
+    toggleButton &&
+    !toggleButton.parentElement?.classList.contains("play-dial-wrap")
+  ) {
+    const wrap = document.createElement("span");
+    wrap.className = "play-dial-wrap";
+    wrap.innerHTML = `<i class="play-dial-led" aria-hidden="true"></i>`;
+    toggleButton.parentElement?.insertBefore(wrap, toggleButton);
+    wrap.append(toggleButton);
+  }
+
+  // Articulated brushed-aluminum Hi-Fi tonearm (displayed in Vinyl stage mode).
   const arm = document.createElement("div");
   arm.className = "vinyl-arm";
   arm.setAttribute("aria-hidden", "true");
-  arm.innerHTML = `<svg viewBox="0 0 80 180" fill="none"><circle cx="56" cy="24" r="14" class="arm-base"/><circle cx="56" cy="24" r="6" class="arm-pivot"/><path d="M56 24 L50 112 L34 152" class="arm-shaft" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="24" y="146" width="14" height="22" rx="3" transform="rotate(24 31 157)" class="arm-head"/></svg>`;
+  arm.innerHTML = `<svg viewBox="0 0 110 230" fill="none">
+    <defs>
+      <linearGradient id="arm-metal" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%" stop-color="#f2f3f0"/>
+        <stop offset="45%" stop-color="#b8bcb9"/>
+        <stop offset="100%" stop-color="#767b78"/>
+      </linearGradient>
+      <radialGradient id="arm-gimbal" cx="38%" cy="32%" r="65%">
+        <stop offset="0%" stop-color="#f7f7f5"/>
+        <stop offset="60%" stop-color="#c4c7c4"/>
+        <stop offset="100%" stop-color="#7b807d"/>
+      </radialGradient>
+      <linearGradient id="arm-shell" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#e5e7e4"/>
+        <stop offset="55%" stop-color="#a2a6a3"/>
+        <stop offset="100%" stop-color="#5d6260"/>
+      </linearGradient>
+    </defs>
+    <circle cx="76" cy="36" r="22" class="arm-well"/>
+    <circle cx="76" cy="36" r="16" fill="url(#arm-gimbal)" stroke="rgba(0,0,0,0.22)" stroke-width="1"/>
+    <rect x="69" y="6" width="14" height="16" rx="3" fill="url(#arm-metal)" stroke="rgba(0,0,0,0.2)" stroke-width="0.8"/>
+    <circle cx="76" cy="36" r="5.5" class="arm-pivot"/>
+    <path d="M76 42 L68 148 L48 188" stroke="url(#arm-metal)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M75 42 L67 148 L47 187" stroke="rgba(255,255,255,0.65)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <g transform="translate(46 184) rotate(26)">
+      <rect x="-9" y="-2" width="18" height="28" rx="3.5" fill="url(#arm-shell)" stroke="rgba(0,0,0,0.28)" stroke-width="1"/>
+      <circle cx="-3.5" cy="7" r="1.4" fill="#3a3d3b"/>
+      <circle cx="3.5" cy="7" r="1.4" fill="#3a3d3b"/>
+      <rect x="-4" y="18" width="8" height="9" rx="1.5" fill="#222524"/>
+      <path d="M4 21 L12 24" stroke="#d94f30" stroke-width="1.6" stroke-linecap="round"/>
+    </g>
+  </svg>`;
   nowCard.append(arm);
 
   // Quiet floating stage controls (desktop wide only, hidden on compact/mobile).

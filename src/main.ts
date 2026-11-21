@@ -129,6 +129,7 @@ import {
 } from "./cloud";
 import { isDetail, viewMove, type View } from "./views";
 import { readSession, restore, restoreSongs, type Session } from "./session";
+import "./hifi-design.css";
 type PlaylistFilter = "recent" | Source | "internal";
 let playlistFilter = (readSetting("ting.playlist-filter") ||
   "netease") as PlaylistFilter;

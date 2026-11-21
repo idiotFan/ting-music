@@ -260,38 +260,44 @@ html[data-ambient="on"] .stage-ambient {
 @container now-playing (min-height: 280px) {
   body.stage-vinyl .now-cover {
     border-radius: 50%;
-    padding: 13%;
-    background: radial-gradient(
+    padding: 15%;
+    background: repeating-radial-gradient(
       circle at center,
-      #18181b 0%,
-      #111114 48%,
-      #222228 50%,
-      #121215 52%,
-      #1c1c21 68%,
-      #111114 70%,
-      #24242b 84%,
-      #0f0f12 100%
+      #161618 0px,
+      #161618 1.4px,
+      #0a0a0c 1.4px,
+      #0a0a0c 3px,
+      #1d1d21 3px,
+      #1d1d21 3.6px
     );
     box-shadow:
-      0 22px 54px color-mix(in srgb, var(--ink) 28%, transparent),
-      0 0 0 1px rgb(255 255 255 / 0.14),
-      inset 0 0 28px rgb(0 0 0 / 0.6);
+      0 0 0 3px color-mix(in srgb, var(--surface) 76%, var(--ink)),
+      0 0 0 4.5px color-mix(in srgb, var(--ink) 22%, transparent),
+      0 28px 60px color-mix(in srgb, #000000 32%, transparent),
+      0 6px 16px color-mix(in srgb, #000000 18%, transparent),
+      inset 0 0 26px rgb(0 0 0 / 0.76);
   }
   body.stage-vinyl .now-cover img,
   body.stage-vinyl .now-cover .fallback-cover {
-    inset: 14%;
-    width: 72%;
-    height: 72%;
+    inset: 23%;
+    width: 54%;
+    height: 54%;
     border-radius: 50%;
-    box-shadow: 0 0 0 2px rgb(255 255 255 / 0.14);
-    animation: vinyl-spin 22s linear infinite;
-    animation-play-state: paused;
+    box-shadow:
+      0 0 0 2px rgb(0 0 0 / 0.65),
+      0 0 0 4px rgb(255 255 255 / 0.08);
   }
-  body.stage-vinyl[data-playback="playing"] .now-cover img,
-  body.stage-vinyl[data-playback="playing"] .now-cover .fallback-cover {
-    animation-play-state: running;
+  html:not(.app-hidden)
+    body.stage-vinyl[data-playback="playing"]
+    .now-cover
+    img,
+  html:not(.app-hidden)
+    body.stage-vinyl[data-playback="playing"]
+    .now-cover
+    .fallback-cover {
+    animation: vinyl-spin 20s linear infinite;
   }
-  /* Center spindle hole */
+  /* 3D machined stainless-steel center spindle */
   body.stage-vinyl .now-cover::after {
     content: "";
     position: absolute;
@@ -301,28 +307,46 @@ html[data-ambient="on"] .stage-ambient {
     height: 14px;
     margin: -7px 0 0 -7px;
     border-radius: 50%;
-    background: var(--surface);
+    background: radial-gradient(
+      circle at 35% 30%,
+      #ffffff 0%,
+      #c6cac8 48%,
+      #6a6f6d 100%
+    );
     box-shadow:
-      0 0 0 3px rgb(0 0 0 / 0.45),
-      inset 0 1px 2px rgb(0 0 0 / 0.4);
+      0 2px 4px rgb(0 0 0 / 0.55),
+      0 0 0 5px color-mix(in srgb, var(--surface) 88%, var(--ink)),
+      0 0 0 6px rgb(0 0 0 / 0.28);
     z-index: 3;
     pointer-events: none;
   }
-  /* Specular record groove light sweep */
+  /* Twin anisotropic specular light reflections across vinyl grooves */
   body.stage-vinyl .now-cover::before {
     content: "";
     position: absolute;
     inset: 0;
     border-radius: 50%;
-    background: conic-gradient(
-      from 25deg,
-      transparent 0deg,
-      rgb(255 255 255 / 0.11) 28deg,
-      transparent 56deg,
-      transparent 180deg,
-      rgb(255 255 255 / 0.09) 210deg,
-      transparent 240deg
-    );
+    background:
+      conic-gradient(
+        from 20deg,
+        transparent 0deg,
+        rgb(255 255 255 / 0.16) 24deg,
+        rgb(255 255 255 / 0.04) 44deg,
+        transparent 62deg,
+        transparent 178deg,
+        rgb(255 255 255 / 0.14) 204deg,
+        rgb(255 255 255 / 0.03) 224deg,
+        transparent 244deg
+      ),
+      radial-gradient(
+        circle at center,
+        transparent 52%,
+        rgb(0 0 0 / 0.48) 53%,
+        transparent 55%,
+        transparent 74%,
+        rgb(255 255 255 / 0.06) 75%,
+        transparent 77%
+      );
     z-index: 2;
     pointer-events: none;
   }
@@ -342,31 +366,25 @@ html[data-ambient="on"] .stage-ambient {
   }
   body.stage-vinyl .vinyl-arm svg {
     position: absolute;
-    top: 2%;
-    right: -6%;
-    width: 24%;
-    height: 54%;
-    transform-origin: 70% 13%;
-    transform: rotate(-22deg);
-    transition: transform 640ms cubic-bezier(0.22, 1, 0.36, 1);
-    filter: drop-shadow(0 6px 10px rgb(0 0 0 / 0.25));
+    top: -1%;
+    right: -7%;
+    width: 30%;
+    height: 62%;
+    transform-origin: 69% 16%;
+    transform: rotate(-18deg);
+    transition: transform 680ms cubic-bezier(0.22, 1, 0.36, 1);
+    filter: drop-shadow(0 10px 14px rgb(0 0 0 / 0.28));
   }
   body.stage-vinyl[data-playback="playing"] .vinyl-arm svg {
-    transform: rotate(3deg);
+    transform: rotate(7deg);
   }
-  body.stage-vinyl .vinyl-arm .arm-base {
-    fill: color-mix(in srgb, var(--surface) 88%, var(--ink));
-    stroke: var(--line);
+  body.stage-vinyl .vinyl-arm .arm-well {
+    fill: var(--recess-bg, color-mix(in srgb, var(--ink) 8%, var(--bg)));
+    stroke: var(--seam-shadow, var(--line));
     stroke-width: 1.5;
   }
   body.stage-vinyl .vinyl-arm .arm-pivot {
-    fill: var(--accent);
-  }
-  body.stage-vinyl .vinyl-arm .arm-shaft {
-    stroke: color-mix(in srgb, var(--ink) 62%, var(--surface));
-  }
-  body.stage-vinyl .vinyl-arm .arm-head {
-    fill: var(--ink);
+    fill: var(--signal, var(--accent));
   }
 }
 

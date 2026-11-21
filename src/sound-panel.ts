@@ -78,7 +78,7 @@ export function setupSoundPanel(o: Options) {
           `<circle class="eq-dot" cx="${x}" cy="${y.toFixed(1)}" r="3.2"/>`,
       )
       .join("");
-    return `<div class="eq-curve" aria-hidden="true"><svg viewBox="0 0 280 62" preserveAspectRatio="none"><line class="eq-grid-line" x1="8" y1="31" x2="272" y2="31"/><path class="eq-area" d="${area}"/><path class="eq-stroke" d="${d}"/>${dots}</svg><div class="eq-labels"><span>60Hz</span><span>230Hz</span><span>910Hz</span><span>3.6k</span><span>14k</span></div></div>`;
+    return `<div class="eq-curve" aria-hidden="true"><svg viewBox="0 0 280 62" preserveAspectRatio="none"><line class="eq-grid-line" x1="8" y1="13" x2="272" y2="13" opacity="0.5"/><line class="eq-grid-line" x1="8" y1="31" x2="272" y2="31"/><line class="eq-grid-line" x1="8" y1="49" x2="272" y2="49" opacity="0.5"/><path class="eq-area" d="${area}"/><path class="eq-stroke" d="${d}"/>${dots}</svg><div class="eq-labels"><span>60Hz</span><span>230Hz</span><span>910Hz</span><span>3.6k</span><span>14k</span></div></div>`;
   }
   function render() {
     renderButton();

@@ -17,7 +17,33 @@ const SAMPLE_LRC = [
   "[00:17.00]把所有星光装进耳机中",
 ].join("\n");
 
+function silentWav(seconds = 20) {
+  const rate = 8000;
+  const wav = Buffer.alloc(44 + rate * seconds * 2);
+  wav.write("RIFF");
+  wav.writeUInt32LE(wav.length - 8, 4);
+  wav.write("WAVEfmt ", 8);
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(rate, 24);
+  wav.writeUInt32LE(rate * 2, 28);
+  wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write("data", 36);
+  wav.writeUInt32LE(wav.length - 44, 40);
+  return wav;
+}
+
 async function desktopFixture(page: Page) {
+  await page.route("**/__stage-audio.wav", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "audio/wav",
+      body: silentWav(24),
+      headers: { "Access-Control-Allow-Origin": "*" },
+    }),
+  );
   await page.addInitScript(
     ({ cover, lyric }) => {
       const w = window as any;
@@ -61,7 +87,7 @@ async function desktopFixture(page: Page) {
           if (cmd === "song_lyric") return lyric;
           if (cmd === "song_url")
             return {
-              url: "",
+              url: "/__stage-audio.wav",
               trial: false,
               trialStart: 0,
               bitrate: 1672000,
@@ -202,17 +228,24 @@ test("desktop right-click opens song menu, and vinyl & theater stage modes work 
   await page.locator("#library-close").click();
   await expect(page.locator("#library-dialog")).toBeHidden();
 
-  // Play track & open lyrics to verify ambient stage + depth-of-field lyrics.
+  // Play track & open lyrics to verify ambient stage + Hi-Fi console + lyrics.
   await page.locator(".song-row").first().dblclick();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-playback",
+    "playing",
+  );
+  await page.locator("#seek").fill("8.5");
+  await page.locator("#seek").dispatchEvent("change");
   await page.locator("#lyrics-toggle").click();
   await expect(page.locator("#lyrics-panel")).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("data-ambient", "on");
   await page.screenshot({ path: "work/verify-stage-default.png" });
 
-  // Switch to Vinyl turntable mode.
+  // Switch to Vinyl turntable mode (tonearm drops onto vinyl while playing).
   await page.locator("#stage-vinyl-toggle").click();
   await expect(page.locator("body")).toHaveClass(/stage-vinyl/);
   await expect(page.locator(".vinyl-arm svg")).toBeVisible();
+  await page.waitForTimeout(750);
   await page.screenshot({ path: "work/verify-stage-vinyl.png" });
 
   // Switch to Theater mode via keyboard shortcut F, then exit via Escape.
@@ -220,6 +253,13 @@ test("desktop right-click opens song menu, and vinyl & theater stage modes work 
   await page.keyboard.press("f");
   await expect(page.locator("body")).toHaveClass(/stage-theater/);
   await page.screenshot({ path: "work/verify-stage-theater.png" });
+
+  // Preview anodized dark hardware finish (graphite) in vinyl + theater stage.
+  await page.locator("#theme-button").click();
+  await page.locator('[data-theme-choice="graphite"]').click();
+  await page.locator("#theme-close").click();
+  await expect(page.locator("#theme-dialog")).toBeHidden();
+  await page.screenshot({ path: "work/verify-stage-dark.png" });
 
   await page.keyboard.press("Escape");
   await expect(page.locator("body")).not.toHaveClass(/stage-theater/);
