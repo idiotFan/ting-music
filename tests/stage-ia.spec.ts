@@ -99,7 +99,7 @@ async function desktopFixture(page: Page) {
           if (cmd === "download_dir") return "/Users/me/Downloads/Ting";
           if (cmd === "diagnostics")
             return {
-              version: "1.0.1",
+              version: "1.1.0",
               os: "macos",
               arch: "aarch64",
               family: "unix",
