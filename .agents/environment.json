@@ -1,0 +1,3 @@
+{
+  "install": "npm ci --no-audit --no-fund && if [ -x /usr/bin/chromium ]; then sed -i '/case \\$- in/,/esac/d' ~/.bashrc 2>/dev/null || true; grep -qxF 'export PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/chromium' ~/.bashrc 2>/dev/null || echo 'export PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/chromium' >> ~/.bashrc; fi"
+}
