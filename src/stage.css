@@ -1,0 +1,388 @@
+/* ---- Playback Stage: Ambient Aura, Cover Bloom, Vinyl Mode & Theater ------ */
+
+:root {
+  --ambient-opacity: 0.22;
+  --bloom-opacity: 0.36;
+}
+:root[data-theme="midnight"],
+:root[data-theme="forest"],
+:root[data-theme="graphite"] {
+  --ambient-opacity: 0.32;
+  --bloom-opacity: 0.44;
+}
+
+.now-panel {
+  position: relative;
+  isolation: isolate;
+}
+.now-card {
+  position: relative;
+  z-index: 1;
+}
+
+/* Flowing multi-orb ambient canvas inside the wide playback stage.
+   Orb positions are updated smoothly by stage.ts without CSS keyframes so
+   pausing freezes cleanly in place and never snaps back or hangs getAnimations. */
+.stage-ambient {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    #000 10%,
+    #000 76%,
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    #000 10%,
+    #000 76%,
+    transparent 100%
+  );
+  transition: opacity 600ms var(--e-enter);
+}
+html[data-ambient="on"] .stage-ambient {
+  opacity: 1;
+}
+.ambient-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(56px);
+  opacity: var(--ambient-opacity);
+  transition: background-color 900ms ease-out;
+}
+.ambient-orb.orb-a {
+  width: 68%;
+  aspect-ratio: 1;
+  top: -18%;
+  left: -14%;
+  background-color: rgb(var(--ambient-1, 54 87 61) / 0.82);
+}
+.ambient-orb.orb-b {
+  width: 64%;
+  aspect-ratio: 1;
+  bottom: -24%;
+  right: -18%;
+  background-color: rgb(var(--ambient-2, 92 122 148) / 0.72);
+}
+.ambient-orb.orb-c {
+  width: 48%;
+  aspect-ratio: 1;
+  top: 28%;
+  left: 34%;
+  background-color: rgb(var(--ambient-3, 130 112 152) / 0.56);
+}
+.ambient-grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.032;
+  background-image: radial-gradient(
+    color-mix(in srgb, var(--ink) 50%, transparent) 0.5px,
+    transparent 0.5px
+  );
+  background-size: 6px 6px;
+}
+
+@media (max-width: 899px) {
+  .stage-ambient {
+    opacity: 0 !important;
+  }
+}
+.mobile-device .stage-ambient {
+  opacity: 0 !important;
+}
+
+/* Colored bloom halo behind the artwork in wide playback column.
+   Uses background-color (interpolates smoothly in CSS!) instead of radial-gradient. */
+.now-cover-bloom {
+  display: none;
+  pointer-events: none;
+}
+@container now-playing (min-height: 280px) {
+  :root .now-cover-bloom {
+    display: block;
+    grid-column: 1 / -1;
+    grid-row: 1;
+    justify-self: center;
+    align-self: center;
+    width: min(84cqw, 84cqh - 112px, 370px);
+    aspect-ratio: 1;
+    border-radius: 32px;
+    background-color: rgb(var(--ambient-1, 54 87 61) / 0.62);
+    filter: blur(42px);
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale(0.95);
+    transition:
+      opacity 560ms var(--e-enter),
+      background-color 900ms ease-out;
+    z-index: 0;
+  }
+  html[data-ambient="on"] .now-cover-bloom {
+    opacity: var(--bloom-opacity);
+  }
+  :root .now-cover {
+    grid-row: 1;
+    z-index: 1;
+    box-shadow:
+      0 18px 44px color-mix(in srgb, var(--ink) 16%, transparent),
+      0 2px 8px color-mix(in srgb, var(--ink) 8%, transparent),
+      inset 0 1px 0 rgb(255 255 255 / 0.24);
+  }
+}
+@container now-playing (min-height: 110px) and (max-height: 279px) {
+  :root .now-cover {
+    grid-row: 1;
+    z-index: 1;
+  }
+}
+
+/* Quiet floating stage-mode toolbar (desktop wide stage only; single source of truth). */
+.stage-tools {
+  display: none;
+}
+@media (min-width: 900px) and (orientation: landscape) {
+  html:not(.mobile-device) .stage-tools {
+    position: absolute;
+    top: 12px;
+    left: 16px;
+    z-index: 3;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px;
+    border-radius: 999px;
+    background: var(--recess-bg);
+    border: 1px solid var(--seam-shadow);
+    box-shadow:
+      inset 0 1px 2px var(--bevel-dark),
+      0 1px 0 var(--bevel-light);
+    opacity: 0.82;
+    transition: opacity var(--t-2) var(--e-enter);
+  }
+  html:not(.mobile-device) .now-panel:hover .stage-tools,
+  html:not(.mobile-device) .stage-tools:focus-within,
+  body.stage-vinyl .stage-tools,
+  body.stage-theater .stage-tools {
+    opacity: 1;
+  }
+}
+.stage-chip {
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+  gap: 4px;
+  transition:
+    background-color var(--t-1) ease-out,
+    color var(--t-1) ease-out,
+    box-shadow var(--t-1) ease-out,
+    transform var(--t-1) var(--e-enter);
+}
+.stage-chip svg {
+  width: 13px;
+  height: 13px;
+}
+.stage-chip[aria-pressed="true"] {
+  background: linear-gradient(180deg, var(--keycap-top), var(--keycap-bottom));
+  color: var(--ink);
+  box-shadow:
+    0 1px 3px var(--bevel-dark),
+    inset 0 1px 0 var(--bevel-light);
+}
+.stage-chip[aria-pressed="true"] svg {
+  color: var(--signal);
+}
+@media (hover: hover) and (pointer: fine) {
+  .stage-chip:hover:not([aria-pressed="true"]) {
+    background: var(--hover);
+    color: var(--ink);
+  }
+}
+.stage-chip:active {
+  transform: scale(0.95);
+}
+
+/* ---- Optical Vinyl Turntable Stage Mode ----------------------------------- */
+.vinyl-arm {
+  display: none;
+  pointer-events: none;
+}
+@container now-playing (min-height: 280px) {
+  body.stage-vinyl .now-cover {
+    border-radius: 50%;
+    padding: 15%;
+    background: repeating-radial-gradient(
+      circle at center,
+      #161618 0px,
+      #161618 1.4px,
+      #0a0a0c 1.4px,
+      #0a0a0c 3px,
+      #1d1d21 3px,
+      #1d1d21 3.6px
+    );
+    box-shadow:
+      0 0 0 3px color-mix(in srgb, var(--surface) 76%, var(--ink)),
+      0 0 0 4.5px color-mix(in srgb, var(--ink) 22%, transparent),
+      0 28px 60px color-mix(in srgb, #000000 32%, transparent),
+      0 6px 16px color-mix(in srgb, #000000 18%, transparent),
+      inset 0 0 26px rgb(0 0 0 / 0.76);
+  }
+  body.stage-vinyl .now-cover img,
+  body.stage-vinyl .now-cover .fallback-cover {
+    inset: 23%;
+    width: 54%;
+    height: 54%;
+    border-radius: 50%;
+    rotate: var(--vinyl-deg, 0deg);
+    box-shadow:
+      0 0 0 2px rgb(0 0 0 / 0.65),
+      0 0 0 4px rgb(255 255 255 / 0.08);
+    will-change: transform, rotate;
+  }
+  /* 3D machined stainless-steel center spindle */
+  body.stage-vinyl .now-cover::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 14px;
+    height: 14px;
+    margin: -7px 0 0 -7px;
+    border-radius: 50%;
+    background: radial-gradient(
+      circle at 35% 30%,
+      #ffffff 0%,
+      #c6cac8 48%,
+      #6a6f6d 100%
+    );
+    box-shadow:
+      0 2px 4px rgb(0 0 0 / 0.55),
+      0 0 0 5px color-mix(in srgb, var(--surface) 88%, var(--ink)),
+      0 0 0 6px rgb(0 0 0 / 0.28);
+    z-index: 3;
+    pointer-events: none;
+  }
+  /* Twin anisotropic specular light reflections across vinyl grooves */
+  body.stage-vinyl .now-cover::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background:
+      conic-gradient(
+        from 20deg,
+        transparent 0deg,
+        rgb(255 255 255 / 0.16) 24deg,
+        rgb(255 255 255 / 0.04) 44deg,
+        transparent 62deg,
+        transparent 178deg,
+        rgb(255 255 255 / 0.14) 204deg,
+        rgb(255 255 255 / 0.03) 224deg,
+        transparent 244deg
+      ),
+      radial-gradient(
+        circle at center,
+        transparent 52%,
+        rgb(0 0 0 / 0.48) 53%,
+        transparent 55%,
+        transparent 74%,
+        rgb(255 255 255 / 0.06) 75%,
+        transparent 77%
+      );
+    z-index: 2;
+    pointer-events: none;
+  }
+  body.stage-vinyl .now-cover-bloom {
+    border-radius: 50%;
+  }
+  body.stage-vinyl .vinyl-arm {
+    display: block;
+    grid-column: 1 / -1;
+    grid-row: 1;
+    justify-self: center;
+    align-self: start;
+    width: min(100cqw, 100cqh - 112px, 440px);
+    aspect-ratio: 1;
+    position: relative;
+    z-index: 3;
+  }
+  body.stage-vinyl .vinyl-arm svg {
+    position: absolute;
+    top: -1%;
+    right: -7%;
+    width: 30%;
+    height: 62%;
+    transform-origin: 69% 16%;
+    transform: rotate(-18deg);
+    transition: transform 720ms cubic-bezier(0.22, 1, 0.36, 1);
+    filter: drop-shadow(0 10px 14px rgb(0 0 0 / 0.28));
+  }
+  body.stage-vinyl[data-playback="playing"] .vinyl-arm svg {
+    transform: rotate(7deg);
+  }
+  body.stage-vinyl .vinyl-arm .arm-well {
+    fill: var(--recess-bg, color-mix(in srgb, var(--ink) 8%, var(--bg)));
+    stroke: var(--seam-shadow, var(--line));
+    stroke-width: 1.5;
+  }
+  body.stage-vinyl .vinyl-arm .arm-pivot {
+    fill: var(--signal, var(--accent));
+  }
+}
+
+/* ---- Theater / Focus Stage Mode (Desktop wide) ---------------------------- */
+@media (min-width: 900px) and (orientation: landscape) {
+  html:not(.mobile-device) body.stage-theater #app {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  html:not(.mobile-device) body.stage-theater nav,
+  html:not(.mobile-device) body.stage-theater main,
+  html:not(.mobile-device) body.stage-theater #player-resizer {
+    display: none;
+  }
+  html:not(.mobile-device) body.stage-theater .now-panel,
+  html:not(.mobile-device) body.stage-theater .player {
+    grid-column: 1;
+  }
+  html:not(.mobile-device) body.stage-theater .now-panel {
+    padding: 28px 48px 10px;
+  }
+  html:not(.mobile-device) body.stage-theater .player {
+    padding: 8px 48px 28px;
+    max-width: 680px;
+    width: 100%;
+    justify-self: center;
+  }
+  html:not(.mobile-device) body.stage-theater .now-card {
+    max-width: 560px;
+    width: 100%;
+    margin-inline: auto;
+  }
+  html:not(.mobile-device) body.stage-theater.lyrics-open #lyrics-panel {
+    width: min(46vw, 560px);
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+  }
+  html:not(.mobile-device) body.stage-theater #lyrics p[data-line] {
+    font-size: 25px;
+    margin-bottom: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-ambient,
+  .ambient-orb,
+  .now-cover-bloom,
+  body.stage-vinyl .vinyl-arm svg,
+  .stage-chip {
+    transition: none !important;
+  }
+}

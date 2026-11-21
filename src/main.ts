@@ -68,6 +68,7 @@ import {
   songKey,
 } from "./model.mjs";
 import "./style.css";
+import "./responsive-ia.css";
 import { readSetting, writeSetting } from "./settings";
 import { PlaybackQueue } from "./playback-queue.mjs";
 import { setupThemes } from "./themes";
@@ -86,6 +87,7 @@ import {
 } from "./motion";
 import { createCover } from "./cover";
 import { setupPlaybackState } from "./playback-state";
+import { setupStage } from "./stage";
 import { setupSync } from "./sync";
 import { systemMediaBackend } from "./system-media";
 import { createMediaSession } from "./media-session.mjs";
@@ -127,6 +129,7 @@ import {
 } from "./cloud";
 import { isDetail, viewMove, type View } from "./views";
 import { readSession, restore, restoreSongs, type Session } from "./session";
+import "./hifi-design.css";
 type PlaylistFilter = "recent" | Source | "internal";
 let playlistFilter = (readSetting("ting.playlist-filter") ||
   "netease") as PlaylistFilter;
@@ -361,7 +364,7 @@ $("#app").innerHTML = `
     "",
   )}</select></div><div id="download-info" hidden><span id="download-status" role="status"></span><button id="download-folder" class="quiet">打开文件夹</button></div></section>
 <nav aria-label="音乐导航"><button data-view="discover" class="active">搜索</button><button data-view="playlists">歌单</button><button data-view="favorites">收藏<span id="fav-count">0</span></button><button data-view="local">本地</button><button data-view="queue">队列<span id="queue-count">0</span></button></nav>
-<main><div class="topbar"><form id="search-form" role="search"><label class="sr-only" for="search">搜索歌曲或歌手</label>${icon("Search")}<input id="search" placeholder="搜索歌曲、歌手…" maxlength="100" autocomplete="off"/><select id="search-source" aria-label="搜索平台"><option value="netease">网易云</option><option value="qq">QQ音乐</option><option value="all">两个平台</option></select><button class="search-submit" aria-label="搜索" type="submit">搜索</button></form><button id="import-top" class="quiet" hidden>${icon("Plus")}导入</button><button id="import-folder" class="quiet" hidden title="导入整个文件夹，以后启动自动发现新歌">${icon("FolderOpen")}文件夹</button></div><div class="main-scroll"><section class="library"><div class="section-top"><button id="back-button" class="quiet" aria-label="返回歌单列表" hidden>${icon("ChevronLeft")}歌单</button><h2 id="section-title">搜索结果<span id="result-count"></span></h2><button id="refresh-playlists" class="quiet" hidden>刷新</button><button id="new-playlist" class="outline" hidden>＋ 新建</button><button id="manage-playlist" class="quiet" hidden>管理</button><button id="copy-playlist" class="quiet" hidden title="复制为本机歌单，之后可自由增删">${icon("Copy")}复制</button><button id="select-mode" class="quiet" title="选择多首" hidden aria-pressed="false">${icon("ListChecks")}选择</button><button id="clear-list" class="quiet" title="清空" hidden>${icon("Trash2")}清空</button><button id="download-all" class="quiet" title="下载全部" hidden title="下载这里的全部歌曲">${icon("Download")}下载</button><button id="enqueue-all" class="quiet" title="全部加入队列" hidden>${icon("ListPlus")}加入队列</button><button id="play-all" class="outline">${icon("Play")}播放全部</button></div><div id="discover-tools"><div id="search-kinds" class="segmented" role="tablist" aria-label="搜索类型">${[
+<main><div class="topbar"><form id="search-form" role="search"><label class="sr-only" for="search">搜索歌曲或歌手</label>${icon("Search")}<input id="search" placeholder="搜索歌曲、歌手…" maxlength="100" autocomplete="off"/><select id="search-source" aria-label="搜索平台"><option value="netease">网易云</option><option value="qq">QQ音乐</option><option value="all">两个平台</option></select><button class="search-submit" aria-label="搜索" type="submit">搜索</button></form><button id="import-top" class="quiet" hidden>${icon("Plus")}导入</button><button id="import-folder" class="quiet" hidden title="导入整个文件夹，以后启动自动发现新歌">${icon("FolderOpen")}文件夹</button></div><div class="section-top"><button id="back-button" class="quiet" aria-label="返回歌单列表" hidden>${icon("ChevronLeft")}歌单</button><h2 id="section-title">搜索结果<span id="result-count"></span></h2><button id="refresh-playlists" class="quiet" hidden>刷新</button><button id="new-playlist" class="outline" hidden>＋ 新建</button><button id="manage-playlist" class="quiet" hidden>管理</button><button id="copy-playlist" class="quiet" hidden title="复制为本机歌单，之后可自由增删">${icon("Copy")}复制</button><button id="select-mode" class="quiet" title="选择多首" hidden aria-pressed="false">${icon("ListChecks")}选择</button><button id="clear-list" class="quiet" title="清空" hidden>${icon("Trash2")}清空</button><button id="download-all" class="quiet" title="下载全部" hidden title="下载这里的全部歌曲">${icon("Download")}下载</button><button id="enqueue-all" class="quiet" title="全部加入队列" hidden>${icon("ListPlus")}加入队列</button><button id="play-all" class="outline">${icon("Play")}播放全部</button></div><div class="main-scroll"><section class="library"><div id="discover-tools"><div id="search-kinds" class="segmented" role="tablist" aria-label="搜索类型">${[
   ["song", "单曲"],
   ["artist", "歌手"],
   ["album", "专辑"],
@@ -438,6 +441,20 @@ const lyricFollower = setupLyrics(
 // already restored at its expanded width, so no resize animation is due.
 if (isTauri() && !mobileDevice && readSetting("ting.lyrics-open") === "1")
   void lyricFollower.setOpen(true, false);
+const stage = setupStage({
+  audio,
+  seek: $("#seek") as HTMLInputElement,
+  isSeeking: () => seekDragging,
+  ensureLyricsOpen: () => {
+    if ($("#lyrics-panel").hidden) void lyricFollower.setOpen(true);
+  },
+});
+const syncMainScrolled = () => {
+  $("main").classList.toggle("main-scrolled", $(".main-scroll").scrollTop > 8);
+};
+$(".main-scroll").addEventListener("scroll", syncMainScrolled, {
+  passive: true,
+});
 setupThemes();
 if (!mobileDevice) {
   setupColumns();
@@ -1167,6 +1184,7 @@ function setView(next: View, fresh = false) {
   if (changed) {
     const restored = viewScroll.get(next) || 0;
     $(".main-scroll").scrollTop = restored;
+    syncMainScrolled();
     const move = viewMove(previous, next, navigatingBack);
     // A restored scroll position means the page was already here and is only
     // being revealed again, so it arrives softer than genuinely new content.
@@ -1687,11 +1705,12 @@ async function copyPlaylist() {
     button.disabled = false;
   }
 }
-function toggleFavorite(song: Song) {
+function toggleFavorite(song: Song, trigger?: HTMLElement | null) {
   if (transient(song)) return;
-  const next = favorites.some((s) => songKey(s) === songKey(song))
-    ? favorites.filter((s) => songKey(s) !== songKey(song))
-    : [song, ...favorites];
+  const adding = !favorites.some((s) => songKey(s) === songKey(song));
+  const next = adding
+    ? [song, ...favorites]
+    : favorites.filter((s) => songKey(s) !== songKey(song));
   try {
     setFavoriteSongs(next);
     favorites = favoriteSongs();
@@ -1702,6 +1721,15 @@ function toggleFavorite(song: Song) {
   if (view === "favorites") renderSongs();
   else syncRows();
   updateFavorite();
+  if (adding) {
+    stage.burstHeart(trigger ?? null);
+    if (
+      current &&
+      songKey(current) === songKey(song) &&
+      trigger !== $("#now-fav")
+    )
+      stage.burstHeart($("#now-fav"));
+  }
 }
 let downloading = false;
 function updateDownloadButton() {
@@ -1755,6 +1783,7 @@ function updateNow(song: Song) {
   const dir = trackDirection;
   trackDirection = 0;
   updateCover(song.cover || "", `${song.album || song.name} 封面`, dir);
+  stage.updateCover(song.cover || "", `${song.name}-${song.artist}`);
   $("#now-name").textContent = song.name;
   $("#lyrics-title").textContent = song.name;
   // Each artist is a way to their page, like in the lists.
@@ -2319,7 +2348,7 @@ document.addEventListener("click", (e) => {
       action.dataset.remove;
     const song = list().find((s) => songKey(s) === id);
     if (!song) return;
-    if (action.hasAttribute("data-favorite")) toggleFavorite(song);
+    if (action.hasAttribute("data-favorite")) toggleFavorite(song, action);
     else if (action.hasAttribute("data-remove")) {
       queueFillSerial++;
       queueExpected = 0;
@@ -2370,6 +2399,31 @@ document.addEventListener("click", (e) => {
   }
   if (el.closest("#empty-import")) pickLocalFiles();
 });
+if (!mobileDevice) {
+  // Desktop right-click on any song row opens its action sheet directly.
+  document.addEventListener("contextmenu", (e) => {
+    const row = (e.target as HTMLElement).closest<HTMLElement>(
+      ".song-row[data-song]",
+    );
+    if (!row || selecting || showsCards()) return;
+    const song = list().find((s) => songKey(s) === row.dataset.song!);
+    if (!song) return;
+    e.preventDefault();
+    selectSong(songKey(song));
+    library.songMenu(song);
+  });
+  // Hardware mouse back side button returns from detail views.
+  window.addEventListener("mouseup", (e) => {
+    if (
+      e.button === 3 &&
+      !document.querySelector("dialog[open]") &&
+      isDetail(view)
+    ) {
+      e.preventDefault();
+      goBack();
+    }
+  });
+}
 document.addEventListener("dblclick", (e) => {
   if (mobileDevice) return;
   const el = e.target as HTMLElement;
@@ -2384,10 +2438,21 @@ document.addEventListener("dblclick", (e) => {
 });
 document.addEventListener("keydown", (e) => {
   if (document.querySelector("dialog[open]")) return;
-  if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
     e.preventDefault();
+    if (stage.isTheater()) stage.setTheater(false);
     setView("discover");
     $("#search").focus();
+    return;
+  }
+  // Standard desktop back shortcuts: Alt+Left (all OS) and Cmd+[ (macOS).
+  if (
+    !mobileDevice &&
+    isDetail(view) &&
+    ((e.altKey && e.key === "ArrowLeft") || (e.metaKey && e.key === "["))
+  ) {
+    e.preventDefault();
+    goBack();
     return;
   }
   const target = e.target as HTMLElement;
@@ -2403,6 +2468,11 @@ document.addEventListener("keydown", (e) => {
       selectSong(songKey(song));
       playSelection(song);
     }
+    return;
+  }
+  if (e.key === "Escape" && stage.isTheater()) {
+    e.preventDefault();
+    stage.setTheater(false);
     return;
   }
   if (e.key === "Escape" && selecting) {
@@ -2427,10 +2497,20 @@ document.addEventListener("keydown", (e) => {
   if (e.code === "Space") {
     e.preventDefault();
     toggle();
+  } else if (
+    !mobileDevice &&
+    !e.metaKey &&
+    !e.ctrlKey &&
+    !e.altKey &&
+    e.key.toLowerCase() === "f"
+  ) {
+    e.preventDefault();
+    stage.toggleTheater();
   }
 });
 $(".brand").addEventListener("click", (e) => {
   e.preventDefault();
+  if (stage.isTheater()) stage.setTheater(false);
   if (view !== "discover") setView("discover");
 });
 $("#import-top").onclick = pickLocalFiles;
@@ -2614,7 +2694,7 @@ $("#toggle").onclick = toggle;
 $("#previous").onclick = () => skip(-1);
 $("#next").onclick = () => skip(1);
 $("#now-fav").onclick = () => {
-  if (current) toggleFavorite(current);
+  if (current) toggleFavorite(current, $("#now-fav"));
 };
 $("#repeat").onclick = () => {
   playbackMode =

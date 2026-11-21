@@ -250,34 +250,69 @@ export function setupSettingsPanel(o: Options) {
     );
     keepFocus(dialog, () => (dialog.innerHTML = parts.join("")));
   }
+  let activeSection = "playback";
+  let jumpLockTimer = 0;
+  let jumpLocked = false;
+
+  function setActiveNav(id: string) {
+    activeSection = id;
+    dialog
+      .querySelectorAll<HTMLElement>("[data-settings-jump]")
+      .forEach((btn) =>
+        btn.setAttribute(
+          "aria-current",
+          String(btn.dataset.settingsJump === activeSection),
+        ),
+      );
+  }
+
   function render() {
     if (phone) return renderPhone();
+    const prevScroll =
+      dialog.querySelector<HTMLElement>(".settings-body")?.scrollTop ?? 0;
     const q = o.quality;
     const scale = pageScale();
-    const parts = [
-      `<header class="settings-header"><h2 id="settings-title">设置</h2><button class="dialog-close icon-button" data-settings-close aria-label="关闭设置">${icon("X")}</button></header>`,
-      `<section><h3>播放</h3>${row(
-        "音质",
-        "按账号权限提供，播放区显示实际返回的档位",
-        `<select id="settings-quality">${Object.entries(q.names)
-          .map(
-            ([v, label]) =>
-              `<option value="${v}" ${v === q.value() ? "selected" : ""}>${label}</option>`,
-          )
-          .join("")}</select>`,
-      )}${row("音效与睡眠定时", "响度均衡、均衡器、淡入淡出、定时停止", `<button class="outline" data-open-sound>打开</button>`)}</section>`,
-      `<section><h3>外观</h3>${row("主题配色", "11 套配色，可跟随系统深浅色", `<button class="outline" data-open-theme>选择</button>`)}${row(
-        "界面缩放",
-        `当前 ${Math.round(scale * 100)}%${desktop ? " · 也可用 ⌘/Ctrl 加减号调整" : ""}`,
-        `<div class="scale-steps" role="group" aria-label="界面缩放">${SCALES.map(
-          (s) =>
-            `<button data-scale="${s}" aria-pressed="${s === scale}">${Math.round(s * 100)}%</button>`,
-        ).join("")}</div>`,
-      )}</section>`,
+    const sections: {
+      id: string;
+      label: string;
+      iconName: string;
+      html: string;
+    }[] = [
+      {
+        id: "playback",
+        label: "播放",
+        iconName: "Headphones",
+        html: `<section data-settings-section="playback"><h3>播放</h3>${row(
+          "音质",
+          "按账号权限提供，播放区显示实际返回的档位",
+          `<select id="settings-quality">${Object.entries(q.names)
+            .map(
+              ([v, label]) =>
+                `<option value="${v}" ${v === q.value() ? "selected" : ""}>${label}</option>`,
+            )
+            .join("")}</select>`,
+        )}${row("音效与睡眠定时", "响度均衡、均衡器、淡入淡出、定时停止", `<button class="outline" data-open-sound>打开</button>`)}</section>`,
+      },
+      {
+        id: "appearance",
+        label: "外观",
+        iconName: "Palette",
+        html: `<section data-settings-section="appearance"><h3>外观</h3>${row("主题配色", "11 套配色，可跟随系统深浅色与专辑流光", `<button class="outline" data-open-theme>选择</button>`)}${row(
+          "界面缩放",
+          `当前 ${Math.round(scale * 100)}%${desktop ? " · 也可用 ⌘/Ctrl 加减号调整" : ""}`,
+          `<div class="scale-steps" role="group" aria-label="界面缩放">${SCALES.map(
+            (s) =>
+              `<button data-scale="${s}" aria-pressed="${s === scale}">${Math.round(s * 100)}%</button>`,
+          ).join("")}</div>`,
+        )}</section>`,
+      },
     ];
     if (native)
-      parts.push(
-        `<section><h3>本地与下载</h3>${row("下载后自动加入本地", "下载完成的歌曲出现在「本地」，在线播放时优先用本机文件", toggle("settings-auto-import", autoImport()))}${
+      sections.push({
+        id: "library",
+        label: "本地与下载",
+        iconName: "Download",
+        html: `<section data-settings-section="library"><h3>本地与下载</h3>${row("下载后自动加入本地", "下载完成的歌曲出现在「本地」，在线播放时优先用本机文件", toggle("settings-auto-import", autoImport()))}${
           desktop
             ? row(
                 "下载文件夹",
@@ -295,10 +330,13 @@ export function setupSettingsPanel(o: Options) {
                 .join("")}</div>`
             : ""
         }</section>`,
-      );
+      });
     if (desktop)
-      parts.push(
-        `<section><h3>桌面</h3>${row("关闭窗口时留在托盘", "音乐继续播放，从托盘（菜单栏）图标回到主窗口", toggle("settings-tray", prefs.closeToTray))}${row(
+      sections.push({
+        id: "desktop",
+        label: "桌面",
+        iconName: "Monitor",
+        html: `<section data-settings-section="desktop"><h3>桌面</h3>${row("关闭窗口时留在托盘", "音乐继续播放，从托盘（菜单栏）图标回到主窗口", toggle("settings-tray", prefs.closeToTray))}${row(
           "迷你播放器",
           "置顶的小窗，只留封面和播放控制",
           `<button class="outline" data-mini>打开 / 关闭</button>`,
@@ -327,22 +365,97 @@ export function setupSettingsPanel(o: Options) {
               )}<button class="quiet" data-shortcuts-reset>恢复默认快捷键</button></div>`
             : ""
         }</section>`,
-      );
-    parts.push(
-      `<section><h3>数据</h3>${row("备份与恢复", "收藏、本机歌单、本地音乐、最近播放与偏好；不含账号登录", `<span class="row-buttons"><button class="outline" data-backup="export">导出</button><button class="outline" data-backup="import">导入</button></span>`)}</section>`,
-      `<section><h3>关于</h3>${row("听 · Ting", esc(o.version()), `<button class="outline" data-diagnostics>导出诊断信息</button>`)}<small class="summary">诊断信息含版本、系统、曲库数量和最近的提示与错误摘要；文件路径、网址参数与登录凭据已去除。</small></section>`,
+      });
+    sections.push(
+      {
+        id: "data",
+        label: "数据",
+        iconName: "Database",
+        html: `<section data-settings-section="data"><h3>数据</h3>${row("备份与恢复", "收藏、本机歌单、本地音乐、最近播放与偏好；不含账号登录", `<span class="row-buttons"><button class="outline" data-backup="export">导出</button><button class="outline" data-backup="import">导入</button></span>`)}</section>`,
+      },
+      {
+        id: "about",
+        label: "关于",
+        iconName: "Info",
+        html: `<section data-settings-section="about"><h3>关于</h3>${row("听 · Ting", esc(o.version()), `<button class="outline" data-diagnostics>导出诊断信息</button>`)}<small class="summary">诊断信息含版本、系统、曲库数量和最近的提示与错误摘要；文件路径、网址参数与登录凭据已去除。</small></section>`,
+      },
     );
-    keepFocus(dialog, () => (dialog.innerHTML = parts.join("")));
+    if (!sections.some((s) => s.id === activeSection))
+      activeSection = sections[0].id;
+    const navHtml = sections
+      .map(
+        (s) =>
+          `<button type="button" data-settings-jump="${s.id}" aria-current="${s.id === activeSection}">${icon(s.iconName)}<span>${s.label}</span></button>`,
+      )
+      .join("");
+    const markup = `<header class="settings-header"><h2 id="settings-title">设置</h2><button class="dialog-close icon-button" data-settings-close aria-label="关闭设置">${icon("X")}</button></header><div class="settings-shell"><aside class="settings-nav" role="navigation" aria-label="设置分类">${navHtml}</aside><div class="settings-body">${sections.map((s) => s.html).join("")}</div></div>`;
+    keepFocus(dialog, () => (dialog.innerHTML = markup));
+    const body = dialog.querySelector<HTMLElement>(".settings-body");
+    if (body) {
+      let restoringScroll = false;
+      if (prevScroll > 0) {
+        restoringScroll = true;
+        body.scrollTop = prevScroll;
+        requestAnimationFrame(() => {
+          restoringScroll = false;
+        });
+      }
+      // Release programmatic jump lock only on real user wheel/touch/scrollbar scroll,
+      // so clicking a bottom section never gets hijacked back by scroll-spy.
+      const unlockOnUserScroll = () => {
+        jumpLocked = false;
+        window.clearTimeout(jumpLockTimer);
+      };
+      body.addEventListener("wheel", unlockOnUserScroll, { passive: true });
+      body.addEventListener("touchstart", unlockOnUserScroll, {
+        passive: true,
+      });
+      body.addEventListener(
+        "pointerdown",
+        (ev) => {
+          if (ev.target === body) unlockOnUserScroll();
+        },
+        { passive: true },
+      );
+      body.addEventListener(
+        "scroll",
+        () => {
+          if (jumpLocked || restoringScroll) return;
+          const items = [
+            ...body.querySelectorAll<HTMLElement>("[data-settings-section]"),
+          ];
+          if (!items.length) return;
+          // At the bottom of the scroll pane, highlight the final section.
+          if (body.scrollTop + body.clientHeight >= body.scrollHeight - 6) {
+            const last = items[items.length - 1].dataset.settingsSection;
+            if (last && last !== activeSection) setActiveNav(last);
+            return;
+          }
+          const bodyTop = body.getBoundingClientRect().top;
+          let current = items[0].dataset.settingsSection || activeSection;
+          for (const item of items) {
+            if (item.getBoundingClientRect().top - bodyTop <= 48)
+              current = item.dataset.settingsSection || current;
+          }
+          if (current !== activeSection) setActiveNav(current);
+        },
+        { passive: true },
+      );
+    }
   }
 
   async function refreshDownloadPath() {
     if (!desktop) return;
     try {
-      downloadPath = await invoke<string>("download_dir", {
+      const next = await invoke<string>("download_dir", {
         pick: false,
         reset: false,
       });
-      if (dialog.open) render();
+      // Skip redundant full DOM redraw when the path is unchanged.
+      if (next !== downloadPath) {
+        downloadPath = next;
+        if (dialog.open) render();
+      }
     } catch {
       /* The default still applies. */
     }
@@ -401,13 +514,45 @@ export function setupSettingsPanel(o: Options) {
   });
   dialog.addEventListener("click", async (e) => {
     const el = e.target as HTMLElement;
+    const jump = el.closest<HTMLElement>("[data-settings-jump]");
+    if (jump) {
+      const targetId = jump.dataset.settingsJump!;
+      setActiveNav(targetId);
+      const body = dialog.querySelector<HTMLElement>(".settings-body");
+      const section = dialog.querySelector<HTMLElement>(
+        `[data-settings-section="${targetId}"]`,
+      );
+      if (body && section) {
+        jumpLocked = true;
+        window.clearTimeout(jumpLockTimer);
+        const offset =
+          section.getBoundingClientRect().top -
+          body.getBoundingClientRect().top +
+          body.scrollTop -
+          8;
+        const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+        body.scrollTo({
+          top: Math.max(0, offset),
+          behavior: reduced ? "auto" : "smooth",
+        });
+        // Keep the clicked nav item highlighted even for short bottom sections
+        // until the user manually scrolls again.
+        jumpLockTimer = window.setTimeout(() => {
+          const atBottom =
+            body.scrollTop + body.clientHeight >= body.scrollHeight - 6;
+          if (!atBottom) jumpLocked = false;
+        }, 650);
+        animateContent(section, { distance: 0, duration: 220, from: 0.78 });
+      }
+      return;
+    }
     if (el.closest("[data-settings-close]")) return closeDialog(dialog);
     if (el.closest("[data-open-sound]")) return o.openSound();
     if (el.closest("[data-open-theme]")) return o.openTheme();
     const scale = el.closest<HTMLElement>("[data-scale]");
     if (scale) {
       setPageScale(Number(scale.dataset.scale));
-      return render();
+      return;
     }
     const dir = el.closest<HTMLElement>("[data-download-dir]");
     if (dir) {
@@ -471,11 +616,12 @@ export function setupSettingsPanel(o: Options) {
 
   $("#settings-button").onclick = () => {
     recording = undefined;
+    jumpLocked = false;
+    activeSection = "playback";
     prefs = desktopPrefs();
     render();
+    // openDialog owns the modal entrance; do not stack a second animateContent(dialog).
     openDialog(dialog);
-    // The phone page slides in whole; only the desktop sheet eases its rows.
-    if (!phone) animateContent(dialog, { distance: 5 });
     void refreshDownloadPath();
   };
   return { rerender: () => dialog.open && render() };

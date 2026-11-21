@@ -1,0 +1,304 @@
+/* ---- Multi-Device IA: Pinned Context Bar & Wide Desktop Dialog Workbench -- */
+
+/* Pinned context header sits directly in <main> above .main-scroll so #back-button,
+   current playlist/artist/album title and primary actions never scroll away. */
+main > .section-top {
+  flex-shrink: 0;
+  padding: 12px 20px 10px;
+  margin: 0;
+  background: var(--surface);
+  border-bottom: 1px solid transparent;
+  z-index: 2;
+  transition:
+    border-color var(--t-2) ease-out,
+    box-shadow var(--t-2) ease-out,
+    background-color var(--t-2) ease-out;
+}
+main.main-scrolled > .section-top {
+  border-bottom-color: var(--line);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--ink) 5%, transparent);
+}
+main > .section-top ~ .main-scroll {
+  padding-top: 6px;
+}
+main > .section-top #back-button {
+  flex-shrink: 0;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--tint);
+  border-radius: 9px;
+  padding: 6px 10px 6px 6px;
+  margin-left: 0;
+}
+@media (hover: hover) and (pointer: fine) {
+  html:not(.mobile-device) main > .section-top #back-button:hover {
+    background: var(--selected);
+  }
+}
+/* Mobile keeps >= 44px touch target on the pinned back button. */
+.mobile-device main > .section-top {
+  padding: 8px 16px;
+  gap: 8px;
+}
+.mobile-device main > .section-top #back-button {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 12px 0 6px;
+}
+
+/* Prevent horizontal overcrowding when a detail header has multiple action pills. */
+main > .section-top {
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+main > .section-top h2 {
+  min-width: 60px;
+}
+@media (max-width: 520px) {
+  main > .section-top {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+}
+
+/* ---- Wide Desktop Dialog System (no more narrow vertical-scroll modals) --- */
+@media (min-width: 720px) {
+  html:not(.mobile-device) #theme-dialog {
+    width: min(620px, calc(100vw - 48px));
+    padding: 26px 28px 28px;
+    border-radius: 20px;
+    box-shadow: 0 24px 80px color-mix(in srgb, var(--ink) 20%, transparent);
+  }
+  html:not(.mobile-device) #theme-dialog .theme-switches {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin: 14px 0 16px;
+  }
+  html:not(.mobile-device) #theme-dialog .theme-switches .switch-row {
+    margin: 0;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: var(--tint);
+    border: 1px solid var(--line);
+  }
+  html:not(.mobile-device) #theme-dialog .theme-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  /* Sound panel: 2-column horizontal layout with live EQ curve preview. */
+  html:not(.mobile-device) #sound-dialog {
+    width: min(660px, calc(100vw - 48px));
+    padding: 26px 28px 28px;
+    border-radius: 20px;
+    box-shadow: 0 24px 80px color-mix(in srgb, var(--ink) 20%, transparent);
+  }
+  html:not(.mobile-device) #sound-dialog .sound-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px 22px;
+    margin-top: 12px;
+  }
+  html:not(.mobile-device) #sound-dialog .sound-col {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  html:not(.mobile-device) #sound-dialog .sound-col section {
+    border-top: 0;
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: var(--tint);
+    border: 1px solid var(--line);
+  }
+
+  /* Downloads, Sync, Account & Library dialogs breathe comfortably on PC. */
+  html:not(.mobile-device) #downloads-dialog {
+    width: min(600px, calc(100vw - 48px));
+    padding: 26px 28px;
+    border-radius: 20px;
+    box-shadow: 0 24px 80px color-mix(in srgb, var(--ink) 20%, transparent);
+  }
+  html:not(.mobile-device) #sync-dialog {
+    width: min(560px, calc(100vw - 48px));
+    padding: 28px 30px;
+    border-radius: 20px;
+    box-shadow: 0 24px 80px color-mix(in srgb, var(--ink) 20%, transparent);
+  }
+  html:not(.mobile-device) #account-dialog {
+    width: min(500px, calc(100vw - 48px));
+    border-radius: 20px;
+  }
+  html:not(.mobile-device) #library-dialog {
+    width: min(500px, calc(100vw - 48px));
+    padding: 24px 26px;
+    border-radius: 18px;
+    box-shadow: 0 24px 80px color-mix(in srgb, var(--ink) 20%, transparent);
+  }
+  html:not(.mobile-device) #playlist-targets,
+  html:not(.mobile-device) #match-results {
+    max-height: 46dvh;
+  }
+
+  /* Settings Workbench: wide 2-column macOS-style sidebar + scrollable body.
+     Scoped to [open] so closed <dialog> stays natively display:none. */
+  html:not(.mobile-device) #settings-dialog {
+    width: min(820px, calc(100vw - 48px));
+    height: min(620px, calc(100dvh - 48px));
+    max-height: calc(100dvh - 40px);
+    overflow: hidden;
+  }
+  html:not(.mobile-device) #settings-dialog[open] {
+    display: flex;
+    flex-direction: column;
+  }
+  html:not(.mobile-device) #settings-dialog .settings-header {
+    position: static;
+    flex-shrink: 0;
+    padding: 16px 24px;
+  }
+  html:not(.mobile-device) #settings-dialog .settings-shell {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 176px minmax(0, 1fr);
+  }
+  html:not(.mobile-device) #settings-dialog .settings-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 14px 12px;
+    border-right: 1px solid var(--line);
+    background: color-mix(in srgb, var(--bg) 62%, var(--surface));
+    overflow-y: auto;
+  }
+  html:not(.mobile-device) #settings-dialog .settings-nav button {
+    justify-content: flex-start;
+    gap: 9px;
+    padding: 9px 12px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--muted);
+    text-align: left;
+    transition:
+      background-color var(--t-1) ease-out,
+      color var(--t-1) ease-out;
+  }
+  html:not(.mobile-device) #settings-dialog .settings-nav button svg {
+    width: 15px;
+    height: 15px;
+  }
+  html:not(.mobile-device) #settings-dialog .settings-nav button:hover {
+    background: var(--hover);
+    color: var(--ink);
+  }
+  html:not(.mobile-device)
+    #settings-dialog
+    .settings-nav
+    button[aria-current="true"] {
+    background: var(--selected);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  html:not(.mobile-device) #settings-dialog .settings-body {
+    position: relative;
+    overflow-y: auto;
+    padding: 8px 28px 64px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+  }
+  html:not(.mobile-device) #settings-dialog .settings-body section {
+    padding: 18px 0;
+  }
+  html:not(.mobile-device) #settings-dialog .shortcut-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 18px;
+    margin-top: 8px;
+  }
+  html:not(.mobile-device) #settings-dialog .shortcut-list > button {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Narrow desktop windows (< 720px) hide the sidebar rail and keep clean single-column flow. */
+@media (max-width: 719px) {
+  #settings-dialog .settings-nav {
+    display: none;
+  }
+  #theme-dialog .theme-switches {
+    display: grid;
+    gap: 8px;
+    margin: 12px 0;
+  }
+  #theme-dialog .theme-switches .switch-row {
+    margin: 0;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--tint);
+  }
+}
+
+/* Live 5-band EQ curve visualization inside #sound-dialog */
+.eq-curve {
+  margin-top: 12px;
+  padding: 10px 10px 6px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.eq-curve svg {
+  width: 100%;
+  height: 62px;
+  display: block;
+}
+.eq-curve .eq-grid-line {
+  stroke: var(--line);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+.eq-curve .eq-area {
+  fill: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.eq-curve .eq-stroke {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.eq-curve .eq-dot {
+  fill: var(--surface);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.eq-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Refined song-row hover transition on desktop. */
+@media (hover: hover) and (pointer: fine) {
+  html:not(.mobile-device) .song-row {
+    transition: background-color var(--t-1) ease-out;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  main > .section-top,
+  html:not(.mobile-device) #settings-dialog .settings-nav button,
+  html:not(.mobile-device) .song-row {
+    transition: none;
+  }
+  html:not(.mobile-device) #settings-dialog .settings-body {
+    scroll-behavior: auto;
+  }
+}

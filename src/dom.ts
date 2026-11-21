@@ -41,6 +41,12 @@ import {
   History,
   Settings,
   ListChecks,
+  Maximize2,
+  Minimize2,
+  Sparkles,
+  Monitor,
+  Database,
+  Info,
 } from "lucide";
 
 const iconSet = {
@@ -85,6 +91,12 @@ const iconSet = {
   History,
   Settings,
   ListChecks,
+  Maximize2,
+  Minimize2,
+  Sparkles,
+  Monitor,
+  Database,
+  Info,
 };
 export type IconName = keyof typeof iconSet;
 

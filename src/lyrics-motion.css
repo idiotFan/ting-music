@@ -3,29 +3,34 @@
    Four depths and a beat: a line arrives quickly and leaves with a tail, so
    the sung line reads as the one the music is on. */
 #lyrics p[data-line] {
-  opacity: 0.3;
+  opacity: 0.32;
   transform-origin: left center;
-  transform: translateX(0) scale(1);
+  transform: translate3d(0, 0, 0) scale(1);
   transition:
-    opacity 400ms var(--e-exit),
-    transform var(--t-3) var(--e-enter);
+    opacity 360ms var(--e-move),
+    transform 340ms var(--e-enter),
+    background-color 280ms ease-out;
 }
 #lyrics p[data-line].past {
-  opacity: 0.2;
+  opacity: 0.22;
 }
 #lyrics p[data-line].near {
-  opacity: 0.5;
+  opacity: 0.56;
 }
 #lyrics p[data-line].current {
   opacity: 1;
   transform: translate3d(6px, 0, 0) scale(1);
   transition:
     opacity var(--t-2) var(--e-enter),
-    transform var(--t-3) var(--e-enter);
+    transform 340ms var(--e-enter),
+    background-color 240ms var(--e-enter);
+}
+body.stage-theater #lyrics p[data-line].current {
+  transform: translate3d(8px, 0, 0) scale(1.035);
 }
 @media (hover: hover) {
   #lyrics p[data-line]:hover {
-    opacity: 0.85;
+    opacity: 0.88;
   }
   #lyrics p[data-line].current:hover {
     opacity: 1;
