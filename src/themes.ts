@@ -171,12 +171,20 @@ export function setupThemes() {
   const dialog = document.createElement("dialog");
   dialog.id = "theme-dialog";
   dialog.setAttribute("aria-labelledby", "theme-title");
-  dialog.innerHTML = `<button class="dialog-close icon-button" id="theme-close" aria-label="关闭主题选择">×</button><h2 id="theme-title">选一种心情</h2><p class="summary">晨绿 + 10 套配色，选择后立即生效。</p><label class="switch-row theme-follow"><span><strong>跟随系统深浅色</strong><small>系统切换到深色时换成下方选中的深色配色。</small></span><span class="toggle"><input type="checkbox" role="switch" id="theme-follow"/><i aria-hidden="true"></i></span></label><div class="theme-grid">${themes.map((t) => `<button class="theme-choice" data-theme-choice="${t.id}" aria-pressed="false"><span class="theme-preview" style="--swatch-bg:${t.bg};--swatch-surface:${t.surface};--swatch-ink:${t.ink};--swatch-accent:${t.accent}"><i></i><b></b><em></em></span><span>${t.name}</span></button>`).join("")}</div>`;
+  dialog.innerHTML = `<button class="dialog-close icon-button" id="theme-close" aria-label="关闭主题选择">×</button><h2 id="theme-title">选一种心情</h2><p class="summary">晨绿 + 10 套配色，选择后立即生效。</p><div class="theme-switches"><label class="switch-row theme-follow"><span><strong>跟随系统深浅色</strong><small>系统切换到深色时换成下方选中的深色配色。</small></span><span class="toggle"><input type="checkbox" role="switch" id="theme-follow"/><i aria-hidden="true"></i></span></label><label class="switch-row theme-ambient"><span><strong>专辑氛围流光</strong><small>桌面播放舞台随当前专辑色彩柔和呼吸。</small></span><span class="toggle"><input type="checkbox" role="switch" id="theme-ambient"/><i aria-hidden="true"></i></span></label></div><div class="theme-grid">${themes.map((t) => `<button class="theme-choice" data-theme-choice="${t.id}" aria-pressed="false"><span class="theme-preview" style="--swatch-bg:${t.bg};--swatch-surface:${t.surface};--swatch-ink:${t.ink};--swatch-accent:${t.accent}"><i></i><b></b><em></em></span><span>${t.name}</span></button>`).join("")}</div>`;
   document.body.append(dialog);
   let colorTimer = 0;
   const followBox = dialog.querySelector<HTMLInputElement>("#theme-follow")!;
+  const ambientBox = dialog.querySelector<HTMLInputElement>("#theme-ambient")!;
+  ambientBox.checked = readSetting("ting.ambient", "1") !== "0";
+  ambientBox.addEventListener("change", () => {
+    const on = ambientBox.checked;
+    writeSetting("ting.ambient", on ? "1" : "0");
+    document.documentElement.dataset.ambient = on ? "on" : "off";
+  });
   const update = () => {
     followBox.checked = follow;
+    ambientBox.checked = readSetting("ting.ambient", "1") !== "0";
     dialog.querySelectorAll<HTMLElement>("[data-theme-choice]").forEach((b) => {
       const id = b.dataset.themeChoice!;
       // Following the system, both remembered choices stay marked.

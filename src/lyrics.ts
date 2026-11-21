@@ -37,10 +37,11 @@ export function setupLyrics(
       return;
     }
     const started = performance.now(),
-      duration = Math.min(540, Math.max(280, Math.abs(target - from) * 0.7));
+      duration = Math.min(600, Math.max(300, Math.abs(target - from) * 0.72));
     function tick(now: number) {
       const t = Math.min(1, (now - started) / duration);
-      box.scrollTop = from + (target - from) * (1 - Math.pow(1 - t, 3));
+      // Quartic ease-out lands softly with less mechanical snap than cubic.
+      box.scrollTop = from + (target - from) * (1 - Math.pow(1 - t, 4));
       if (t < 1) frame = requestAnimationFrame(tick);
     }
     frame = requestAnimationFrame(tick);
@@ -49,6 +50,8 @@ export function setupLyrics(
     if (next === index && !force) return;
     index = next;
     box.querySelectorAll<HTMLElement>("[data-line]").forEach((line, i) => {
+      const dist = index < 0 ? 0 : Math.min(4, Math.abs(i - index));
+      line.style.setProperty("--dist", String(dist));
       line.classList.toggle("current", i === index);
       line.classList.toggle("near", Math.abs(i - index) === 1);
       line.classList.toggle("past", i < index);
@@ -201,6 +204,7 @@ export function setupLyrics(
   });
   function browse() {
     manual = true;
+    box.classList.add("browsing");
     cancelAnimationFrame(frame);
     follow.hidden = false;
   }
@@ -216,6 +220,7 @@ export function setupLyrics(
   });
   follow.onclick = () => {
     manual = false;
+    box.classList.remove("browsing");
     follow.hidden = true;
     center();
   };
@@ -223,6 +228,7 @@ export function setupLyrics(
     const line = (e.target as HTMLElement).closest<HTMLElement>("[data-line]");
     if (!line || !Number.isFinite(audio.duration)) return;
     manual = false;
+    box.classList.remove("browsing");
     follow.hidden = true;
     seek(Number(line.dataset.line));
   });
@@ -239,6 +245,7 @@ export function setupLyrics(
     setOpen,
     resume: (next: number, instant = false) => {
       manual = false;
+      box.classList.remove("browsing");
       follow.hidden = true;
       sync(next, instant, true);
     },
@@ -246,6 +253,7 @@ export function setupLyrics(
       cancelAnimationFrame(frame);
       index = -1;
       manual = false;
+      box.classList.remove("browsing");
       follow.hidden = true;
       box.scrollTop = 0;
     },

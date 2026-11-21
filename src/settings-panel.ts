@@ -250,34 +250,54 @@ export function setupSettingsPanel(o: Options) {
     );
     keepFocus(dialog, () => (dialog.innerHTML = parts.join("")));
   }
+  let activeSection = "playback";
   function render() {
     if (phone) return renderPhone();
+    const prevScroll =
+      dialog.querySelector<HTMLElement>(".settings-body")?.scrollTop ?? 0;
     const q = o.quality;
     const scale = pageScale();
-    const parts = [
-      `<header class="settings-header"><h2 id="settings-title">设置</h2><button class="dialog-close icon-button" data-settings-close aria-label="关闭设置">${icon("X")}</button></header>`,
-      `<section><h3>播放</h3>${row(
-        "音质",
-        "按账号权限提供，播放区显示实际返回的档位",
-        `<select id="settings-quality">${Object.entries(q.names)
-          .map(
-            ([v, label]) =>
-              `<option value="${v}" ${v === q.value() ? "selected" : ""}>${label}</option>`,
-          )
-          .join("")}</select>`,
-      )}${row("音效与睡眠定时", "响度均衡、均衡器、淡入淡出、定时停止", `<button class="outline" data-open-sound>打开</button>`)}</section>`,
-      `<section><h3>外观</h3>${row("主题配色", "11 套配色，可跟随系统深浅色", `<button class="outline" data-open-theme>选择</button>`)}${row(
-        "界面缩放",
-        `当前 ${Math.round(scale * 100)}%${desktop ? " · 也可用 ⌘/Ctrl 加减号调整" : ""}`,
-        `<div class="scale-steps" role="group" aria-label="界面缩放">${SCALES.map(
-          (s) =>
-            `<button data-scale="${s}" aria-pressed="${s === scale}">${Math.round(s * 100)}%</button>`,
-        ).join("")}</div>`,
-      )}</section>`,
+    const sections: {
+      id: string;
+      label: string;
+      iconName: string;
+      html: string;
+    }[] = [
+      {
+        id: "playback",
+        label: "播放",
+        iconName: "Headphones",
+        html: `<section data-settings-section="playback"><h3>播放</h3>${row(
+          "音质",
+          "按账号权限提供，播放区显示实际返回的档位",
+          `<select id="settings-quality">${Object.entries(q.names)
+            .map(
+              ([v, label]) =>
+                `<option value="${v}" ${v === q.value() ? "selected" : ""}>${label}</option>`,
+            )
+            .join("")}</select>`,
+        )}${row("音效与睡眠定时", "响度均衡、均衡器、淡入淡出、定时停止", `<button class="outline" data-open-sound>打开</button>`)}</section>`,
+      },
+      {
+        id: "appearance",
+        label: "外观",
+        iconName: "Palette",
+        html: `<section data-settings-section="appearance"><h3>外观</h3>${row("主题配色", "11 套配色，可跟随系统深浅色与专辑流光", `<button class="outline" data-open-theme>选择</button>`)}${row(
+          "界面缩放",
+          `当前 ${Math.round(scale * 100)}%${desktop ? " · 也可用 ⌘/Ctrl 加减号调整" : ""}`,
+          `<div class="scale-steps" role="group" aria-label="界面缩放">${SCALES.map(
+            (s) =>
+              `<button data-scale="${s}" aria-pressed="${s === scale}">${Math.round(s * 100)}%</button>`,
+          ).join("")}</div>`,
+        )}</section>`,
+      },
     ];
     if (native)
-      parts.push(
-        `<section><h3>本地与下载</h3>${row("下载后自动加入本地", "下载完成的歌曲出现在「本地」，在线播放时优先用本机文件", toggle("settings-auto-import", autoImport()))}${
+      sections.push({
+        id: "library",
+        label: "本地与下载",
+        iconName: "Download",
+        html: `<section data-settings-section="library"><h3>本地与下载</h3>${row("下载后自动加入本地", "下载完成的歌曲出现在「本地」，在线播放时优先用本机文件", toggle("settings-auto-import", autoImport()))}${
           desktop
             ? row(
                 "下载文件夹",
@@ -295,10 +315,13 @@ export function setupSettingsPanel(o: Options) {
                 .join("")}</div>`
             : ""
         }</section>`,
-      );
+      });
     if (desktop)
-      parts.push(
-        `<section><h3>桌面</h3>${row("关闭窗口时留在托盘", "音乐继续播放，从托盘（菜单栏）图标回到主窗口", toggle("settings-tray", prefs.closeToTray))}${row(
+      sections.push({
+        id: "desktop",
+        label: "桌面",
+        iconName: "Monitor",
+        html: `<section data-settings-section="desktop"><h3>桌面</h3>${row("关闭窗口时留在托盘", "音乐继续播放，从托盘（菜单栏）图标回到主窗口", toggle("settings-tray", prefs.closeToTray))}${row(
           "迷你播放器",
           "置顶的小窗，只留封面和播放控制",
           `<button class="outline" data-mini>打开 / 关闭</button>`,
@@ -327,12 +350,61 @@ export function setupSettingsPanel(o: Options) {
               )}<button class="quiet" data-shortcuts-reset>恢复默认快捷键</button></div>`
             : ""
         }</section>`,
-      );
-    parts.push(
-      `<section><h3>数据</h3>${row("备份与恢复", "收藏、本机歌单、本地音乐、最近播放与偏好；不含账号登录", `<span class="row-buttons"><button class="outline" data-backup="export">导出</button><button class="outline" data-backup="import">导入</button></span>`)}</section>`,
-      `<section><h3>关于</h3>${row("听 · Ting", esc(o.version()), `<button class="outline" data-diagnostics>导出诊断信息</button>`)}<small class="summary">诊断信息含版本、系统、曲库数量和最近的提示与错误摘要；文件路径、网址参数与登录凭据已去除。</small></section>`,
+      });
+    sections.push(
+      {
+        id: "data",
+        label: "数据",
+        iconName: "Database",
+        html: `<section data-settings-section="data"><h3>数据</h3>${row("备份与恢复", "收藏、本机歌单、本地音乐、最近播放与偏好；不含账号登录", `<span class="row-buttons"><button class="outline" data-backup="export">导出</button><button class="outline" data-backup="import">导入</button></span>`)}</section>`,
+      },
+      {
+        id: "about",
+        label: "关于",
+        iconName: "Info",
+        html: `<section data-settings-section="about"><h3>关于</h3>${row("听 · Ting", esc(o.version()), `<button class="outline" data-diagnostics>导出诊断信息</button>`)}<small class="summary">诊断信息含版本、系统、曲库数量和最近的提示与错误摘要；文件路径、网址参数与登录凭据已去除。</small></section>`,
+      },
     );
-    keepFocus(dialog, () => (dialog.innerHTML = parts.join("")));
+    if (!sections.some((s) => s.id === activeSection))
+      activeSection = sections[0].id;
+    const navHtml = sections
+      .map(
+        (s) =>
+          `<button type="button" data-settings-jump="${s.id}" aria-current="${s.id === activeSection}">${icon(s.iconName)}<span>${s.label}</span></button>`,
+      )
+      .join("");
+    const markup = `<header class="settings-header"><h2 id="settings-title">设置</h2><button class="dialog-close icon-button" data-settings-close aria-label="关闭设置">${icon("X")}</button></header><div class="settings-shell"><aside class="settings-nav" role="navigation" aria-label="设置分类">${navHtml}</aside><div class="settings-body">${sections.map((s) => s.html).join("")}</div></div>`;
+    keepFocus(dialog, () => (dialog.innerHTML = markup));
+    const body = dialog.querySelector<HTMLElement>(".settings-body");
+    if (body) {
+      if (prevScroll > 0) body.scrollTop = prevScroll;
+      body.addEventListener(
+        "scroll",
+        () => {
+          const items = [
+            ...body.querySelectorAll<HTMLElement>("[data-settings-section]"),
+          ];
+          const top = body.scrollTop + 40;
+          let current = items[0]?.dataset.settingsSection || activeSection;
+          for (const item of items) {
+            if (item.offsetTop <= top)
+              current = item.dataset.settingsSection || current;
+          }
+          if (current !== activeSection) {
+            activeSection = current;
+            dialog
+              .querySelectorAll<HTMLElement>("[data-settings-jump]")
+              .forEach((btn) =>
+                btn.setAttribute(
+                  "aria-current",
+                  String(btn.dataset.settingsJump === activeSection),
+                ),
+              );
+          }
+        },
+        { passive: true },
+      );
+    }
   }
 
   async function refreshDownloadPath() {
@@ -401,6 +473,23 @@ export function setupSettingsPanel(o: Options) {
   });
   dialog.addEventListener("click", async (e) => {
     const el = e.target as HTMLElement;
+    const jump = el.closest<HTMLElement>("[data-settings-jump]");
+    if (jump) {
+      const targetId = jump.dataset.settingsJump!;
+      activeSection = targetId;
+      dialog
+        .querySelectorAll<HTMLElement>("[data-settings-jump]")
+        .forEach((btn) =>
+          btn.setAttribute(
+            "aria-current",
+            String(btn.dataset.settingsJump === targetId),
+          ),
+        );
+      dialog
+        .querySelector<HTMLElement>(`[data-settings-section="${targetId}"]`)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
     if (el.closest("[data-settings-close]")) return closeDialog(dialog);
     if (el.closest("[data-open-sound]")) return o.openSound();
     if (el.closest("[data-open-theme]")) return o.openTheme();
