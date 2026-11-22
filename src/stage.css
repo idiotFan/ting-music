@@ -148,6 +148,7 @@ html[data-ambient="on"] .stage-ambient {
 @media (min-width: 900px) and (orientation: landscape) {
   html:not(.mobile-device) .now-panel {
     padding-top: 40px;
+    padding-bottom: 4px;
   }
   html:not(.mobile-device) .stage-tools {
     position: absolute;
@@ -174,9 +175,18 @@ html[data-ambient="on"] .stage-ambient {
     opacity: 1;
   }
 }
+@container now-playing (min-height: 280px) {
+  html:not(.mobile-device) .now-card {
+    gap: 14px 4px;
+  }
+  html:not(.mobile-device) .now-cover {
+    width: min(100cqw, 100cqh - 102px, 440px);
+  }
+}
 @media (min-width: 900px) and (max-width: 1239px) and (orientation: landscape) {
   html:not(.mobile-device) body.lyrics-open .now-panel {
     padding-top: 12px;
+    padding-bottom: 0;
   }
   html:not(.mobile-device) body.lyrics-open .stage-tools {
     display: none;

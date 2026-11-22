@@ -177,8 +177,14 @@ test("detail back button stays pinned while scrolling deep into a playlist and s
         mainRight: Math.round(main.right),
         topOverflow: top.scrollWidth - top.clientWidth,
         buttons,
-        toolsBottom: tools ? Math.round(tools.bottom) : 0,
-        coverTop: cover ? Math.round(cover.top) : 9999,
+        toolsOverlapsCover: Boolean(
+          tools &&
+          cover &&
+          tools.right > cover.left + 1 &&
+          tools.left < cover.right - 1 &&
+          tools.bottom > cover.top + 1 &&
+          tools.top < cover.bottom - 1,
+        ),
       };
     });
     expect(geometry.topOverflow).toBeLessThanOrEqual(1);
@@ -187,11 +193,45 @@ test("detail back button stays pinned while scrolling deep into a playlist and s
         geometry.mainRight + 1,
       );
     }
-    expect(geometry.coverTop).toBeGreaterThanOrEqual(geometry.toolsBottom - 1);
+    expect(geometry.toolsOverlapsCover, `tools overlap at ${vp.width}px`).toBe(
+      false,
+    );
     if (vp.width === 960) {
       await page.screenshot({ path: "work/verify-header-no-overflow.png" });
     }
   }
+
+  // Verify macOS .mac-window (taller traffic-light header) at 1100x620 keeps
+  // cover >= 55% of playback column width and zero overlap with .stage-tools.
+  await page.setViewportSize({ width: 1100, height: 620 });
+  const macCheck = await page.evaluate(() => {
+    const had = document.documentElement.classList.contains("mac-window");
+    document.documentElement.classList.add("mac-window");
+    const now = document.querySelector(".now-panel")!.getBoundingClientRect();
+    const cover = document.querySelector("#now-cover")!.getBoundingClientRect();
+    const tools = document
+      .querySelector(".stage-tools")!
+      .getBoundingClientRect();
+    const heading = document
+      .querySelector(".now-heading")!
+      .getBoundingClientRect();
+    const player = document.querySelector(".player")!.getBoundingClientRect();
+    if (!had) document.documentElement.classList.remove("mac-window");
+    return {
+      coverWidth: cover.width,
+      minCoverWidth: now.width * 0.55,
+      headingBottom: heading.bottom,
+      playerTop: player.top,
+      overlaps:
+        tools.right > cover.left + 1 &&
+        tools.left < cover.right - 1 &&
+        tools.bottom > cover.top + 1 &&
+        tools.top < cover.bottom - 1,
+    };
+  });
+  expect(macCheck.coverWidth).toBeGreaterThanOrEqual(macCheck.minCoverWidth);
+  expect(macCheck.headingBottom).toBeLessThanOrEqual(macCheck.playerTop + 1);
+  expect(macCheck.overlaps).toBe(false);
 
   // Also test narrow desktop list column (~420px, e.g. user widened player column):
   // secondary actions must compact to <=34px icons and stay strictly inside <main>.
