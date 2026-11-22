@@ -42,6 +42,8 @@
     "allow-download-song",
     "allow-open-download-folder",
     "allow-update-ready",
+    "allow-update-check",
+    "allow-update-download",
     "allow-update-install",
     "allow-local-import",
     "allow-local-import-folder",

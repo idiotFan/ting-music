@@ -88,6 +88,7 @@ import {
 import { createCover } from "./cover";
 import { setupPlaybackState } from "./playback-state";
 import { setupStage } from "./stage";
+import { setupKeyboardShortcuts } from "./keyboard";
 import { setupSync } from "./sync";
 import { systemMediaBackend } from "./system-media";
 import { createMediaSession } from "./media-session.mjs";
@@ -2436,77 +2437,27 @@ document.addEventListener("dblclick", (e) => {
     playSelection(song);
   }
 });
-document.addEventListener("keydown", (e) => {
-  if (document.querySelector("dialog[open]")) return;
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-    e.preventDefault();
-    if (stage.isTheater()) stage.setTheater(false);
+setupKeyboardShortcuts({
+  isDetailView: () => isDetail(view),
+  isSelecting: () => selecting,
+  setSelecting,
+  isTheater: () => stage.isTheater(),
+  setTheater: (on) => stage.setTheater(on),
+  toggleTheater: () => stage.toggleTheater(),
+  goBack,
+  focusSearch: () => {
     setView("discover");
     $("#search").focus();
-    return;
-  }
-  // Standard desktop back shortcuts: Alt+Left (all OS) and Cmd+[ (macOS).
-  if (
-    !mobileDevice &&
-    isDetail(view) &&
-    ((e.altKey && e.key === "ArrowLeft") || (e.metaKey && e.key === "["))
-  ) {
-    e.preventDefault();
-    goBack();
-    return;
-  }
-  const target = e.target as HTMLElement;
-  if (
-    e.key === "Enter" &&
-    !e.repeat &&
-    target.matches(".song-row,.song-title")
-  ) {
-    e.preventDefault();
-    const row = target.closest<HTMLElement>("[data-song]");
-    const song = row && list().find((s) => songKey(s) === row.dataset.song!);
+  },
+  togglePlayback: toggle,
+  playFocusedRow: (row) => {
+    const song = list().find((s) => songKey(s) === row.dataset.song!);
     if (song) {
       selectSong(songKey(song));
       playSelection(song);
     }
-    return;
-  }
-  if (e.key === "Escape" && stage.isTheater()) {
-    e.preventDefault();
-    stage.setTheater(false);
-    return;
-  }
-  if (e.key === "Escape" && selecting) {
-    e.preventDefault();
-    setSelecting(false);
-    return;
-  }
-  // The lyrics panel owns Escape while open; only the detail view goes back.
-  // Text fields keep Escape for themselves, but a focused button must not
-  // swallow it: opening a playlist leaves focus on its card.
-  if (
-    e.key === "Escape" &&
-    isDetail(view) &&
-    $("#lyrics-panel").hidden &&
-    !(e.target as HTMLElement).matches("input,textarea,select")
-  ) {
-    e.preventDefault();
-    goBack();
-    return;
-  }
-  if ((e.target as HTMLElement).matches("input,textarea,button,select")) return;
-  if (e.code === "Space") {
-    e.preventDefault();
-    toggle();
-  } else if (
-    !mobileDevice &&
-    !e.metaKey &&
-    !e.ctrlKey &&
-    !e.altKey &&
-    e.key.toLowerCase() === "f"
-  ) {
-    e.preventDefault();
-    stage.toggleTheater();
-  }
+  },
+  openShortcuts: () => bridge.openShortcuts(),
 });
 $(".brand").addEventListener("click", (e) => {
   e.preventDefault();

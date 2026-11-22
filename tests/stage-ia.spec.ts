@@ -99,11 +99,29 @@ async function desktopFixture(page: Page) {
           if (cmd === "download_dir") return "/Users/me/Downloads/Ting";
           if (cmd === "diagnostics")
             return {
-              version: "1.1.1",
+              version: "1.1.2",
               os: "macos",
               arch: "aarch64",
               family: "unix",
             };
+          if (cmd === "update_check") {
+            return (
+              w.__mockUpdateCheck || {
+                status: "available",
+                version: "1.1.3",
+                notes: "测试更新说明",
+              }
+            );
+          }
+          if (cmd === "update_download") {
+            w.__mockUpdateCalls = [...(w.__mockUpdateCalls || []), cmd];
+            if (w.__mockUpdateDownloadError) throw w.__mockUpdateDownloadError;
+            return "1.1.3";
+          }
+          if (cmd === "update_install") {
+            w.__mockUpdateCalls = [...(w.__mockUpdateCalls || []), cmd];
+            return null;
+          }
           if (cmd === "local_restore") return [];
           if (cmd === "local_scan")
             return {
@@ -656,5 +674,92 @@ test("adversarial stress pass 3: multi-viewport layout integrity and reduced-mot
     .locator(".now-card")
     .evaluate((el) => el.getAnimations({ subtree: true }).length);
   expect(runningAnimations).toBe(0);
+  expect(errors).toEqual([]);
+});
+
+test("switches have exact 2px border-box symmetry, About manual check/download update works in-place, and ? opens shortcuts guide", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(`pageerror: ${err.message}`));
+  page.on("console", (msg) => {
+    if (msg.type() === "error") errors.push(`console.error: ${msg.text()}`);
+  });
+
+  await page.setViewportSize({ width: 1360, height: 820 });
+  await desktopFixture(page);
+
+  // Open shortcuts guide via ? key and close cleanly.
+  await page.keyboard.press("?");
+  await expect(page.locator("#shortcuts-dialog")).toBeVisible();
+  await expect(page.locator("#shortcuts-dialog kbd").first()).toBeVisible();
+  await page.locator("[data-shortcuts-close]").click();
+  await expect(page.locator("#shortcuts-dialog")).toBeHidden();
+
+  // Open Settings and verify switch pseudo-element box-sizing & exact symmetric geometry.
+  await page.locator("#settings-button").click();
+  const settings = page.locator("#settings-dialog");
+  await expect(settings).toBeVisible();
+  await settings.locator('[data-settings-jump="desktop"]').click();
+  await page.waitForTimeout(350);
+  const switchGeom = await settings.evaluate((root) => {
+    const toggles = [...root.querySelectorAll<HTMLElement>(".toggle i")];
+    return toggles.map((track) => {
+      const tStyle = getComputedStyle(track);
+      const knob = getComputedStyle(track, "::after");
+      return {
+        trackBox: tStyle.boxSizing,
+        knobBox: knob.boxSizing,
+        knobW: parseFloat(knob.width),
+        knobH: parseFloat(knob.height),
+        knobTop: parseFloat(knob.top),
+        knobLeft: parseFloat(knob.left),
+      };
+    });
+  });
+  expect(switchGeom.length).toBeGreaterThanOrEqual(3);
+  for (const s of switchGeom) {
+    expect(s.trackBox).toBe("border-box");
+    expect(s.knobBox).toBe("border-box");
+    expect(s.knobW).toBe(18);
+    expect(s.knobH).toBe(18);
+    expect(s.knobTop).toBe(2);
+    expect(s.knobLeft).toBe(2);
+  }
+  // Toggle close-to-tray in-place and capture screenshot of aligned switches.
+  await settings.locator("#settings-tray").click();
+  await expect(settings.locator("#settings-tray")).toBeChecked();
+  await page.screenshot({ path: "work/verify-switches-fixed.png" });
+
+  // Jump to About and run manual Check -> Download -> Install flow in-place.
+  await settings.locator('[data-settings-jump="about"]').click();
+  await page.waitForTimeout(600);
+  const scrollBeforeCheck = await settings
+    .locator(".settings-body")
+    .evaluate((el) => el.scrollTop);
+  await settings.locator("[data-update-check-main]").click();
+  await expect(settings.locator("#settings-update-slot")).toContainText(
+    "发现新版本 1.1.3",
+  );
+  await expect(settings.locator("[data-update-download]")).toBeVisible();
+  const scrollAfterCheck = await settings
+    .locator(".settings-body")
+    .evaluate((el) => el.scrollTop);
+  expect(scrollAfterCheck).toBeGreaterThanOrEqual(scrollBeforeCheck - 2);
+  await page.screenshot({ path: "work/verify-about-updater.png" });
+
+  await settings.locator("[data-update-download]").click();
+  await expect(settings.locator("#settings-update-slot")).toContainText(
+    "新版本 1.1.3 已下载完成",
+  );
+  await expect(settings.locator("[data-update-install]")).toBeVisible();
+  await settings.locator("[data-update-install]").click();
+  expect(await page.evaluate(() => (window as any).__mockUpdateCalls)).toEqual([
+    "update_download",
+    "update_install",
+  ]);
+
+  await settings.locator("[data-settings-close]").click();
+  await expect(settings).toBeHidden();
   expect(errors).toEqual([]);
 });

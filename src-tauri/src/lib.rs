@@ -281,6 +281,8 @@ pub fn run() {
             download::download_song,
             download::open_download_folder,
             updater::update_ready,
+            updater::update_check,
+            updater::update_download,
             updater::update_install,
             local::local_import,
             local::local_import_folder,

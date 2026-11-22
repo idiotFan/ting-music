@@ -6,7 +6,9 @@
   color: var(--ink);
   font-synthesis: none;
 }
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 html,
@@ -26,6 +28,14 @@ button {
   place-items: center;
   font: inherit;
   -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color 140ms ease-out,
+    transform 120ms ease-out,
+    box-shadow 140ms ease-out,
+    color 140ms ease-out;
+}
+button:active {
+  transform: scale(0.94);
 }
 button:focus-visible {
   outline: 2px solid var(--accent);
@@ -39,24 +49,32 @@ svg {
   height: 18px;
 }
 body.mini {
-  background: var(--surface);
+  background: var(--bg, var(--surface));
 }
 .mini-card {
   position: relative;
   height: 100vh;
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) auto;
+  grid-template-columns: 62px minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
-  padding: 12px 10px 14px 14px;
-  border: 1px solid var(--line);
+  padding: 12px 10px 15px 14px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--surface) 98%, #ffffff),
+    color-mix(in srgb, var(--surface) 96%, var(--ink))
+  );
+  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.35);
 }
 .mini-cover {
-  width: 64px;
-  height: 64px;
-  border-radius: 8px;
+  width: 62px;
+  height: 62px;
+  border-radius: 10px;
   overflow: hidden;
   background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--ink) 14%, transparent);
   display: grid;
   place-items: center;
   color: var(--muted);
@@ -69,7 +87,7 @@ body.mini {
 .mini-text {
   min-width: 0;
   display: grid;
-  gap: 2px;
+  gap: 3px;
 }
 .mini-text strong,
 .mini-text small {
@@ -79,15 +97,17 @@ body.mini {
 }
 .mini-text strong {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 650;
+  letter-spacing: -0.02em;
 }
 .mini-text small {
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--muted);
 }
 .mini-buttons {
   display: flex;
   align-items: center;
+  gap: 2px;
 }
 .mini-buttons button {
   width: 34px;
@@ -96,17 +116,26 @@ body.mini {
 }
 @media (hover: hover) and (pointer: fine) {
   .mini-buttons button:hover {
-    background: color-mix(in srgb, var(--ink) 6%, transparent);
+    background: color-mix(in srgb, var(--ink) 7%, transparent);
   }
 }
 #mini-toggle {
+  width: 36px;
+  height: 36px;
   color: var(--on-accent);
-  background: var(--accent);
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, #ffffff 10%, var(--accent)),
+    color-mix(in srgb, #000000 10%, var(--accent))
+  );
+  border: 1px solid color-mix(in srgb, #000000 18%, var(--accent));
+  box-shadow:
+    0 3px 8px color-mix(in srgb, var(--accent) 30%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / 0.28);
 }
 @media (hover: hover) and (pointer: fine) {
   #mini-toggle:hover {
-    background: var(--accent);
-    filter: brightness(1.08);
+    filter: brightness(1.06);
   }
 }
 .mini-close {
@@ -125,13 +154,17 @@ body.mini {
   right: 0;
   bottom: 0;
   height: 3px;
-  background: var(--line);
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
 }
 .mini-progress b {
   display: block;
   height: 100%;
   width: calc(var(--p, 0) * 100%);
-  background: var(--accent);
+  background: linear-gradient(
+    90deg,
+    var(--accent),
+    color-mix(in srgb, #d95232 60%, var(--accent))
+  );
   transition: width 0.5s linear;
 }
 body.float-lyrics {
@@ -142,24 +175,32 @@ body.float-lyrics {
   display: grid;
   align-content: center;
   justify-items: center;
-  gap: 4px;
-  padding: 8px 24px;
-  border-radius: 14px;
-  transition: background 0.2s;
+  gap: 5px;
+  padding: 10px 26px;
+  border-radius: 16px;
+  border: 1px solid transparent;
+  transition:
+    background 180ms ease-out,
+    border-color 180ms ease-out,
+    backdrop-filter 180ms ease-out;
   text-align: center;
 }
 .float-strip:hover:not(.locked .float-strip) {
-  background: #00000055;
+  background: rgb(16 18 17 / 0.62);
+  border-color: rgb(255 255 255 / 0.14);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 #float-line {
   margin: 0;
   font-size: var(--float-size, 30px);
-  font-weight: 700;
-  line-height: 1.25;
+  font-weight: 680;
+  letter-spacing: -0.02em;
+  line-height: 1.26;
   color: #fff;
   text-shadow:
-    0 1px 3px #000c,
-    0 0 12px color-mix(in srgb, var(--accent) 70%, transparent);
+    0 2px 6px rgb(0 0 0 / 0.72),
+    0 0 18px color-mix(in srgb, var(--accent) 55%, transparent);
   max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
@@ -167,9 +208,9 @@ body.float-lyrics {
 }
 #float-next {
   margin: 0;
-  font-size: calc(var(--float-size, 30px) * 0.55);
-  color: #ffffffcc;
-  text-shadow: 0 1px 3px #000c;
+  font-size: calc(var(--float-size, 30px) * 0.54);
+  color: rgb(255 255 255 / 0.78);
+  text-shadow: 0 1px 4px rgb(0 0 0 / 0.7);
   max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
@@ -178,12 +219,16 @@ body.float-lyrics {
 }
 .float-tools {
   position: fixed;
-  top: 6px;
-  right: 10px;
+  top: 8px;
+  right: 12px;
   display: flex;
   gap: 4px;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.45);
+  border: 1px solid rgb(255 255 255 / 0.12);
   opacity: 0;
-  transition: opacity 0.2s;
+  transition: opacity 160ms ease-out;
 }
 .float-strip:hover .float-tools {
   opacity: 1;
@@ -192,20 +237,27 @@ body.float-lyrics {
   display: none;
 }
 .float-tools button {
-  min-width: 28px;
-  height: 26px;
-  padding: 0 6px;
-  border-radius: 6px;
-  font-size: 12px;
+  min-width: 26px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
   color: #fff;
-  background: #0006;
+  background: transparent;
+}
+.float-tools button:hover {
+  background: rgb(255 255 255 / 0.16);
 }
 .float-tools svg {
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .mini-progress b {
+  button,
+  .mini-progress b,
+  .float-strip,
+  .float-tools {
     transition: none;
   }
 }

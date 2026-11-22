@@ -54,6 +54,8 @@ fn main() {
             "download_song",
             "open_download_folder",
             "update_ready",
+            "update_check",
+            "update_download",
             "update_install",
             "local_import",
             "local_import_folder",

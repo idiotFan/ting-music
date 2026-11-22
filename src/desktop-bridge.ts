@@ -6,6 +6,7 @@ import { backupName, createBackup, restoreBackup } from "./backup";
 import { recent as recentDiagnostics } from "./diagnostics";
 import { mobileDevice, platform } from "./platform";
 import { setupSettingsPanel } from "./settings-panel";
+import { setupShortcutsSheet } from "./shortcuts-ui";
 import type { Song } from "./library";
 import type { Sound } from "./sound";
 import type { LyricLine, PlayerCommand, PlayerState } from "./panel-state";
@@ -251,11 +252,13 @@ export function setupDesktopBridge(o: Context) {
     sessionStorage.removeItem("ting.restored");
     window.setTimeout(() => o.toast(restored), 600);
   }
+  const shortcutsSheet = setupShortcutsSheet();
   setupSettingsPanel({
     toast: o.toast,
     quality: o.quality,
     openSound: () => o.openSound(),
     openTheme: () => $("#theme-button").click(),
+    openShortcuts: () => shortcutsSheet.open(),
     exportBackup: () =>
       saveFile(backupName(), JSON.stringify(createBackup(), null, 1), "备份"),
     importBackup: importBackupFile,
@@ -275,6 +278,8 @@ export function setupDesktopBridge(o: Context) {
   return {
     /** Push the player state now (a new song, play / pause). */
     broadcast,
+    /** Open the in-app keyboard shortcuts cheat sheet. */
+    openShortcuts: () => shortcutsSheet.open(),
     /** The lyrics changed wholesale (a new song); resend the line. */
     resetLyric: () => {
       lastLyricKey = "";

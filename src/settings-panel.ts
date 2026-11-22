@@ -12,6 +12,7 @@ import {
   scanLocals,
   setAutoImport,
 } from "./local-library";
+import { checkForUpdate, downloadUpdate, installUpdate } from "./updater";
 
 /**
  * 设置: one sheet for the preferences that used to be scattered — playback,
@@ -148,8 +149,29 @@ type Options = {
     lock: (on: boolean) => void;
   };
   miniPlayer: () => void;
+  openShortcuts?: () => void;
   version: () => string;
 };
+
+type UpdateUiState =
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "up_to_date"; message: string }
+  | { kind: "available"; version: string; notes?: string }
+  | {
+      kind: "downloading";
+      version: string;
+      downloaded: number;
+      total?: number;
+    }
+  | { kind: "ready"; version: string; notes?: string }
+  | { kind: "installing"; version: string }
+  | { kind: "unsupported"; message: string }
+  | { kind: "error"; message: string };
+
+function formatMb(bytes: number) {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export function setupSettingsPanel(o: Options) {
   const native = isTauri();
@@ -168,6 +190,74 @@ export function setupSettingsPanel(o: Options) {
   let downloadPath = "";
   let recording: string | undefined;
   let prefs = desktopPrefs();
+  let updateState: UpdateUiState = { kind: "idle" };
+
+  function updateMarkup() {
+    if (!desktop) return "";
+    const s = updateState;
+    if (s.kind === "idle") return "";
+    if (s.kind === "checking") {
+      return `<div class="update-box" role="status"><span class="update-status is-muted">正在检查新版本…</span></div>`;
+    }
+    if (s.kind === "up_to_date") {
+      return `<div class="update-box" role="status"><span class="update-status is-muted">${esc(s.message)}</span></div>`;
+    }
+    if (s.kind === "unsupported") {
+      return `<div class="update-box" role="status"><span class="update-status is-muted">${esc(s.message)}</span></div>`;
+    }
+    if (s.kind === "error") {
+      return `<div class="update-box" role="status"><div class="update-box-head"><span class="update-status is-error">${esc(s.message)}</span><button type="button" class="outline" data-update-check>重试</button></div></div>`;
+    }
+    if (s.kind === "available") {
+      return `<div class="update-box" role="status"><div class="update-box-head"><span class="update-status"><strong>发现新版本 ${esc(s.version)}</strong></span><button type="button" class="primary" data-update-download>下载新版本</button></div>${s.notes ? `<div class="update-notes">${esc(s.notes)}</div>` : ""}</div>`;
+    }
+    if (s.kind === "downloading") {
+      const pct =
+        s.total && s.total > 0
+          ? Math.min(100, Math.round((s.downloaded / s.total) * 100))
+          : 0;
+      const detail =
+        s.total && s.total > 0
+          ? `${formatMb(s.downloaded)} / ${formatMb(s.total)} (${pct}%)`
+          : s.downloaded > 0
+            ? formatMb(s.downloaded)
+            : "准备下载…";
+      return `<div class="update-box" role="status"><div class="update-box-head"><span class="update-status">正在下载 ${esc(s.version)} · ${detail}</span></div><div class="update-bar" aria-hidden="true"><b style="--pct:${pct}%"></b></div></div>`;
+    }
+    if (s.kind === "installing") {
+      return `<div class="update-box" role="status"><span class="update-status">正在安装 ${esc(s.version)} 并准备重启…</span></div>`;
+    }
+    return `<div class="update-box" role="status"><div class="update-box-head"><span class="update-status"><strong>新版本 ${esc(s.version)} 已下载完成</strong></span><button type="button" class="primary" data-update-install>重启更新</button></div>${s.notes ? `<div class="update-notes">${esc(s.notes)}</div>` : ""}</div>`;
+  }
+
+  function patchUpdateSlot() {
+    const slot = dialog.querySelector<HTMLElement>("#settings-update-slot");
+    if (slot) slot.innerHTML = updateMarkup();
+    const checkBtn = dialog.querySelector<HTMLButtonElement>(
+      "[data-update-check-main]",
+    );
+    if (checkBtn) {
+      const busy =
+        updateState.kind === "checking" ||
+        updateState.kind === "downloading" ||
+        updateState.kind === "installing";
+      checkBtn.disabled = busy;
+      checkBtn.textContent =
+        updateState.kind === "checking" ? "检查中…" : "检查更新";
+    }
+  }
+
+  function patchScaleButtons() {
+    const current = pageScale();
+    dialog
+      .querySelectorAll<HTMLButtonElement>("[data-scale]")
+      .forEach((btn) => {
+        btn.setAttribute(
+          "aria-pressed",
+          String(Number(btn.dataset.scale) === current),
+        );
+      });
+  }
 
   // A row holding a switch is a <label>, so tapping its text flips it too.
   const row = (title: string, detail: string, control: string) => {
@@ -364,7 +454,7 @@ export function setupSettingsPanel(o: Options) {
                 "",
               )}<button class="quiet" data-shortcuts-reset>恢复默认快捷键</button></div>`
             : ""
-        }</section>`,
+        }${o.openShortcuts ? row("应用内快捷键", "按 ? 随时查看播放、剧场与返回快捷键", `<button class="outline" data-open-shortcuts>查看指南</button>`) : ""}</section>`,
       });
     sections.push(
       {
@@ -377,7 +467,21 @@ export function setupSettingsPanel(o: Options) {
         id: "about",
         label: "关于",
         iconName: "Info",
-        html: `<section data-settings-section="about"><h3>关于</h3>${row("听 · Ting", esc(o.version()), `<button class="outline" data-diagnostics>导出诊断信息</button>`)}<small class="summary">诊断信息含版本、系统、曲库数量和最近的提示与错误摘要；文件路径、网址参数与登录凭据已去除。</small></section>`,
+        html: `<section data-settings-section="about"><h3>关于</h3>${row(
+          "听 · Ting",
+          esc(o.version()),
+          `<span class="row-buttons">${
+            desktop
+              ? `<button class="outline" data-update-check data-update-check-main ${
+                  updateState.kind === "checking" ||
+                  updateState.kind === "downloading" ||
+                  updateState.kind === "installing"
+                    ? "disabled"
+                    : ""
+                }>${updateState.kind === "checking" ? "检查中…" : "检查更新"}</button>`
+              : ""
+          }<button class="outline" data-diagnostics>导出诊断信息</button></span>`,
+        )}${desktop ? `<div id="settings-update-slot">${updateMarkup()}</div>` : ""}<small class="summary">诊断信息含版本、系统、曲库数量和最近的提示与错误摘要；文件路径、网址参数与登录凭据已去除。</small></section>`,
       },
     );
     if (!sections.some((s) => s.id === activeSection))
@@ -464,13 +568,102 @@ export function setupSettingsPanel(o: Options) {
     recording = undefined;
     render();
   }
-  async function applyDesktop(next: DesktopPrefs) {
+  async function applyDesktop(next: DesktopPrefs, redraw = true) {
     prefs = next;
-    render();
+    if (redraw) render();
     try {
       await saveDesktop(prefs);
     } catch (e) {
       o.toast(String(e));
+    }
+  }
+
+  async function runUpdateCheck() {
+    if (
+      updateState.kind === "checking" ||
+      updateState.kind === "downloading" ||
+      updateState.kind === "installing"
+    )
+      return;
+    updateState = { kind: "checking" };
+    patchUpdateSlot();
+    try {
+      const res = await checkForUpdate();
+      if (res.status === "ready" && res.version) {
+        updateState = {
+          kind: "ready",
+          version: res.version,
+          notes: res.notes || undefined,
+        };
+      } else if (res.status === "available" && res.version) {
+        updateState = {
+          kind: "available",
+          version: res.version,
+          notes: res.notes || undefined,
+        };
+      } else if (res.status === "up_to_date") {
+        updateState = {
+          kind: "up_to_date",
+          message: res.message || "当前已是最新版本",
+        };
+      } else if (res.status === "unsupported") {
+        updateState = {
+          kind: "unsupported",
+          message: res.message || "当前环境不支持应用内更新",
+        };
+      } else {
+        updateState = {
+          kind: "error",
+          message: res.message || "检查更新失败，请稍后重试",
+        };
+      }
+    } catch (err) {
+      updateState = {
+        kind: "error",
+        message: `检查更新失败：${String(err)}`,
+      };
+    }
+    patchUpdateSlot();
+  }
+
+  async function runUpdateDownload() {
+    const version =
+      updateState.kind === "available" ? updateState.version : "新版本";
+    const notes =
+      updateState.kind === "available" ? updateState.notes : undefined;
+    updateState = { kind: "downloading", version, downloaded: 0 };
+    patchUpdateSlot();
+    try {
+      const stagedVersion = await downloadUpdate((p) => {
+        if (updateState.kind !== "downloading") return;
+        updateState = {
+          kind: "downloading",
+          version,
+          downloaded: p.downloaded,
+          total: p.total ?? undefined,
+        };
+        patchUpdateSlot();
+      });
+      updateState = { kind: "ready", version: stagedVersion, notes };
+      o.toast(`新版本 ${stagedVersion} 已下载完成`);
+    } catch (err) {
+      updateState = { kind: "error", message: String(err) };
+    }
+    patchUpdateSlot();
+  }
+
+  async function runUpdateInstall() {
+    const version =
+      updateState.kind === "ready" ? updateState.version : "新版本";
+    const notes = updateState.kind === "ready" ? updateState.notes : undefined;
+    updateState = { kind: "installing", version };
+    patchUpdateSlot();
+    try {
+      await installUpdate();
+    } catch (err) {
+      updateState = { kind: "ready", version, notes };
+      patchUpdateSlot();
+      o.toast(String(err));
     }
   }
 
@@ -508,9 +701,9 @@ export function setupSettingsPanel(o: Options) {
           }
         });
     } else if (el.id === "settings-tray")
-      void applyDesktop({ ...prefs, closeToTray: el.checked });
+      void applyDesktop({ ...prefs, closeToTray: el.checked }, false);
     else if (el.id === "settings-shortcuts")
-      void applyDesktop({ ...prefs, shortcutsOn: el.checked });
+      void applyDesktop({ ...prefs, shortcutsOn: el.checked }, true);
   });
   dialog.addEventListener("click", async (e) => {
     const el = e.target as HTMLElement;
@@ -549,6 +742,10 @@ export function setupSettingsPanel(o: Options) {
     if (el.closest("[data-settings-close]")) return closeDialog(dialog);
     if (el.closest("[data-open-sound]")) return o.openSound();
     if (el.closest("[data-open-theme]")) return o.openTheme();
+    if (el.closest("[data-open-shortcuts]")) return o.openShortcuts?.();
+    if (el.closest("[data-update-check]")) return void runUpdateCheck();
+    if (el.closest("[data-update-download]")) return void runUpdateDownload();
+    if (el.closest("[data-update-install]")) return void runUpdateInstall();
     const scale = el.closest<HTMLElement>("[data-scale]");
     if (scale) {
       setPageScale(Number(scale.dataset.scale));
@@ -612,7 +809,9 @@ export function setupSettingsPanel(o: Options) {
         : o.importBackup();
     if (el.closest("[data-diagnostics]")) return o.exportDiagnostics();
   });
-  window.addEventListener("ting:scale", () => dialog.open && render());
+  window.addEventListener("ting:scale", () => {
+    if (dialog.open) patchScaleButtons();
+  });
 
   $("#settings-button").onclick = () => {
     recording = undefined;
