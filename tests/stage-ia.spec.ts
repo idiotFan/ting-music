@@ -99,7 +99,7 @@ async function desktopFixture(page: Page) {
           if (cmd === "download_dir") return "/Users/me/Downloads/Ting";
           if (cmd === "diagnostics")
             return {
-              version: "1.1.0",
+              version: "1.1.1",
               os: "macos",
               arch: "aarch64",
               family: "unix",
@@ -148,6 +148,89 @@ test("detail back button stays pinned while scrolling deep into a playlist and s
   expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
   await expect(back).toBeInViewport();
   await page.screenshot({ path: "work/verify-pinned-playlist.png" });
+
+  // Every visible header action must stay strictly inside <main> without bleeding
+  // over the column divider into .now-panel, and .stage-tools must clear #now-cover.
+  for (const vp of [
+    { width: 960, height: 640 },
+    { width: 1100, height: 700 },
+    { width: 1360, height: 820 },
+  ]) {
+    await page.setViewportSize(vp);
+    await page.waitForTimeout(80);
+    const geometry = await page.evaluate(() => {
+      const main = document.querySelector("main")!.getBoundingClientRect();
+      const top = document.querySelector("main > .section-top")!;
+      const buttons = [...top.querySelectorAll<HTMLElement>("button")]
+        .filter((b) => !b.hidden && b.offsetParent !== null)
+        .map((b) => ({
+          id: b.id,
+          right: Math.round(b.getBoundingClientRect().right),
+        }));
+      const tools = document
+        .querySelector(".stage-tools")
+        ?.getBoundingClientRect();
+      const cover = document
+        .querySelector("#now-cover")
+        ?.getBoundingClientRect();
+      return {
+        mainRight: Math.round(main.right),
+        topOverflow: top.scrollWidth - top.clientWidth,
+        buttons,
+        toolsBottom: tools ? Math.round(tools.bottom) : 0,
+        coverTop: cover ? Math.round(cover.top) : 9999,
+      };
+    });
+    expect(geometry.topOverflow).toBeLessThanOrEqual(1);
+    for (const btn of geometry.buttons) {
+      expect(btn.right, `${btn.id} at ${vp.width}px`).toBeLessThanOrEqual(
+        geometry.mainRight + 1,
+      );
+    }
+    expect(geometry.coverTop).toBeGreaterThanOrEqual(geometry.toolsBottom - 1);
+    if (vp.width === 960) {
+      await page.screenshot({ path: "work/verify-header-no-overflow.png" });
+    }
+  }
+
+  // Also test narrow desktop list column (~420px, e.g. user widened player column):
+  // secondary actions must compact to <=34px icons and stay strictly inside <main>.
+  await page.setViewportSize({ width: 960, height: 640 });
+  await page.evaluate(() =>
+    document.documentElement.style.setProperty("--player-col", "520px"),
+  );
+  await page.waitForTimeout(100);
+  const narrowCol = await page.evaluate(() => {
+    const main = document.querySelector("main")!.getBoundingClientRect();
+    const top = document.querySelector("main > .section-top")!;
+    const buttons = [...top.querySelectorAll<HTMLElement>("button")]
+      .filter((b) => !b.hidden && b.offsetParent !== null)
+      .map((b) => ({
+        id: b.id,
+        width: Math.round(b.getBoundingClientRect().width),
+        right: Math.round(b.getBoundingClientRect().right),
+      }));
+    return {
+      mainWidth: Math.round(main.width),
+      mainRight: Math.round(main.right),
+      topOverflow: top.scrollWidth - top.clientWidth,
+      buttons,
+    };
+  });
+  expect(narrowCol.mainWidth).toBeLessThanOrEqual(460);
+  expect(narrowCol.topOverflow).toBeLessThanOrEqual(1);
+  for (const btn of narrowCol.buttons) {
+    expect(btn.right, `narrow ${btn.id}`).toBeLessThanOrEqual(
+      narrowCol.mainRight + 1,
+    );
+    if (["copy-playlist", "select-mode", "download-all"].includes(btn.id)) {
+      expect(btn.width, `icon-only ${btn.id}`).toBeLessThanOrEqual(34);
+    }
+  }
+  await page.screenshot({ path: "work/verify-header-3col-narrow.png" });
+  await page.evaluate(() =>
+    document.documentElement.style.removeProperty("--player-col"),
+  );
 
   // Alt+ArrowLeft navigates back cleanly from the bottom of the list.
   await page.keyboard.press("Alt+ArrowLeft");

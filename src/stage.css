@@ -146,15 +146,18 @@ html[data-ambient="on"] .stage-ambient {
   display: none;
 }
 @media (min-width: 900px) and (orientation: landscape) {
+  html:not(.mobile-device) .now-panel {
+    padding-top: 40px;
+  }
   html:not(.mobile-device) .stage-tools {
     position: absolute;
-    top: 12px;
+    top: 8px;
     left: 16px;
     z-index: 3;
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    padding: 3px;
+    padding: 2px;
     border-radius: 999px;
     background: var(--recess-bg);
     border: 1px solid var(--seam-shadow);
@@ -171,8 +174,16 @@ html[data-ambient="on"] .stage-ambient {
     opacity: 1;
   }
 }
+@media (min-width: 900px) and (max-width: 1239px) and (orientation: landscape) {
+  html:not(.mobile-device) body.lyrics-open .now-panel {
+    padding-top: 12px;
+  }
+  html:not(.mobile-device) body.lyrics-open .stage-tools {
+    display: none;
+  }
+}
 .stage-chip {
-  height: 26px;
+  height: 24px;
   padding: 0 9px;
   border-radius: 999px;
   font-size: 11px;

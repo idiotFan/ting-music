@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "听 · Ting",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "identifier": "com.ting.music.demo",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -57,7 +57,7 @@
     },
     "macOS": {
       "minimumSystemVersion": "15.0",
-      "bundleVersion": "1010001"
+      "bundleVersion": "1010101"
     }
   },
   "plugins": {

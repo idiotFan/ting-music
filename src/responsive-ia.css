@@ -1,9 +1,20 @@
 /* ---- Multi-Device IA: Pinned Context Bar & Wide Desktop Dialog Workbench -- */
 
 /* Pinned context header sits directly in <main> above .main-scroll so #back-button,
-   current playlist/artist/album title and primary actions never scroll away. */
+   current playlist/artist/album title and primary actions never scroll away.
+   <main> owns an inline-size container so narrow desktop columns compact actions. */
+main {
+  min-width: 0;
+  overflow: hidden;
+  container: main-col / inline-size;
+}
 main > .section-top {
   flex-shrink: 0;
+  flex-wrap: wrap;
+  row-gap: 6px;
+  column-gap: 6px;
+  min-width: 0;
+  max-width: 100%;
   padding: 12px 20px 10px;
   margin: 0;
   background: var(--surface);
@@ -24,6 +35,17 @@ main.main-scrolled > .section-top {
 main > .section-top ~ .main-scroll {
   padding-top: 6px;
 }
+main > .section-top > button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+main > .section-top h2 {
+  flex: 1 1 110px;
+  min-width: 0;
+}
+main > .section-top #play-all {
+  margin-left: auto;
+}
 main > .section-top #back-button {
   flex-shrink: 0;
   font-weight: 500;
@@ -38,6 +60,42 @@ main > .section-top #back-button {
     background: var(--selected);
   }
 }
+/* Compact secondary header actions to icons whenever the list column is narrow
+   (two/three-column desktop or narrow window) so labels never overflow into the stage. */
+@container main-col (max-width: 560px) {
+  main > .section-top {
+    padding: 10px 16px 8px;
+  }
+  main > .section-top #select-mode,
+  main > .section-top #download-all,
+  main > .section-top #enqueue-all,
+  main > .section-top #copy-playlist,
+  main > .section-top #clear-list {
+    font-size: 0;
+    gap: 0;
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+    padding: 0;
+    justify-content: center;
+  }
+  main > .section-top #select-mode svg,
+  main > .section-top #download-all svg,
+  main > .section-top #enqueue-all svg,
+  main > .section-top #copy-playlist svg,
+  main > .section-top #clear-list svg {
+    width: 15px;
+    height: 15px;
+  }
+}
+/* In narrow detail headers (playlist / artist / album with back button + multi-actions),
+   give Row 1 to [Back + full title] and group all actions evenly onto Row 2 so no single
+   button sits orphaned on a second line. */
+@container main-col (max-width: 480px) {
+  main > .section-top:has(#back-button:not([hidden])) h2 {
+    flex: 1 1 calc(100% - 96px);
+  }
+}
 /* Mobile keeps >= 44px touch target on the pinned back button. */
 .mobile-device main > .section-top {
   padding: 8px 16px;
@@ -47,21 +105,6 @@ main > .section-top #back-button {
   min-height: 44px;
   min-width: 44px;
   padding: 0 12px 0 6px;
-}
-
-/* Prevent horizontal overcrowding when a detail header has multiple action pills. */
-main > .section-top {
-  flex-wrap: nowrap;
-  gap: 8px;
-}
-main > .section-top h2 {
-  min-width: 60px;
-}
-@media (max-width: 520px) {
-  main > .section-top {
-    flex-wrap: wrap;
-    row-gap: 6px;
-  }
 }
 
 /* ---- Wide Desktop Dialog System (no more narrow vertical-scroll modals) --- */
